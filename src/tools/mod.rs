@@ -7,6 +7,7 @@ pub mod export_chat;
 pub mod findings;
 pub mod glob;
 pub mod grep;
+pub mod image_generate;
 pub mod mcp;
 pub mod memory;
 pub mod mixture_of_agents;
@@ -18,8 +19,10 @@ pub mod session_search;
 pub mod structured_memory;
 pub mod subagents;
 pub mod sync_skills;
+pub mod text_to_speech;
 pub mod time_math;
 pub mod todo;
+pub mod video_generate;
 pub mod web_fetch;
 pub mod web_search;
 pub mod write_file;
@@ -287,6 +290,40 @@ impl ToolRegistry {
             tools.push(Box::new(read_document::ReadDocumentTool::new(
                 db.clone(),
                 config.control_chat_ids.clone(),
+            )));
+        }
+
+        // Add TTS tool if enabled
+        if config.tts_enabled {
+            tools.push(Box::new(text_to_speech::TextToSpeechTool::new(
+                &config.tts_provider,
+                config.tts_api_key.as_deref().or(Some(&config.api_key)),
+                &config.tts_voice,
+                &config.data_dir,
+            )));
+        }
+
+        // Add image generation tool if enabled
+        if config.image_gen_enabled {
+            tools.push(Box::new(image_generate::ImageGenerateTool::new(
+                &config.image_gen_provider,
+                config.image_gen_api_key.as_deref().or(Some(&config.api_key)),
+                config.image_gen_fal_key.as_deref(),
+                &config.image_gen_default_size,
+                &config.image_gen_default_quality,
+                &config.data_dir,
+            )));
+        }
+
+        // Add video generation tool if enabled
+        if config.video_gen_enabled {
+            tools.push(Box::new(video_generate::VideoGenerateTool::new(
+                &config.video_gen_provider,
+                config.video_gen_api_key.as_deref().or(Some(&config.api_key)),
+                config.video_gen_fal_model.as_deref(),
+                config.video_gen_minimax_key.as_deref(),
+                config.video_gen_timeout_secs,
+                &config.data_dir,
             )));
         }
 
