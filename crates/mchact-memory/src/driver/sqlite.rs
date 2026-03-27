@@ -153,6 +153,143 @@ fn row_to_observation(row: &Row<'_>) -> rusqlite::Result<Observation> {
     })
 }
 
+fn row_to_queue_item(row: &Row<'_>) -> rusqlite::Result<QueueItem> {
+    let id: i64 = row.get(0)?;
+    let task_type: String = row.get(1)?;
+    let workspace: String = row.get(2)?;
+    let chat_id: Option<String> = row.get(3)?;
+    let observer_peer_id: i64 = row.get(4)?;
+    let observed_peer_id: i64 = row.get(5)?;
+    let payload_str: String = row.get(6)?;
+    let created_at_str: String = row.get(7)?;
+
+    let payload: serde_json::Value = serde_json::from_str(&payload_str)
+        .unwrap_or(serde_json::Value::Null);
+
+    let created_at = created_at_str
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(QueueItem {
+        id,
+        task_type,
+        workspace,
+        chat_id,
+        observer_peer_id,
+        observed_peer_id,
+        payload,
+        created_at,
+    })
+}
+
+fn row_to_finding(row: &Row<'_>) -> rusqlite::Result<Finding> {
+    let id: i64 = row.get(0)?;
+    let orchestration_id: String = row.get(1)?;
+    let run_id: String = row.get(2)?;
+    let finding: String = row.get(3)?;
+    let category: Option<String> = row.get(4)?;
+    let created_at_str: String = row.get(5)?;
+
+    let created_at = created_at_str
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(Finding {
+        id,
+        orchestration_id,
+        run_id,
+        finding,
+        category,
+        created_at,
+    })
+}
+
+fn row_to_deriver_run(row: &Row<'_>) -> rusqlite::Result<DeriverRun> {
+    let id: i64 = row.get(0)?;
+    let orchestration_id: String = row.get(1)?;
+    let workspace: String = row.get(2)?;
+    let observer_peer_id: i64 = row.get(3)?;
+    let observed_peer_id: i64 = row.get(4)?;
+    let chat_id: Option<String> = row.get(5)?;
+    let observations_in: i64 = row.get(6)?;
+    let observations_out: i64 = row.get(7)?;
+    let duration_ms: i64 = row.get(8)?;
+    let created_at_str: String = row.get(9)?;
+
+    let created_at = created_at_str
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(DeriverRun {
+        id,
+        orchestration_id,
+        workspace,
+        observer_peer_id,
+        observed_peer_id,
+        chat_id,
+        observations_in,
+        observations_out,
+        duration_ms,
+        created_at,
+    })
+}
+
+fn row_to_dreamer_run(row: &Row<'_>) -> rusqlite::Result<DreamerRun> {
+    let id: i64 = row.get(0)?;
+    let orchestration_id: String = row.get(1)?;
+    let workspace: String = row.get(2)?;
+    let observer_peer_id: i64 = row.get(3)?;
+    let observed_peer_id: i64 = row.get(4)?;
+    let observations_in: i64 = row.get(5)?;
+    let findings_out: i64 = row.get(6)?;
+    let duration_ms: i64 = row.get(7)?;
+    let created_at_str: String = row.get(8)?;
+
+    let created_at = created_at_str
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(DreamerRun {
+        id,
+        orchestration_id,
+        workspace,
+        observer_peer_id,
+        observed_peer_id,
+        observations_in,
+        findings_out,
+        duration_ms,
+        created_at,
+    })
+}
+
+fn row_to_injection_log(row: &Row<'_>) -> rusqlite::Result<InjectionLog> {
+    let id: i64 = row.get(0)?;
+    let orchestration_id: String = row.get(1)?;
+    let workspace: String = row.get(2)?;
+    let chat_id: String = row.get(3)?;
+    let observer_peer_id: i64 = row.get(4)?;
+    let observed_peer_id: i64 = row.get(5)?;
+    let observations_injected: i64 = row.get(6)?;
+    let token_estimate: i64 = row.get(7)?;
+    let created_at_str: String = row.get(8)?;
+
+    let created_at = created_at_str
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(InjectionLog {
+        id,
+        orchestration_id,
+        workspace,
+        chat_id,
+        observer_peer_id,
+        observed_peer_id,
+        observations_injected,
+        token_estimate,
+        created_at,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Trait implementation
 // ---------------------------------------------------------------------------
@@ -483,8 +620,6 @@ impl ObservationStore for SqliteDriver {
         let mut conditions: Vec<String> = vec!["workspace = ?1".to_string()];
         let mut idx = 2usize;
 
-        // We build a dynamic query. For simplicity with rusqlite, collect
-        // optional filter values separately.
         let observer_filter = scope.observer_peer_id;
         let observed_filter = scope.observed_peer_id;
         let chat_filter = scope.chat_id.clone();
@@ -525,7 +660,6 @@ impl ObservationStore for SqliteDriver {
         let mut stmt = conn.prepare(&sql)
             .map_err(|e| MemoryError::Database(e.to_string()))?;
 
-        // Build params dynamically using a closure
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         param_values.push(Box::new(scope.workspace.clone()));
         if let Some(v) = observer_filter { param_values.push(Box::new(v)); }
@@ -547,15 +681,89 @@ impl ObservationStore for SqliteDriver {
         Ok(observations)
     }
 
-    // --- Search (stubs) ---
+    // --- Search ---
 
     async fn keyword_search(
         &self,
-        _scope: &SearchScope,
-        _query: &str,
-        _limit: i64,
+        scope: &SearchScope,
+        query: &str,
+        limit: i64,
     ) -> Result<Vec<Observation>> {
-        Ok(vec![])
+        use crate::search::sanitize_fts_query;
+
+        let sanitized = match sanitize_fts_query(query) {
+            Some(q) => q,
+            None => return Ok(vec![]),
+        };
+
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        // Build dynamic scope filters on top of the FTS join
+        let mut conditions: Vec<String> = vec!["o.workspace = ?2".to_string()];
+        let mut idx = 3usize;
+
+        if scope.observer_peer_id.is_some() {
+            conditions.push(format!("o.observer_peer_id = ?{idx}"));
+            idx += 1;
+        }
+        if scope.observed_peer_id.is_some() {
+            conditions.push(format!("o.observed_peer_id = ?{idx}"));
+            idx += 1;
+        }
+        if scope.chat_id.is_some() {
+            conditions.push(format!("o.chat_id = ?{idx}"));
+            idx += 1;
+        }
+        if scope.min_confidence.is_some() {
+            conditions.push(format!("o.confidence >= ?{idx}"));
+            idx += 1;
+        }
+        if !scope.include_archived {
+            conditions.push("o.is_archived = 0".to_string());
+        }
+
+        let limit_idx = idx;
+        let extra = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("AND {}", conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT o.id, o.workspace, o.observer_peer_id, o.observed_peer_id, o.chat_id,
+              o.level, o.content, o.category, o.confidence, o.source, o.source_ids,
+              o.message_ids, o.times_derived, o.is_archived, o.archived_at,
+              o.created_at, o.updated_at
+             FROM observations_fts fts
+             JOIN observations o ON o.id = fts.rowid
+             WHERE observations_fts MATCH ?1
+             {extra}
+             ORDER BY rank
+             LIMIT ?{limit_idx}"
+        );
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        param_values.push(Box::new(sanitized));
+        param_values.push(Box::new(scope.workspace.clone()));
+        if let Some(v) = scope.observer_peer_id { param_values.push(Box::new(v)); }
+        if let Some(v) = scope.observed_peer_id { param_values.push(Box::new(v)); }
+        if let Some(v) = scope.chat_id.clone() { param_values.push(Box::new(v)); }
+        if let Some(v) = scope.min_confidence { param_values.push(Box::new(v)); }
+        param_values.push(Box::new(limit));
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|b| b.as_ref()).collect();
+
+        let observations: Vec<Observation> = stmt
+            .query_map(params_refs.as_slice(), row_to_observation)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(observations)
     }
 
     async fn semantic_search(
@@ -564,73 +772,326 @@ impl ObservationStore for SqliteDriver {
         _embedding: Vec<f32>,
         _limit: i64,
     ) -> Result<Vec<Observation>> {
+        // Semantic search requires vector index; not implemented yet.
         Ok(vec![])
     }
 
     async fn hybrid_search(
         &self,
-        _scope: &SearchScope,
-        _query: &str,
+        scope: &SearchScope,
+        query: &str,
         _embedding: Vec<f32>,
-        _limit: i64,
+        limit: i64,
     ) -> Result<Vec<RankedResult>> {
-        Ok(vec![])
+        use crate::search::rrf_merge;
+
+        let keyword_hits = self.keyword_search(scope, query, limit * 2).await?;
+
+        let keyword_scored: Vec<(i64, f64)> = keyword_hits
+            .iter()
+            .enumerate()
+            .map(|(rank, obs)| (obs.id, rank as f64))
+            .collect();
+
+        // Semantic arm is empty for now; pass empty slice.
+        let semantic_scored: Vec<(i64, f64)> = vec![];
+
+        let ranked = rrf_merge(&keyword_scored, &semantic_scored, limit as usize);
+
+        Ok(ranked)
     }
 
-    // --- DAG (stubs) ---
+    // --- DAG ---
 
-    async fn link_observations(&self, _parent_id: i64, _child_id: i64) -> Result<()> {
+    async fn link_observations(&self, parent_id: i64, child_id: i64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        // Fetch child's current source_ids
+        let source_ids_str: String = conn.query_row(
+            "SELECT source_ids FROM observations WHERE id = ?1",
+            params![child_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => MemoryError::NotFound(format!("observation {child_id}")),
+            e => MemoryError::Database(e.to_string()),
+        })?;
+
+        let mut source_ids: Vec<i64> = serde_json::from_str(&source_ids_str).unwrap_or_default();
+        if !source_ids.contains(&parent_id) {
+            source_ids.push(parent_id);
+        }
+
+        let new_source_ids_str = serde_json::to_string(&source_ids)
+            .map_err(|e| MemoryError::Serialization(e.to_string()))?;
+
+        conn.execute(
+            "UPDATE observations SET source_ids = ?1, updated_at = ?2 WHERE id = ?3",
+            params![new_source_ids_str, now, child_id],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
         Ok(())
     }
 
-    async fn unlink_observations(&self, _parent_id: i64, _child_id: i64) -> Result<()> {
+    async fn unlink_observations(&self, parent_id: i64, child_id: i64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        let source_ids_str: String = conn.query_row(
+            "SELECT source_ids FROM observations WHERE id = ?1",
+            params![child_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => MemoryError::NotFound(format!("observation {child_id}")),
+            e => MemoryError::Database(e.to_string()),
+        })?;
+
+        let source_ids: Vec<i64> = serde_json::from_str(&source_ids_str).unwrap_or_default();
+        let filtered: Vec<i64> = source_ids.into_iter().filter(|&id| id != parent_id).collect();
+
+        let new_source_ids_str = serde_json::to_string(&filtered)
+            .map_err(|e| MemoryError::Serialization(e.to_string()))?;
+
+        conn.execute(
+            "UPDATE observations SET source_ids = ?1, updated_at = ?2 WHERE id = ?3",
+            params![new_source_ids_str, now, child_id],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
         Ok(())
     }
 
-    async fn get_children(&self, _observation_id: i64) -> Result<Vec<Observation>> {
-        Ok(vec![])
+    async fn get_children(&self, observation_id: i64) -> Result<Vec<Observation>> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        // Find observations whose source_ids JSON array contains observation_id.
+        // Use json_each to check membership.
+        let sql = "SELECT id, workspace, observer_peer_id, observed_peer_id, chat_id, level, content,
+              category, confidence, source, source_ids, message_ids, times_derived,
+              is_archived, archived_at, created_at, updated_at
+             FROM observations
+             WHERE EXISTS (
+                 SELECT 1 FROM json_each(source_ids) WHERE value = ?1
+             )
+             ORDER BY id ASC";
+
+        let mut stmt = conn.prepare(sql)
+            .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let observations: Vec<Observation> = stmt
+            .query_map(params![observation_id], row_to_observation)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(observations)
     }
 
-    async fn get_parents(&self, _observation_id: i64) -> Result<Vec<Observation>> {
-        Ok(vec![])
+    async fn get_parents(&self, observation_id: i64) -> Result<Vec<Observation>> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        // Get the observation's source_ids, then fetch all those observations.
+        let source_ids_str: String = match conn.query_row(
+            "SELECT source_ids FROM observations WHERE id = ?1",
+            params![observation_id],
+            |row| row.get(0),
+        ) {
+            Ok(s) => s,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(vec![]),
+            Err(e) => return Err(MemoryError::Database(e.to_string())),
+        };
+
+        let source_ids: Vec<i64> = serde_json::from_str(&source_ids_str).unwrap_or_default();
+
+        if source_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build parameterized IN clause
+        let placeholders: String = source_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT id, workspace, observer_peer_id, observed_peer_id, chat_id, level, content,
+              category, confidence, source, source_ids, message_ids, times_derived,
+              is_archived, archived_at, created_at, updated_at
+             FROM observations WHERE id IN ({placeholders}) ORDER BY id ASC"
+        );
+
+        let mut stmt = conn.prepare(&sql)
+            .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            source_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|b| b.as_ref()).collect();
+
+        let observations: Vec<Observation> = stmt
+            .query_map(params_refs.as_slice(), row_to_observation)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(observations)
     }
 
-    // --- Queue (stubs) ---
+    // --- Queue ---
 
-    async fn enqueue(&self, _task: QueueTask) -> Result<QueueItem> {
-        Err(MemoryError::Database("queue not implemented".to_string()))
+    async fn enqueue(&self, task: QueueTask) -> Result<QueueItem> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        let payload_str = serde_json::to_string(&task.payload)
+            .map_err(|e| MemoryError::Serialization(e.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO observation_queue
+             (task_type, workspace, chat_id, observer_peer_id, observed_peer_id,
+              payload, processed, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
+            params![
+                task.task_type,
+                task.workspace,
+                task.chat_id,
+                task.observer_peer_id,
+                task.observed_peer_id,
+                payload_str,
+                now,
+            ],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let id = conn.last_insert_rowid();
+
+        let item = conn.query_row(
+            "SELECT id, task_type, workspace, chat_id, observer_peer_id, observed_peer_id,
+              payload, created_at
+             FROM observation_queue WHERE id = ?1",
+            params![id],
+            row_to_queue_item,
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        Ok(item)
     }
 
-    async fn dequeue(&self, _limit: i64) -> Result<Vec<QueueItem>> {
-        Ok(vec![])
+    async fn dequeue(&self, limit: i64) -> Result<Vec<QueueItem>> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, task_type, workspace, chat_id, observer_peer_id, observed_peer_id,
+              payload, created_at
+             FROM observation_queue
+             WHERE processed = 0
+             ORDER BY id ASC
+             LIMIT ?1",
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let items: Vec<QueueItem> = stmt
+            .query_map(params![limit], row_to_queue_item)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(items)
     }
 
-    async fn ack_queue_item(&self, _id: i64) -> Result<()> {
+    async fn ack_queue_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE observation_queue SET processed = 1, processed_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
         Ok(())
     }
 
-    async fn nack_queue_item(&self, _id: i64) -> Result<()> {
+    async fn nack_queue_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        // Re-enqueue: clear processed flag and processed_at so item will be picked up again.
+        conn.execute(
+            "UPDATE observation_queue SET processed = 0, processed_at = NULL WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
         Ok(())
     }
 
-    // --- Findings (stubs) ---
+    // --- Findings ---
 
     async fn save_finding(&self, finding: Finding) -> Result<Finding> {
-        Ok(finding)
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO findings (orchestration_id, run_id, finding, category, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                finding.orchestration_id,
+                finding.run_id,
+                finding.finding,
+                finding.category,
+                now,
+            ],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let id = conn.last_insert_rowid();
+
+        let saved = conn.query_row(
+            "SELECT id, orchestration_id, run_id, finding, category, created_at
+             FROM findings WHERE id = ?1",
+            params![id],
+            row_to_finding,
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        Ok(saved)
     }
 
     async fn list_findings(
         &self,
-        _orchestration_id: &str,
-        _limit: i64,
-        _offset: i64,
+        orchestration_id: &str,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<Finding>> {
-        Ok(vec![])
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, orchestration_id, run_id, finding, category, created_at
+             FROM findings
+             WHERE orchestration_id = ?1
+             ORDER BY id ASC
+             LIMIT ?2 OFFSET ?3",
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let findings: Vec<Finding> = stmt
+            .query_map(params![orchestration_id, limit, offset], row_to_finding)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(findings)
     }
 
-    // --- Embedding (stubs) ---
+    // --- Embedding ---
 
     async fn store_embedding(&self, _observation_id: i64, _embedding: Vec<f32>) -> Result<()> {
+        // Vector storage not yet wired up; no-op placeholder.
         Ok(())
     }
 
@@ -638,45 +1099,218 @@ impl ObservationStore for SqliteDriver {
         Ok(None)
     }
 
-    // --- Observability (stubs) ---
+    // --- Observability ---
 
     async fn save_deriver_run(&self, run: DeriverRun) -> Result<DeriverRun> {
-        Ok(run)
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO deriver_runs
+             (orchestration_id, workspace, observer_peer_id, observed_peer_id, chat_id,
+              observations_in, observations_out, duration_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                run.orchestration_id,
+                run.workspace,
+                run.observer_peer_id,
+                run.observed_peer_id,
+                run.chat_id,
+                run.observations_in,
+                run.observations_out,
+                run.duration_ms,
+                now,
+            ],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let id = conn.last_insert_rowid();
+
+        let saved = conn.query_row(
+            "SELECT id, orchestration_id, workspace, observer_peer_id, observed_peer_id,
+              chat_id, observations_in, observations_out, duration_ms, created_at
+             FROM deriver_runs WHERE id = ?1",
+            params![id],
+            row_to_deriver_run,
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        Ok(saved)
     }
 
     async fn save_dreamer_run(&self, run: DreamerRun) -> Result<DreamerRun> {
-        Ok(run)
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO dreamer_runs
+             (orchestration_id, workspace, observer_peer_id, observed_peer_id,
+              observations_in, findings_out, duration_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                run.orchestration_id,
+                run.workspace,
+                run.observer_peer_id,
+                run.observed_peer_id,
+                run.observations_in,
+                run.findings_out,
+                run.duration_ms,
+                now,
+            ],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let id = conn.last_insert_rowid();
+
+        let saved = conn.query_row(
+            "SELECT id, orchestration_id, workspace, observer_peer_id, observed_peer_id,
+              observations_in, findings_out, duration_ms, created_at
+             FROM dreamer_runs WHERE id = ?1",
+            params![id],
+            row_to_dreamer_run,
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        Ok(saved)
     }
 
     async fn save_injection_log(&self, log: InjectionLog) -> Result<InjectionLog> {
-        Ok(log)
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO injection_logs
+             (orchestration_id, workspace, chat_id, observer_peer_id, observed_peer_id,
+              observations_injected, token_estimate, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                log.orchestration_id,
+                log.workspace,
+                log.chat_id,
+                log.observer_peer_id,
+                log.observed_peer_id,
+                log.observations_injected,
+                log.token_estimate,
+                now,
+            ],
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let id = conn.last_insert_rowid();
+
+        let saved = conn.query_row(
+            "SELECT id, orchestration_id, workspace, chat_id, observer_peer_id,
+              observed_peer_id, observations_injected, token_estimate, created_at
+             FROM injection_logs WHERE id = ?1",
+            params![id],
+            row_to_injection_log,
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        Ok(saved)
     }
 
     async fn list_deriver_runs(
         &self,
-        _workspace: &str,
-        _limit: i64,
-        _offset: i64,
+        workspace: &str,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<DeriverRun>> {
-        Ok(vec![])
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, orchestration_id, workspace, observer_peer_id, observed_peer_id,
+              chat_id, observations_in, observations_out, duration_ms, created_at
+             FROM deriver_runs
+             WHERE workspace = ?1
+             ORDER BY id DESC
+             LIMIT ?2 OFFSET ?3",
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let runs: Vec<DeriverRun> = stmt
+            .query_map(params![workspace, limit, offset], row_to_deriver_run)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(runs)
     }
 
     async fn list_dreamer_runs(
         &self,
-        _workspace: &str,
-        _limit: i64,
-        _offset: i64,
+        workspace: &str,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<DreamerRun>> {
-        Ok(vec![])
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, orchestration_id, workspace, observer_peer_id, observed_peer_id,
+              observations_in, findings_out, duration_ms, created_at
+             FROM dreamer_runs
+             WHERE workspace = ?1
+             ORDER BY id DESC
+             LIMIT ?2 OFFSET ?3",
+        )
+        .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let runs: Vec<DreamerRun> = stmt
+            .query_map(params![workspace, limit, offset], row_to_dreamer_run)
+            .map_err(|e| MemoryError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(runs)
     }
 
     async fn list_injection_logs(
         &self,
-        _workspace: &str,
-        _chat_id: Option<&str>,
-        _limit: i64,
-        _offset: i64,
+        workspace: &str,
+        chat_id: Option<&str>,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<InjectionLog>> {
-        Ok(vec![])
+        let conn = self.conn.lock().map_err(|e| MemoryError::Database(e.to_string()))?;
+
+        let sql;
+        let logs: Vec<InjectionLog>;
+
+        if let Some(cid) = chat_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, orchestration_id, workspace, chat_id, observer_peer_id,
+                  observed_peer_id, observations_injected, token_estimate, created_at
+                 FROM injection_logs
+                 WHERE workspace = ?1 AND chat_id = ?2
+                 ORDER BY id DESC
+                 LIMIT ?3 OFFSET ?4",
+            )
+            .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+            logs = stmt
+                .query_map(params![workspace, cid, limit, offset], row_to_injection_log)
+                .map_err(|e| MemoryError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+        } else {
+            sql = "SELECT id, orchestration_id, workspace, chat_id, observer_peer_id,
+                  observed_peer_id, observations_injected, token_estimate, created_at
+                 FROM injection_logs
+                 WHERE workspace = ?1
+                 ORDER BY id DESC
+                 LIMIT ?2 OFFSET ?3"
+                .to_string();
+
+            let mut stmt = conn.prepare(&sql)
+                .map_err(|e| MemoryError::Database(e.to_string()))?;
+
+            logs = stmt
+                .query_map(params![workspace, limit, offset], row_to_injection_log)
+                .map_err(|e| MemoryError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+        }
+
+        Ok(logs)
     }
 }

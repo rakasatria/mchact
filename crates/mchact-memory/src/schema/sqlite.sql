@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS observations (
     workspace TEXT DEFAULT 'default',
     observer_peer_id INTEGER REFERENCES peers(id),
     observed_peer_id INTEGER REFERENCES peers(id),
-    chat_id INTEGER,
+    chat_id TEXT,
     level TEXT,
     content TEXT,
     category TEXT,
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS observation_queue (
     id INTEGER PRIMARY KEY,
     task_type TEXT,
     workspace TEXT,
-    chat_id INTEGER,
+    chat_id TEXT,
     observer_peer_id INTEGER,
     observed_peer_id INTEGER,
     payload TEXT,
@@ -94,39 +94,39 @@ CREATE INDEX IF NOT EXISTS idx_findings_orch ON findings(orchestration_id);
 -- Deriver runs table
 CREATE TABLE IF NOT EXISTS deriver_runs (
     id INTEGER PRIMARY KEY,
-    chat_id INTEGER,
+    orchestration_id TEXT,
     workspace TEXT,
-    started_at TEXT,
-    finished_at TEXT,
-    messages_processed INTEGER,
-    explicit_count INTEGER,
-    deductive_count INTEGER,
-    skipped_count INTEGER,
-    error_text TEXT
+    observer_peer_id INTEGER,
+    observed_peer_id INTEGER,
+    chat_id TEXT,
+    observations_in INTEGER DEFAULT 0,
+    observations_out INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TEXT
 );
 
 -- Dreamer runs table
 CREATE TABLE IF NOT EXISTS dreamer_runs (
     id INTEGER PRIMARY KEY,
+    orchestration_id TEXT,
     workspace TEXT,
     observer_peer_id INTEGER,
     observed_peer_id INTEGER,
-    deductions_created INTEGER,
-    inductions_created INTEGER,
-    contradictions_found INTEGER,
-    consolidated INTEGER,
-    peer_card_updated INTEGER,
-    run_at TEXT
+    observations_in INTEGER DEFAULT 0,
+    findings_out INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TEXT
 );
 
 -- Injection logs table
 CREATE TABLE IF NOT EXISTS injection_logs (
     id INTEGER PRIMARY KEY,
-    chat_id INTEGER,
-    created_at TEXT,
-    retrieval_method TEXT,
-    candidate_count INTEGER,
-    selected_count INTEGER,
-    omitted_count INTEGER,
-    tokens_est INTEGER
+    orchestration_id TEXT,
+    workspace TEXT,
+    chat_id TEXT,
+    observer_peer_id INTEGER,
+    observed_peer_id INTEGER,
+    observations_injected INTEGER DEFAULT 0,
+    token_estimate INTEGER DEFAULT 0,
+    created_at TEXT
 );
