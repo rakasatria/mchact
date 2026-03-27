@@ -36,6 +36,30 @@ pub trait ChannelAdapter: Send + Sync {
     ) -> Result<String, String> {
         Err(format!("attachments not supported for {}", self.name()))
     }
+
+    /// Send a voice message. Default: falls back to send_attachment.
+    async fn send_voice(
+        &self,
+        external_chat_id: &str,
+        audio_path: &Path,
+        _duration_secs: Option<u32>,
+        caption: Option<&str>,
+    ) -> Result<String, String> {
+        self.send_attachment(external_chat_id, audio_path, caption)
+            .await
+    }
+
+    /// Send a video message. Default: falls back to send_attachment.
+    async fn send_video(
+        &self,
+        external_chat_id: &str,
+        video_path: &Path,
+        caption: Option<&str>,
+        _duration_secs: Option<u32>,
+    ) -> Result<String, String> {
+        self.send_attachment(external_chat_id, video_path, caption)
+            .await
+    }
 }
 
 #[derive(Default)]

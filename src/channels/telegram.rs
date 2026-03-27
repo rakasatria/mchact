@@ -283,6 +283,80 @@ impl ChannelAdapter for TelegramAdapter {
             None => format!("[attachment:{}]", file_path.display()),
         })
     }
+
+    async fn send_voice(
+        &self,
+        external_chat_id: &str,
+        audio_path: &Path,
+        duration_secs: Option<u32>,
+        caption: Option<&str>,
+    ) -> Result<String, String> {
+        let (telegram_chat_id, thread_id) =
+            Self::parse_telegram_external_chat_id(external_chat_id)?;
+
+        let (caption_for_attachment, overflow_text) = Self::split_telegram_caption(caption);
+
+        let mut req = self
+            .bot
+            .send_voice(telegram_chat_id, InputFile::file(audio_path));
+        if let Some(tid) = thread_id {
+            req = req.message_thread_id(tid);
+        }
+        if let Some(c) = &caption_for_attachment {
+            req = req.caption(c.clone());
+        }
+        if let Some(dur) = duration_secs {
+            req = req.duration(dur);
+        }
+        req.await
+            .map_err(|e| format!("Failed to send Telegram voice: {e}"))?;
+
+        if let Some(extra) = overflow_text {
+            send_response(&self.bot, telegram_chat_id, &extra, thread_id).await;
+        }
+
+        Ok(match caption {
+            Some(c) => format!("[voice:{}] {}", audio_path.display(), c),
+            None => format!("[voice:{}]", audio_path.display()),
+        })
+    }
+
+    async fn send_video(
+        &self,
+        external_chat_id: &str,
+        video_path: &Path,
+        caption: Option<&str>,
+        duration_secs: Option<u32>,
+    ) -> Result<String, String> {
+        let (telegram_chat_id, thread_id) =
+            Self::parse_telegram_external_chat_id(external_chat_id)?;
+
+        let (caption_for_attachment, overflow_text) = Self::split_telegram_caption(caption);
+
+        let mut req = self
+            .bot
+            .send_video(telegram_chat_id, InputFile::file(video_path));
+        if let Some(tid) = thread_id {
+            req = req.message_thread_id(tid);
+        }
+        if let Some(c) = &caption_for_attachment {
+            req = req.caption(c.clone());
+        }
+        if let Some(dur) = duration_secs {
+            req = req.duration(dur);
+        }
+        req.await
+            .map_err(|e| format!("Failed to send Telegram video: {e}"))?;
+
+        if let Some(extra) = overflow_text {
+            send_response(&self.bot, telegram_chat_id, &extra, thread_id).await;
+        }
+
+        Ok(match caption {
+            Some(c) => format!("[video:{}] {}", video_path.display(), c),
+            None => format!("[video:{}]", video_path.display()),
+        })
+    }
 }
 
 /// Escape XML special characters in user-supplied content to prevent prompt injection.
