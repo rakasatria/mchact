@@ -1,4 +1,10 @@
+pub mod deepseek;
+pub mod glm;
 pub mod hermes;
+pub mod kimi;
+pub mod llama;
+pub mod mistral;
+pub mod qwen_coder;
 
 use std::collections::HashMap;
 
@@ -72,9 +78,21 @@ pub struct ParserRegistry {
 
 impl ParserRegistry {
     pub fn new() -> Self {
-        Self {
+        let mut registry = Self {
             parsers: HashMap::new(),
-        }
+        };
+        registry.register(Box::new(hermes::HermesParser));
+        registry.register(Box::new(hermes::LongcatParser));
+        registry.register(Box::new(hermes::QwenParser::new()));
+        registry.register(Box::new(llama::LlamaParser));
+        registry.register(Box::new(mistral::MistralParser));
+        registry.register(Box::new(deepseek::DeepSeekV3Parser));
+        registry.register(Box::new(deepseek::DeepSeekV31Parser));
+        registry.register(Box::new(glm::Glm45Parser));
+        registry.register(Box::new(glm::Glm47Parser));
+        registry.register(Box::new(kimi::KimiK2Parser));
+        registry.register(Box::new(qwen_coder::Qwen3CoderParser));
+        registry
     }
 
     /// Register a parser under all of its declared names.
