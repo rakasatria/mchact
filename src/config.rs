@@ -1348,6 +1348,7 @@ impl Config {
             document_extraction_enabled: default_document_extraction_enabled(),
             observability: None,
             channels: HashMap::new(),
+            memory: mchact_memory::driver::MemoryConfig::default(),
         }
     }
 
