@@ -7,6 +7,11 @@ import {
   UserActionBar,
 } from "@assistant-ui/react-ui";
 import { collectThinkText, extractThinkSegments } from "../lib/text-processing";
+import type { MediaAttachment } from "../lib/types";
+import { ImageViewer } from "./media/image-viewer";
+import { AudioPlayer } from "./media/audio-player";
+import { VideoPlayer } from "./media/video-player";
+import { FilePreview } from "./media/file-preview";
 
 export function MessageTimestamp({ align }: { align: "left" | "right" }) {
   const createdAt = useMessage((m) => m.createdAt);
@@ -43,6 +48,11 @@ export function CustomAssistantMessage() {
       : false,
   );
 
+  const attachments = useMessage((m) => {
+    const meta = (m as { metadata?: Record<string, unknown> }).metadata;
+    return (meta?.attachments as MediaAttachment[] | undefined) ?? [];
+  });
+
   return (
     <AssistantMessage.Root>
       <AssistantMessage.Avatar />
@@ -54,6 +64,26 @@ export function CustomAssistantMessage() {
           <span className="mc-assistant-placeholder-dot" />
           <span className="mc-assistant-placeholder-dot" />
           <span className="mc-assistant-placeholder-text">Thinking</span>
+        </div>
+      )}
+      {attachments.length > 0 && (
+        <div className="mc-attachments">
+          {attachments.map((att, i) => (
+            <div key={i}>
+              {att.type === "image" && <ImageViewer src={att.url} />}
+              {att.type === "audio" && (
+                <AudioPlayer src={att.url} name={att.name} />
+              )}
+              {att.type === "video" && <VideoPlayer src={att.url} />}
+              {att.type === "file" && (
+                <FilePreview
+                  url={att.url}
+                  name={att.name || "file"}
+                  size={att.size}
+                />
+              )}
+            </div>
+          ))}
         </div>
       )}
       {thinkText.trim() ? (

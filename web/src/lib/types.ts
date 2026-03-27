@@ -21,12 +21,21 @@ export type HealthResponse = {
   version?: string;
 };
 
+export type MediaAttachment = {
+  type: "image" | "audio" | "video" | "file";
+  url: string;
+  mime_type?: string;
+  name?: string;
+  size?: number;
+};
+
 export type BackendMessage = {
   id?: string;
   sender_name?: string;
   content?: string;
   is_from_bot?: boolean;
   timestamp?: string;
+  attachments?: MediaAttachment[];
 };
 
 export type ConfigWarning = {

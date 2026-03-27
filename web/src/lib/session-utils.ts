@@ -96,5 +96,8 @@ export function mapBackendHistory(messages: BackendMessage[]): ThreadMessageLike
     role: item.is_from_bot ? "assistant" : "user",
     content: item.content || "",
     createdAt: item.timestamp ? new Date(item.timestamp) : new Date(),
+    ...(item.attachments && item.attachments.length > 0
+      ? { metadata: { attachments: item.attachments } }
+      : {}),
   }));
 }

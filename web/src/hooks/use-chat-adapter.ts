@@ -9,7 +9,11 @@ import type {
 } from "@assistant-ui/react";
 
 import { api, makeHeaders, ApiError } from "../lib/api";
-import type { ToolStartPayload, ToolResultPayload } from "../lib/types";
+import type {
+  ToolStartPayload,
+  ToolResultPayload,
+  MediaAttachment,
+} from "../lib/types";
 import { toJsonObject } from "../lib/text-processing";
 import { extractLatestUserText } from "../lib/session-utils";
 import { parseSseFrames } from "../lib/sse-parser";
@@ -99,6 +103,7 @@ export function useChatAdapter(deps: UseChatAdapterDeps): ChatModelAdapter {
           }
 
           let assistantText = "";
+          const attachments: MediaAttachment[] = [];
           const toolState = new Map<
             string,
             {
@@ -216,6 +221,14 @@ export function useChatAdapter(deps: UseChatAdapterDeps): ChatModelAdapter {
               continue;
             }
 
+            if (event.event === "media") {
+              const attachment = data as MediaAttachment;
+              if (attachment.url && attachment.type) {
+                attachments.push(attachment);
+              }
+              continue;
+            }
+
             if (event.event === "error") {
               const message =
                 typeof data.error === "string" ? data.error : "stream error";
@@ -224,6 +237,13 @@ export function useChatAdapter(deps: UseChatAdapterDeps): ChatModelAdapter {
 
             if (event.event === "done") {
               setStatusText("Done");
+              if (attachments.length > 0) {
+                const content = makeContent();
+                yield {
+                  ...(content.length > 0 ? { content } : {}),
+                  metadata: { attachments },
+                };
+              }
               break;
             }
           }
