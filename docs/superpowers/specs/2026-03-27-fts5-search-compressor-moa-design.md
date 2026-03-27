@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-27
 **Status:** Approved
-**Scope:** ~1,300 lines across 10 files (5 new, 5 modified)
+**Scope:** ~1,370 lines across 10 files (5 new, 5 modified)
 
 ## Problem
 
@@ -348,17 +348,24 @@ When `subagents_orchestrate` completes (all workers done or timeout), delete fin
 
 ### Feature 5: Mixture of Agents Tool
 
-A dedicated `mixture_of_agents` tool that gives the **same question** to multiple independent agents and synthesizes a consensus answer. Built on top of existing `subagents_orchestrate` infrastructure + Feature 3's shared findings.
+A dedicated `mixture_of_agents` tool that gives the **same question** to multiple independent agents and synthesizes a consensus answer. Combines Hermes' proven pattern (model diversity, resilience) with MicroClaw's strengths (tool-equipped sub-agents, shared findings).
 
 #### How It Differs From `subagents_orchestrate`
 
 | | `subagents_orchestrate` | `mixture_of_agents` |
 |---|---|---|
-| Input | `goal` + `work_packages[]` (different tasks) | `question` (one shared task) |
+| Input | `goal` + `work_packages[]` (different tasks) | `user_prompt` (one shared task) |
 | Workers | Each gets a different package | All get the same question |
-| Approach diversity | Implicit (different tasks) | Explicit (different prompts/perspectives) |
+| Diversity | Implicit (different tasks) | Model diversity + perspective prompts |
 | Merge | Concatenate artifacts | LLM-synthesized consensus |
+| Failure tolerance | All must complete for merge | Min 1 out of N must succeed |
 | Output | Raw merged JSON | Single natural-language answer |
+
+#### Two Modes
+
+**Simple mode** (like Hermes): Just pass `user_prompt`. Workers use different models if `provider_presets` are configured, or different perspective prompts on the same model.
+
+**Advanced mode**: Pass `user_prompt` + `approach_hints` + `model_overrides` for full control over which model tackles which perspective.
 
 #### Tool Definition
 
@@ -373,29 +380,44 @@ pub struct MixtureOfAgentsTool {
 ```
 
 **Tool schema input:**
-- `question` (string, required) — the question or task all agents tackle
+- `user_prompt` (string, required) — the question or task all agents tackle
 - `perspectives` (integer, optional, default 3, max 5) — number of independent agents
 - `approach_hints` (string[], optional) — explicit perspective labels, e.g. `["security expert", "performance engineer", "user experience"]`
+- `model_overrides` (string[], optional) — per-worker model or provider_preset names, e.g. `["anthropic/claude-sonnet", "openai/gpt-5", "deepseek/deepseek-v3"]`. Uses configured default model when not specified.
 - `wait_timeout_secs` (integer, optional, default 120, max 300)
 - `token_budget_total` (integer, optional, default from config)
+- `min_successful` (integer, optional, default 1) — minimum workers that must succeed before synthesis
 
 **Execute flow:**
 
-1. **Generate diverse prompts.** If `approach_hints` provided, use them. Otherwise, auto-generate N perspectives:
+1. **Resolve diversity strategy.**
+   - If `model_overrides` provided: each worker uses a different model (Hermes-style model diversity)
+   - If `approach_hints` provided: each worker gets a different perspective prompt
+   - If neither: auto-generate N perspective prompts (default diversity)
+   - Both can be combined: different models AND different perspectives
+
+2. **Auto-generate perspectives** (when no `approach_hints`):
    ```
-   Perspective 1: "Analyze this as a pragmatic engineer focused on simplicity."
-   Perspective 2: "Analyze this as a skeptic looking for edge cases and risks."
-   Perspective 3: "Analyze this as an architect focused on long-term maintainability."
+   Perspective 1: "Analyze this as a pragmatic engineer focused on simplicity and correctness."
+   Perspective 2: "Analyze this as a skeptic looking for edge cases, failure modes, and risks."
+   Perspective 3: "Analyze this as an architect focused on long-term maintainability and scalability."
    ```
 
-2. **Spawn workers via `subagents_orchestrate` internally.** Each work_package is the same `question` but with a different perspective prefix in the context:
+   | Count | Perspectives |
+   |-------|-------------|
+   | 2 | Pragmatic engineer, Skeptic/edge-cases |
+   | 3 | Pragmatic engineer, Skeptic/edge-cases, Architect/long-term |
+   | 4 | + Security/risk analyst |
+   | 5 | + User/stakeholder advocate |
+
+3. **Spawn workers via `subagents_orchestrate` internally.** Each work_package is the same `user_prompt` with a perspective prefix in the context. If `model_overrides` are specified, each worker's sub-agent gets a model override:
    ```json
    {
      "goal": "Answer this question from multiple perspectives and synthesize",
      "work_packages": [
-       "PERSPECTIVE: pragmatic engineer\nQUESTION: {question}",
-       "PERSPECTIVE: skeptic / edge cases\nQUESTION: {question}",
-       "PERSPECTIVE: architect / long-term\nQUESTION: {question}"
+       "PERSPECTIVE: pragmatic engineer\nQUESTION: {user_prompt}",
+       "PERSPECTIVE: skeptic / edge cases\nQUESTION: {user_prompt}",
+       "PERSPECTIVE: architect / long-term\nQUESTION: {user_prompt}"
      ],
      "wait": true,
      "wait_timeout_secs": timeout,
@@ -403,42 +425,72 @@ pub struct MixtureOfAgentsTool {
    }
    ```
 
-3. **Workers execute independently.** Each can:
+4. **Workers execute independently.** Each sub-agent can:
    - Use `session_search` to find relevant past context
    - Use `findings_write` / `findings_read` to share discoveries with siblings
+   - Use tools (bash, file I/O, web) if the question requires research
    - Return their perspective's answer as an artifact
 
-4. **Synthesize consensus.** After all workers complete, make one final LLM call to aggregate:
+5. **Check minimum success threshold.** If fewer than `min_successful` workers completed successfully, return an error with partial results rather than attempting synthesis. Default threshold is 1 (matches Hermes — up to N-1 can fail).
+
+6. **Synthesize consensus.** Make one final LLM call with the aggregator prompt:
    ```
-   You received answers to the same question from {N} independent perspectives:
+   You have been provided with responses from {N} independent perspectives
+   to the same question. Your task is to synthesize these into a single,
+   high-quality response. Critically evaluate the information — some may be
+   biased or incorrect. Do not simply replicate the answers but offer a
+   refined, accurate, and comprehensive reply.
 
-   ## Perspective 1: Pragmatic Engineer
-   {worker_1_result}
+   Responses:
+   1. [Pragmatic Engineer]: {worker_1_result}
+   2. [Skeptic]: {worker_2_result}
+   3. [Architect]: {worker_3_result}
 
-   ## Perspective 2: Skeptic
-   {worker_2_result}
-
-   ## Perspective 3: Architect
-   {worker_3_result}
-
-   Synthesize these into a single answer that:
+   Synthesize into a single answer that:
    - Identifies points of agreement (high confidence)
    - Notes disagreements and which perspective is most convincing
    - Provides a final recommended answer
    ```
 
-5. **Return synthesized answer** as `ToolResult::success`.
+7. **Return synthesized answer** as `ToolResult::success` with metadata:
+   ```json
+   {
+     "success": true,
+     "response": "synthesized answer text",
+     "models_used": ["model_a", "model_b", "model_c"],
+     "perspectives_used": ["pragmatic", "skeptic", "architect"],
+     "successful_count": 3,
+     "failed_count": 0
+   }
+   ```
 
-#### Default Perspectives
+#### Resilience (from Hermes)
 
-When no `approach_hints` provided, use these based on `perspectives` count:
+- **Min success threshold**: Only `min_successful` (default 1) workers need to succeed. Failed workers are logged but don't block synthesis.
+- **Retry handling**: Sub-agent infrastructure already handles retries at the tool execution level. No additional retry loop needed at MoA level.
+- **Graceful degradation**: If only 1 out of 3 workers succeeds, synthesis still runs but notes limited perspectives in the output.
+- **Timeout**: `wait_timeout_secs` (default 120) passed to `subagents_orchestrate`. Timed-out workers excluded from synthesis.
 
-| Count | Perspectives |
-|-------|-------------|
-| 2 | Pragmatic engineer, Skeptic/edge-cases |
-| 3 | Pragmatic engineer, Skeptic/edge-cases, Architect/long-term |
-| 4 | + Security/risk analyst |
-| 5 | + User/stakeholder advocate |
+#### Model Diversity via `provider_presets`
+
+MicroClaw already supports `provider_presets` in config:
+```yaml
+provider_presets:
+  claude:
+    provider: "anthropic"
+    api_key: "sk-..."
+    default_model: "claude-sonnet-4-5"
+  gpt:
+    provider: "openai"
+    api_key: "sk-..."
+    default_model: "gpt-5.2"
+  deepseek:
+    provider: "deepseek"
+    api_key: "sk-..."
+    default_model: "deepseek-v3"
+```
+
+When `model_overrides: ["claude", "gpt", "deepseek"]` is passed, each sub-agent resolves the preset and uses that provider/model combination. This gives Hermes-style multi-model diversity without hardcoding model names.
 
 #### Registration
 
@@ -447,9 +499,10 @@ Registered in `ToolRegistry::new()` (main agent only). Not available to sub-agen
 #### Cost Control
 
 - Each perspective runs within `token_budget_total / perspectives` budget
-- Synthesis call is a single LLM call (~2K tokens input for 3 perspectives)
+- Synthesis call is a single LLM call (~2-4K tokens input for 3 perspectives)
 - Total cost: roughly `(perspectives + 1)` LLM calls per invocation
-- For 3 perspectives: ~4 LLM calls total
+- For 3 perspectives with default model: ~4 LLM calls total
+- Tool description warns "use sparingly for genuinely difficult problems" (same as Hermes)
 
 ---
 
@@ -571,7 +624,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 | `src/tools/session_search.rs` | SessionSearchTool | 200 |
 | `src/compressor.rs` | 5-phase ContextCompressor | 350 |
 | `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool | 150 |
-| `src/tools/mixture_of_agents.rs` | MixtureOfAgentsTool | 180 |
+| `src/tools/mixture_of_agents.rs` | MixtureOfAgentsTool (simple + advanced modes) | 250 |
 
 ### Modified files (5)
 
