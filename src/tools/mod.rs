@@ -10,6 +10,7 @@ pub mod grep;
 pub mod mcp;
 pub mod memory;
 pub mod mixture_of_agents;
+pub mod read_document;
 pub mod read_file;
 pub mod schedule;
 pub mod send_message;
@@ -278,6 +279,14 @@ impl ToolRegistry {
             )));
             tools.push(Box::new(crate::clawhub::tools::ClawHubInstallTool::new(
                 config,
+            )));
+        }
+
+        // Add document extraction tool if enabled
+        if config.document_extraction_enabled {
+            tools.push(Box::new(read_document::ReadDocumentTool::new(
+                db.clone(),
+                config.control_chat_ids.clone(),
             )));
         }
 
