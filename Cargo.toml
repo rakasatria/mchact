@@ -1,40 +1,40 @@
 [workspace]
 members = [
     ".",
-    "crates/microclaw-core",
-    "crates/microclaw-clawhub",
-    "crates/microclaw-storage",
-    "crates/microclaw-tools",
-    "crates/microclaw-channels",
-    "crates/microclaw-app",
-    "crates/microclaw-observability",
+    "crates/mchact-core",
+    "crates/mchact-clawhub",
+    "crates/mchact-storage",
+    "crates/mchact-tools",
+    "crates/mchact-channels",
+    "crates/mchact-app",
+    "crates/mchact-observability",
     "crates/mchact-memory",
-    "crates/microclaw-media",
+    "crates/mchact-media",
 ]
 resolver = "2"
 
 [package]
-name = "microclaw"
+name = "mchact"
 version = "0.1.30"
 edition = "2021"
 license = "MIT"
-default-run = "microclaw"
+default-run = "mchact"
 
 [features]
 default = []
-sqlite-vec = ["microclaw-storage/sqlite-vec"]
-journald = ["microclaw-app/journald"]
+sqlite-vec = ["mchact-storage/sqlite-vec"]
+journald = ["mchact-app/journald"]
 
 [dependencies]
 mchact-memory = { version = "0.1.0", path = "crates/mchact-memory" }
-microclaw-core = { version = "0.1.0", path = "crates/microclaw-core" }
-microclaw-clawhub = { version = "0.1.0", path = "crates/microclaw-clawhub" }
-microclaw-storage = { version = "0.1.0", path = "crates/microclaw-storage" }
-microclaw-tools = { version = "0.1.0", path = "crates/microclaw-tools" }
-microclaw-channels = { version = "0.1.0", path = "crates/microclaw-channels" }
-microclaw-app = { version = "0.1.0", path = "crates/microclaw-app" }
-microclaw-observability = { version = "0.1.0", path = "crates/microclaw-observability" }
-microclaw-media = { version = "0.1.0", path = "crates/microclaw-media" }
+mchact-core = { version = "0.1.0", path = "crates/mchact-core" }
+mchact-clawhub = { version = "0.1.0", path = "crates/mchact-clawhub" }
+mchact-storage = { version = "0.1.0", path = "crates/mchact-storage" }
+mchact-tools = { version = "0.1.0", path = "crates/mchact-tools" }
+mchact-channels = { version = "0.1.0", path = "crates/mchact-channels" }
+mchact-app = { version = "0.1.0", path = "crates/mchact-app" }
+mchact-observability = { version = "0.1.0", path = "crates/mchact-observability" }
+mchact-media = { version = "0.1.0", path = "crates/mchact-media" }
 teloxide = { version = "0.17", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tokio-native-tls = "0.3"
@@ -87,6 +87,7 @@ rmcp = { version = "1.2", features = [
 ] }
 shellexpand = "3.1.2"
 qrcode = "0.14"
+rand = "0.8"
 
 [dev-dependencies]
 tower = "0.5"

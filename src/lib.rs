@@ -4,6 +4,7 @@ pub mod acp_subagent;
 pub mod agent_engine;
 pub mod channels;
 pub mod compressor;
+pub mod distributions;
 pub mod chat_commands;
 pub mod clawhub;
 pub mod codex_auth;
@@ -29,18 +30,18 @@ pub mod web;
 
 pub use channels::discord;
 pub use channels::telegram;
-pub use microclaw_app::builtin_skills;
-pub use microclaw_app::logging;
-pub use microclaw_app::transcribe;
-pub use microclaw_channels::channel;
-pub use microclaw_channels::channel_adapter;
-pub use microclaw_core::error;
-pub use microclaw_core::llm_types;
-pub use microclaw_core::text;
-pub use microclaw_storage::db;
-pub use microclaw_storage::memory;
-pub use microclaw_storage::memory_quality;
-pub use microclaw_tools::sandbox;
+pub use mchact_app::builtin_skills;
+pub use mchact_app::logging;
+pub use mchact_app::transcribe;
+pub use mchact_channels::channel;
+pub use mchact_channels::channel_adapter;
+pub use mchact_core::error;
+pub use mchact_core::llm_types;
+pub use mchact_core::text;
+pub use mchact_storage::db;
+pub use mchact_storage::memory;
+pub use mchact_storage::memory_quality;
+pub use mchact_tools::sandbox;
 
 #[cfg(test)]
 pub mod test_support {
