@@ -151,7 +151,7 @@ async fn start_stream_run_internal(
                                     json!({
                                         "name": name,
                                         "is_error": is_error,
-                                        "preview": preview,
+                                        "preview": preview.clone(),
                                         "duration_ms": duration_ms,
                                         "status_code": status_code,
                                         "bytes": bytes,
@@ -161,6 +161,20 @@ async fn start_stream_run_internal(
                                     run_history_limit,
                                 )
                                 .await;
+
+                            // Emit media SSE events for any file paths in the preview
+                            if !is_error {
+                                for media_evt in super::extract_media_events(&preview) {
+                                    run_hub
+                                        .publish(
+                                            &run_id_for_events,
+                                            "media",
+                                            media_evt,
+                                            run_history_limit,
+                                        )
+                                        .await;
+                                }
+                            }
                         }
                         AgentEvent::TextDelta { delta } => {
                             run_hub

@@ -1851,6 +1851,239 @@ async fn send_and_store_response_with_events(
     })))
 }
 
+/// Returns the MIME type string for a given file extension.
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext.to_lowercase().as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "avi" => "video/x-msvideo",
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "wav" => "audio/wav",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "opus" => "audio/opus",
+        "m4a" => "audio/mp4",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Returns the media type category ("image", "audio", "video", or "file") for a MIME type.
+fn media_category_for_mime(mime: &str) -> &'static str {
+    if mime.starts_with("image/") {
+        "image"
+    } else if mime.starts_with("audio/") {
+        "audio"
+    } else if mime.starts_with("video/") {
+        "video"
+    } else {
+        "file"
+    }
+}
+
+/// Scans a tool-result preview string for file paths under `media/` or `uploads/`
+/// directories and returns serialised JSON strings ready to publish as `media` SSE events.
+pub(super) fn extract_media_events(preview: &str) -> Vec<String> {
+    let mut events = Vec::new();
+    // Match bare filenames like `media/foo.png` or `uploads/bar.mp4`
+    // as well as absolute paths containing those segments.
+    let pattern = regex::Regex::new(r#"(?:media|uploads)/([^\s"',\)\]]+\.[A-Za-z0-9]{2,6})"#)
+        .expect("static regex is valid");
+    for cap in pattern.captures_iter(preview) {
+        let filename = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+        if filename.is_empty() {
+            continue;
+        }
+        let ext = std::path::Path::new(&filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let mime = mime_for_ext(ext);
+        let media_type = media_category_for_mime(mime);
+        let url = format!("/api/media/{filename}");
+        let payload = serde_json::json!({
+            "type": media_type,
+            "url": url,
+            "name": filename,
+            "mime_type": mime,
+        })
+        .to_string();
+        events.push(payload);
+    }
+    events
+}
+
+async fn api_upload(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    mut multipart: axum::extract::Multipart,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    // Find the `file` field in the multipart form
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut original_filename: Option<String> = None;
+    let mut content_type_header: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("multipart error: {e}"),
+        )
+    })? {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "file" {
+            original_filename = field.file_name().map(|s| s.to_string());
+            content_type_header = field.content_type().map(|s| s.to_string());
+            let data = field.bytes().await.map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("failed to read file field: {e}"),
+                )
+            })?;
+            file_bytes = Some(data.to_vec());
+            break;
+        }
+    }
+
+    let file_bytes = file_bytes.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "no `file` field in multipart form".to_string(),
+        )
+    })?;
+
+    let size = file_bytes.len();
+
+    // Determine extension and MIME type
+    let ext = original_filename
+        .as_deref()
+        .and_then(|name| std::path::Path::new(name).extension())
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+
+    let mime_type = if let Some(ref ct) = content_type_header {
+        // Trust the content-type header if provided and non-generic
+        if ct != "application/octet-stream" {
+            ct.clone()
+        } else if let Some(ref e) = ext {
+            mime_for_ext(e).to_string()
+        } else {
+            "application/octet-stream".to_string()
+        }
+    } else if let Some(ref e) = ext {
+        mime_for_ext(e).to_string()
+    } else {
+        "application/octet-stream".to_string()
+    };
+
+    // Build output extension from mime or original ext
+    let out_ext = ext.unwrap_or_else(|| {
+        match mime_type.as_str() {
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "video/mp4" => "mp4",
+            "video/webm" => "webm",
+            "audio/mpeg" => "mp3",
+            "audio/ogg" => "ogg",
+            "audio/wav" => "wav",
+            "audio/opus" => "opus",
+            "application/pdf" => "pdf",
+            _ => "bin",
+        }
+        .to_string()
+    });
+
+    let media_id = format!("{}.{}", uuid::Uuid::new_v4(), out_ext);
+
+    let uploads_dir = state.app_state.config.data_root_dir().join("uploads");
+    tokio::fs::create_dir_all(&uploads_dir)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to create uploads dir: {e}")))?;
+
+    let dest = uploads_dir.join(&media_id);
+    tokio::fs::write(&dest, &file_bytes)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to write file: {e}")))?;
+
+    info!(
+        target: "web",
+        media_id = %media_id,
+        mime_type = %mime_type,
+        size,
+        "Uploaded file"
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "media_id": media_id,
+        "mime_type": mime_type,
+        "size": size,
+    })))
+}
+
+async fn api_media(
+    State(state): State<WebState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // Sanitise: reject path traversal
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return (StatusCode::BAD_REQUEST, HeaderMap::new(), axum::body::Bytes::new());
+    }
+
+    let data_root = state.app_state.config.data_root_dir();
+    let candidates = [
+        data_root.join("media").join(&id),
+        data_root.join("uploads").join(&id),
+    ];
+
+    let mut found: Option<std::path::PathBuf> = None;
+    for candidate in &candidates {
+        if candidate.exists() {
+            found = Some(candidate.clone());
+            break;
+        }
+    }
+
+    let Some(path) = found else {
+        return (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new());
+    };
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let mime = mime_for_ext(ext);
+
+    match tokio::fs::read(&path).await {
+        Ok(data) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static(mime),
+            );
+            (StatusCode::OK, headers, axum::body::Bytes::from(data))
+        }
+        Err(e) => {
+            error!(target: "web", path = %path.display(), error = %e, "Failed to read media file");
+            (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new())
+        }
+    }
+}
+
 async fn api_audit_logs(
     headers: HeaderMap,
     State(state): State<WebState>,
@@ -2065,6 +2298,8 @@ fn build_router(web_state: WebState) -> Router {
             "/api/mcp/config",
             get(mcp::api_get_mcp_config).put(mcp::api_put_mcp_config),
         )
+        .route("/api/upload", post(api_upload))
+        .route("/api/media/:id", get(api_media))
         .with_state(web_state)
 }
 
