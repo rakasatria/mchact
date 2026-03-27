@@ -213,7 +213,20 @@ pub struct Finding {
     pub created_at: String,
 }
 
-const SCHEMA_VERSION_CURRENT: i64 = 20;
+#[derive(Debug, Clone)]
+pub struct DocumentExtraction {
+    pub id: i64,
+    pub chat_id: i64,
+    pub file_hash: String,
+    pub filename: String,
+    pub mime_type: Option<String>,
+    pub file_size: i64,
+    pub extracted_text: String,
+    pub char_count: i64,
+    pub created_at: String,
+}
+
+const SCHEMA_VERSION_CURRENT: i64 = 21;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -920,6 +933,28 @@ fn apply_schema_migrations(conn: &Connection) -> Result<(), MicroClawError> {
         set_schema_version(conn, 20)?;
         version = 20;
     }
+    if version < 21 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS document_extractions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER NOT NULL,
+                file_hash TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                mime_type TEXT,
+                file_size INTEGER,
+                extracted_text TEXT NOT NULL,
+                extraction_method TEXT DEFAULT 'kreuzberg',
+                char_count INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(chat_id, file_hash)
+            );
+            CREATE INDEX IF NOT EXISTS idx_doc_extractions_chat
+                ON document_extractions(chat_id);
+            ",
+        )?;
+        set_schema_version(conn, 21)?;
+        version = 21;
+    }
     if version != SCHEMA_VERSION_CURRENT {
         set_schema_version(conn, SCHEMA_VERSION_CURRENT)?;
     }
@@ -1454,6 +1489,130 @@ impl Database {
             params![orchestration_id],
         )?;
         Ok(affected)
+    }
+
+    pub fn get_document_extraction(
+        &self,
+        chat_id: i64,
+        file_hash: &str,
+    ) -> Result<Option<DocumentExtraction>, MicroClawError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
+                    extracted_text, char_count, created_at
+             FROM document_extractions
+             WHERE chat_id = ?1 AND file_hash = ?2",
+        )?;
+        let result = stmt
+            .query_row(params![chat_id, file_hash], |row| {
+                Ok(DocumentExtraction {
+                    id: row.get(0)?,
+                    chat_id: row.get(1)?,
+                    file_hash: row.get(2)?,
+                    filename: row.get(3)?,
+                    mime_type: row.get(4)?,
+                    file_size: row.get(5)?,
+                    extracted_text: row.get(6)?,
+                    char_count: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn insert_document_extraction(
+        &self,
+        chat_id: i64,
+        file_hash: &str,
+        filename: &str,
+        mime_type: Option<&str>,
+        file_size: i64,
+        extracted_text: &str,
+    ) -> Result<i64, MicroClawError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        let char_count = extracted_text.len() as i64;
+        conn.execute(
+            "INSERT OR REPLACE INTO document_extractions
+             (chat_id, file_hash, filename, mime_type, file_size, extracted_text, char_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![chat_id, file_hash, filename, mime_type, file_size, extracted_text, char_count, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn search_document_extractions(
+        &self,
+        chat_id: Option<i64>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<DocumentExtraction>, MicroClawError> {
+        let conn = self.lock_conn();
+        let pattern = format!("%{}%", query.replace('%', "\\%"));
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
+                    extracted_text, char_count, created_at
+             FROM document_extractions
+             WHERE (?1 IS NULL OR chat_id = ?1)
+               AND LOWER(extracted_text) LIKE LOWER(?2)
+             ORDER BY created_at DESC
+             LIMIT ?3",
+        )?;
+        let chat_id_param: Option<i64> = chat_id;
+        let limit_param = limit as i64;
+        let rows = stmt.query_map(params![chat_id_param, pattern, limit_param], |row| {
+            Ok(DocumentExtraction {
+                id: row.get(0)?,
+                chat_id: row.get(1)?,
+                file_hash: row.get(2)?,
+                filename: row.get(3)?,
+                mime_type: row.get(4)?,
+                file_size: row.get(5)?,
+                extracted_text: row.get(6)?,
+                char_count: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn list_document_extractions(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<DocumentExtraction>, MicroClawError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
+                    extracted_text, char_count, created_at
+             FROM document_extractions
+             WHERE chat_id = ?1
+             ORDER BY created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![chat_id, limit as i64], |row| {
+            Ok(DocumentExtraction {
+                id: row.get(0)?,
+                chat_id: row.get(1)?,
+                file_hash: row.get(2)?,
+                filename: row.get(3)?,
+                mime_type: row.get(4)?,
+                file_size: row.get(5)?,
+                extracted_text: row.get(6)?,
+                char_count: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
     }
 
     pub fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MicroClawError> {
