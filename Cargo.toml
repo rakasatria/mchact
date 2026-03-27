@@ -8,6 +8,7 @@ members = [
     "crates/microclaw-channels",
     "crates/microclaw-app",
     "crates/microclaw-observability",
+    "crates/mchact-memory",
 ]
 resolver = "2"
 
