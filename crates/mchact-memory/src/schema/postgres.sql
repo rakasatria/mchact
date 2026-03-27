@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS observations (
     workspace TEXT DEFAULT 'default',
     observer_peer_id BIGINT REFERENCES peers(id),
     observed_peer_id BIGINT REFERENCES peers(id),
-    chat_id BIGINT,
+    chat_id TEXT,
     level TEXT,
     content TEXT,
     category TEXT,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS observations (
     is_archived BOOLEAN DEFAULT false,
     archived_at TIMESTAMPTZ,
     embedding vector(1536),
-    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS observation_queue (
     id BIGSERIAL PRIMARY KEY,
     task_type TEXT,
     workspace TEXT,
-    chat_id BIGINT,
+    chat_id TEXT,
     observer_peer_id BIGINT,
     observed_peer_id BIGINT,
     payload JSONB,
@@ -78,39 +78,39 @@ CREATE INDEX IF NOT EXISTS idx_findings_orch ON findings(orchestration_id);
 -- Deriver runs table
 CREATE TABLE IF NOT EXISTS deriver_runs (
     id BIGSERIAL PRIMARY KEY,
-    chat_id BIGINT,
+    orchestration_id TEXT,
     workspace TEXT,
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    messages_processed INTEGER,
-    explicit_count INTEGER,
-    deductive_count INTEGER,
-    skipped_count INTEGER,
-    error_text TEXT
+    observer_peer_id BIGINT,
+    observed_peer_id BIGINT,
+    chat_id TEXT,
+    observations_in BIGINT DEFAULT 0,
+    observations_out BIGINT DEFAULT 0,
+    duration_ms BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Dreamer runs table
 CREATE TABLE IF NOT EXISTS dreamer_runs (
     id BIGSERIAL PRIMARY KEY,
+    orchestration_id TEXT,
     workspace TEXT,
     observer_peer_id BIGINT,
     observed_peer_id BIGINT,
-    deductions_created INTEGER,
-    inductions_created INTEGER,
-    contradictions_found INTEGER,
-    consolidated INTEGER,
-    peer_card_updated INTEGER,
-    run_at TIMESTAMPTZ
+    observations_in BIGINT DEFAULT 0,
+    findings_out BIGINT DEFAULT 0,
+    duration_ms BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Injection logs table
 CREATE TABLE IF NOT EXISTS injection_logs (
     id BIGSERIAL PRIMARY KEY,
-    chat_id BIGINT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    retrieval_method TEXT,
-    candidate_count INTEGER,
-    selected_count INTEGER,
-    omitted_count INTEGER,
-    tokens_est INTEGER
+    orchestration_id TEXT,
+    workspace TEXT,
+    chat_id TEXT,
+    observer_peer_id BIGINT,
+    observed_peer_id BIGINT,
+    observations_injected BIGINT DEFAULT 0,
+    token_estimate BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
