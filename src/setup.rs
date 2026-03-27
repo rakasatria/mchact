@@ -232,6 +232,69 @@ fn subagents_acp_targets_json_key() -> &'static str {
     "SUBAGENTS_ACP_TARGETS_JSON"
 }
 
+// --- Voice & Speech keys ---
+fn tts_enabled_key() -> &'static str {
+    "TTS_ENABLED"
+}
+fn tts_provider_key() -> &'static str {
+    "TTS_PROVIDER"
+}
+fn tts_voice_key() -> &'static str {
+    "TTS_VOICE"
+}
+fn tts_api_key_key() -> &'static str {
+    "TTS_API_KEY"
+}
+fn stt_enabled_key() -> &'static str {
+    "STT_ENABLED"
+}
+fn stt_provider_key() -> &'static str {
+    "STT_PROVIDER"
+}
+fn stt_model_key() -> &'static str {
+    "STT_MODEL"
+}
+
+// --- Media Generation keys ---
+fn image_gen_enabled_key() -> &'static str {
+    "IMAGE_GEN_ENABLED"
+}
+fn image_gen_provider_key() -> &'static str {
+    "IMAGE_GEN_PROVIDER"
+}
+fn image_gen_api_key_key() -> &'static str {
+    "IMAGE_GEN_API_KEY"
+}
+fn video_gen_enabled_key() -> &'static str {
+    "VIDEO_GEN_ENABLED"
+}
+fn video_gen_provider_key() -> &'static str {
+    "VIDEO_GEN_PROVIDER"
+}
+fn video_gen_api_key_key() -> &'static str {
+    "VIDEO_GEN_API_KEY"
+}
+
+// --- Vision & Documents keys ---
+fn vision_fallback_enabled_key() -> &'static str {
+    "VISION_FALLBACK_ENABLED"
+}
+fn vision_fallback_provider_key() -> &'static str {
+    "VISION_FALLBACK_PROVIDER"
+}
+fn vision_fallback_model_key() -> &'static str {
+    "VISION_FALLBACK_MODEL"
+}
+fn vision_fallback_api_key_key() -> &'static str {
+    "VISION_FALLBACK_API_KEY"
+}
+fn vision_fallback_base_url_key() -> &'static str {
+    "VISION_FALLBACK_BASE_URL"
+}
+fn document_extraction_enabled_key() -> &'static str {
+    "DOCUMENT_EXTRACTION_ENABLED"
+}
+
 fn telegram_llm_provider_key() -> &'static str {
     "TELEGRAM_LLM_PROVIDER"
 }
@@ -1757,6 +1820,199 @@ impl SetupApp {
                     required: false,
                     secret: false,
                 },
+                // Voice & Speech
+                Field {
+                    key: tts_enabled_key().into(),
+                    label: "TTS enabled (true/false)".into(),
+                    value: existing
+                        .get(tts_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "true".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: tts_provider_key().into(),
+                    label: "TTS provider (edge/openai/elevenlabs)".into(),
+                    value: existing
+                        .get(tts_provider_key())
+                        .cloned()
+                        .unwrap_or_else(|| "edge".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: tts_voice_key().into(),
+                    label: "TTS voice name".into(),
+                    value: existing
+                        .get(tts_voice_key())
+                        .cloned()
+                        .unwrap_or_else(|| "en-US-AriaNeural".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: tts_api_key_key().into(),
+                    label: "TTS API key (optional, for openai/elevenlabs)".into(),
+                    value: existing
+                        .get(tts_api_key_key())
+                        .cloned()
+                        .unwrap_or_default(),
+                    required: false,
+                    secret: true,
+                },
+                Field {
+                    key: stt_enabled_key().into(),
+                    label: "STT enabled (true/false)".into(),
+                    value: existing
+                        .get(stt_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "true".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: stt_provider_key().into(),
+                    label: "STT provider (whisper-local/openai)".into(),
+                    value: existing
+                        .get(stt_provider_key())
+                        .cloned()
+                        .unwrap_or_else(|| "whisper-local".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: stt_model_key().into(),
+                    label: "STT model (base/small/medium/large)".into(),
+                    value: existing
+                        .get(stt_model_key())
+                        .cloned()
+                        .unwrap_or_else(|| "base".into()),
+                    required: false,
+                    secret: false,
+                },
+                // Media Generation
+                Field {
+                    key: image_gen_enabled_key().into(),
+                    label: "Image generation enabled (true/false)".into(),
+                    value: existing
+                        .get(image_gen_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "true".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: image_gen_provider_key().into(),
+                    label: "Image generation provider (openai/fal/stability)".into(),
+                    value: existing
+                        .get(image_gen_provider_key())
+                        .cloned()
+                        .unwrap_or_else(|| "openai".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: image_gen_api_key_key().into(),
+                    label: "Image generation API key (optional override)".into(),
+                    value: existing
+                        .get(image_gen_api_key_key())
+                        .cloned()
+                        .unwrap_or_default(),
+                    required: false,
+                    secret: true,
+                },
+                Field {
+                    key: video_gen_enabled_key().into(),
+                    label: "Video generation enabled (true/false)".into(),
+                    value: existing
+                        .get(video_gen_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "false".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: video_gen_provider_key().into(),
+                    label: "Video generation provider (sora/fal/minimax)".into(),
+                    value: existing
+                        .get(video_gen_provider_key())
+                        .cloned()
+                        .unwrap_or_else(|| "sora".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: video_gen_api_key_key().into(),
+                    label: "Video generation API key (optional override)".into(),
+                    value: existing
+                        .get(video_gen_api_key_key())
+                        .cloned()
+                        .unwrap_or_default(),
+                    required: false,
+                    secret: true,
+                },
+                // Vision & Documents
+                Field {
+                    key: vision_fallback_enabled_key().into(),
+                    label: "Vision fallback enabled (true/false)".into(),
+                    value: existing
+                        .get(vision_fallback_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "true".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: vision_fallback_provider_key().into(),
+                    label: "Vision fallback provider (openrouter/openai/anthropic)".into(),
+                    value: existing
+                        .get(vision_fallback_provider_key())
+                        .cloned()
+                        .unwrap_or_else(|| "openrouter".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: vision_fallback_model_key().into(),
+                    label: "Vision fallback model".into(),
+                    value: existing
+                        .get(vision_fallback_model_key())
+                        .cloned()
+                        .unwrap_or_else(|| "anthropic/claude-sonnet-4".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: vision_fallback_api_key_key().into(),
+                    label: "Vision fallback API key (optional)".into(),
+                    value: existing
+                        .get(vision_fallback_api_key_key())
+                        .cloned()
+                        .unwrap_or_default(),
+                    required: false,
+                    secret: true,
+                },
+                Field {
+                    key: vision_fallback_base_url_key().into(),
+                    label: "Vision fallback base URL (optional)".into(),
+                    value: existing
+                        .get(vision_fallback_base_url_key())
+                        .cloned()
+                        .unwrap_or_else(|| "https://openrouter.ai/api/v1".into()),
+                    required: false,
+                    secret: false,
+                },
+                Field {
+                    key: document_extraction_enabled_key().into(),
+                    label: "Document extraction enabled (true/false)".into(),
+                    value: existing
+                        .get(document_extraction_enabled_key())
+                        .cloned()
+                        .unwrap_or_else(|| "true".into()),
+                    required: false,
+                    secret: false,
+                },
                 Field {
                     key: "EMBEDDING_PROVIDER".into(),
                     label: "Embedding provider (optional: openai/ollama)".into(),
@@ -2832,6 +3088,71 @@ impl SetupApp {
                     if let Some(v) = config.embedding_dim {
                         map.insert("EMBEDDING_DIM".into(), v.to_string());
                     }
+                    // Voice & Speech
+                    map.insert(tts_enabled_key().into(), config.tts_enabled.to_string());
+                    map.insert(tts_provider_key().into(), config.tts_provider.clone());
+                    map.insert(tts_voice_key().into(), config.tts_voice.clone());
+                    if let Some(v) = config.tts_api_key.as_deref().filter(|v| !v.is_empty()) {
+                        map.insert(tts_api_key_key().into(), v.to_string());
+                    }
+                    map.insert(stt_enabled_key().into(), config.stt_enabled.to_string());
+                    map.insert(stt_provider_key().into(), config.stt_provider.clone());
+                    map.insert(stt_model_key().into(), config.stt_model.clone());
+                    // Media Generation
+                    map.insert(
+                        image_gen_enabled_key().into(),
+                        config.image_gen_enabled.to_string(),
+                    );
+                    map.insert(
+                        image_gen_provider_key().into(),
+                        config.image_gen_provider.clone(),
+                    );
+                    if let Some(v) = config.image_gen_api_key.as_deref().filter(|v| !v.is_empty())
+                    {
+                        map.insert(image_gen_api_key_key().into(), v.to_string());
+                    }
+                    map.insert(
+                        video_gen_enabled_key().into(),
+                        config.video_gen_enabled.to_string(),
+                    );
+                    map.insert(
+                        video_gen_provider_key().into(),
+                        config.video_gen_provider.clone(),
+                    );
+                    if let Some(v) = config.video_gen_api_key.as_deref().filter(|v| !v.is_empty())
+                    {
+                        map.insert(video_gen_api_key_key().into(), v.to_string());
+                    }
+                    // Vision & Documents
+                    map.insert(
+                        vision_fallback_enabled_key().into(),
+                        config.vision_fallback_enabled.to_string(),
+                    );
+                    map.insert(
+                        vision_fallback_provider_key().into(),
+                        config.vision_fallback_provider.clone(),
+                    );
+                    map.insert(
+                        vision_fallback_model_key().into(),
+                        config.vision_fallback_model.clone(),
+                    );
+                    if let Some(v) = config
+                        .vision_fallback_api_key
+                        .as_deref()
+                        .filter(|v| !v.is_empty())
+                    {
+                        map.insert(vision_fallback_api_key_key().into(), v.to_string());
+                    }
+                    if !config.vision_fallback_base_url.is_empty() {
+                        map.insert(
+                            vision_fallback_base_url_key().into(),
+                            config.vision_fallback_base_url.clone(),
+                        );
+                    }
+                    map.insert(
+                        document_extraction_enabled_key().into(),
+                        config.document_extraction_enabled.to_string(),
+                    );
                     return map;
                 }
             }
@@ -5244,6 +5565,18 @@ impl SetupApp {
             _ if key == llm_provider_profiles_key() => "Model",
             "EMBEDDING_PROVIDER" | "EMBEDDING_API_KEY" | "EMBEDDING_BASE_URL"
             | "EMBEDDING_MODEL" | "EMBEDDING_DIM" => "Embedding",
+            "TTS_ENABLED" | "TTS_PROVIDER" | "TTS_VOICE" | "TTS_API_KEY" | "STT_ENABLED"
+            | "STT_PROVIDER" | "STT_MODEL" => "Voice & Speech",
+            "IMAGE_GEN_ENABLED" | "IMAGE_GEN_PROVIDER" | "IMAGE_GEN_API_KEY"
+            | "VIDEO_GEN_ENABLED" | "VIDEO_GEN_PROVIDER" | "VIDEO_GEN_API_KEY" => {
+                "Media Generation"
+            }
+            "VISION_FALLBACK_ENABLED"
+            | "VISION_FALLBACK_PROVIDER"
+            | "VISION_FALLBACK_MODEL"
+            | "VISION_FALLBACK_API_KEY"
+            | "VISION_FALLBACK_BASE_URL"
+            | "DOCUMENT_EXTRACTION_ENABLED" => "Vision & Documents",
             "A2A_ENABLED"
             | "A2A_PUBLIC_BASE_URL"
             | "A2A_AGENT_NAME"
@@ -5486,6 +5819,82 @@ impl SetupApp {
                 "Require explicit confirmation before running high-risk tools.",
                 "Example: true or false",
             ),
+            "TTS_ENABLED" => (
+                "Enable text-to-speech for voice message replies.",
+                "Example: true or false",
+            ),
+            "TTS_PROVIDER" => (
+                "TTS backend. edge = free Microsoft Edge TTS; openai = OpenAI TTS API; elevenlabs = ElevenLabs.",
+                "Example: edge, openai, elevenlabs",
+            ),
+            "TTS_VOICE" => (
+                "Voice name for the selected TTS provider.",
+                "Example: en-US-AriaNeural (edge), alloy (openai), Rachel (elevenlabs)",
+            ),
+            "TTS_API_KEY" => (
+                "API key for TTS provider, if required (not needed for edge).",
+                "Example: sk-xxxx",
+            ),
+            "STT_ENABLED" => (
+                "Enable speech-to-text for transcribing incoming voice messages.",
+                "Example: true or false",
+            ),
+            "STT_PROVIDER" => (
+                "STT backend. whisper-local = bundled whisper.cpp; openai = OpenAI Whisper API.",
+                "Example: whisper-local, openai",
+            ),
+            "STT_MODEL" => (
+                "Whisper model size for local STT, or model name for OpenAI STT.",
+                "Example: base, small, medium, large (local); whisper-1 (openai)",
+            ),
+            "IMAGE_GEN_ENABLED" => (
+                "Enable image generation tool for users to request AI images.",
+                "Example: true or false",
+            ),
+            "IMAGE_GEN_PROVIDER" => (
+                "Image generation backend. openai = DALL-E; fal = fal.ai; stability = Stability AI.",
+                "Example: openai, fal, stability",
+            ),
+            "IMAGE_GEN_API_KEY" => (
+                "API key override for image generation provider. Empty uses main LLM API key.",
+                "Example: sk-xxxx",
+            ),
+            "VIDEO_GEN_ENABLED" => (
+                "Enable video generation tool.",
+                "Example: true or false",
+            ),
+            "VIDEO_GEN_PROVIDER" => (
+                "Video generation backend. sora = OpenAI Sora; fal = fal.ai; minimax = MiniMax.",
+                "Example: sora, fal, minimax",
+            ),
+            "VIDEO_GEN_API_KEY" => (
+                "API key override for video generation provider. Empty uses main LLM API key.",
+                "Example: sk-xxxx",
+            ),
+            "VISION_FALLBACK_ENABLED" => (
+                "Enable vision fallback for models that lack native vision capability.",
+                "Example: true or false",
+            ),
+            "VISION_FALLBACK_PROVIDER" => (
+                "Provider to use for vision when the primary model cannot see images.",
+                "Example: openrouter, openai, anthropic",
+            ),
+            "VISION_FALLBACK_MODEL" => (
+                "Model for vision fallback processing.",
+                "Example: anthropic/claude-sonnet-4, gpt-4o",
+            ),
+            "VISION_FALLBACK_API_KEY" => (
+                "API key for vision fallback provider. Empty uses main LLM API key.",
+                "Example: sk-xxxx",
+            ),
+            "VISION_FALLBACK_BASE_URL" => (
+                "Base URL for vision fallback provider endpoint.",
+                "Example: https://openrouter.ai/api/v1",
+            ),
+            "DOCUMENT_EXTRACTION_ENABLED" => (
+                "Enable automatic text extraction from PDF and Office documents.",
+                "Example: true or false",
+            ),
             _ if key.ends_with("_BOT_TOKEN") => (
                 "Bot token for this channel account.",
                 "Example: 123456:ABCDEF...",
@@ -5531,6 +5940,9 @@ impl SetupApp {
         const ORDER_SANDBOX_BASE: usize = 23_000;
         const ORDER_A2A_BASE: usize = 24_000;
         const ORDER_SUBAGENTS_BASE: usize = 25_000;
+        const ORDER_VOICE_BASE: usize = 26_000;
+        const ORDER_MEDIA_GEN_BASE: usize = 27_000;
+        const ORDER_VISION_BASE: usize = 28_000;
 
         if key.starts_with("DYN_") {
             for (ch_idx, ch) in DYNAMIC_CHANNELS.iter().enumerate() {
@@ -5665,7 +6077,7 @@ impl SetupApp {
             "A2A_AGENT_DESCRIPTION" => ORDER_A2A_BASE + 3,
             "A2A_SHARED_TOKENS" => ORDER_A2A_BASE + 4,
             "A2A_PEERS_JSON" => ORDER_A2A_BASE + 5,
-            // 8) Sub-agents (last)
+            // 8) Sub-agents
             "SUBAGENTS_MAX_CONCURRENT" => ORDER_SUBAGENTS_BASE,
             "SUBAGENTS_MAX_ACTIVE_PER_CHAT" => ORDER_SUBAGENTS_BASE + 1,
             "SUBAGENTS_RUN_TIMEOUT_SECS" => ORDER_SUBAGENTS_BASE + 2,
@@ -5676,6 +6088,28 @@ impl SetupApp {
             "SUBAGENTS_ANNOUNCE_RELAY_INTERVAL_SECS" => ORDER_SUBAGENTS_BASE + 7,
             "SUBAGENTS_MAX_TOKENS_PER_RUN" => ORDER_SUBAGENTS_BASE + 8,
             "SUBAGENTS_ORCHESTRATE_MAX_WORKERS" => ORDER_SUBAGENTS_BASE + 9,
+            // 9) Voice & Speech
+            "TTS_ENABLED" => ORDER_VOICE_BASE,
+            "TTS_PROVIDER" => ORDER_VOICE_BASE + 1,
+            "TTS_VOICE" => ORDER_VOICE_BASE + 2,
+            "TTS_API_KEY" => ORDER_VOICE_BASE + 3,
+            "STT_ENABLED" => ORDER_VOICE_BASE + 4,
+            "STT_PROVIDER" => ORDER_VOICE_BASE + 5,
+            "STT_MODEL" => ORDER_VOICE_BASE + 6,
+            // 10) Media Generation
+            "IMAGE_GEN_ENABLED" => ORDER_MEDIA_GEN_BASE,
+            "IMAGE_GEN_PROVIDER" => ORDER_MEDIA_GEN_BASE + 1,
+            "IMAGE_GEN_API_KEY" => ORDER_MEDIA_GEN_BASE + 2,
+            "VIDEO_GEN_ENABLED" => ORDER_MEDIA_GEN_BASE + 3,
+            "VIDEO_GEN_PROVIDER" => ORDER_MEDIA_GEN_BASE + 4,
+            "VIDEO_GEN_API_KEY" => ORDER_MEDIA_GEN_BASE + 5,
+            // 11) Vision & Documents
+            "VISION_FALLBACK_ENABLED" => ORDER_VISION_BASE,
+            "VISION_FALLBACK_PROVIDER" => ORDER_VISION_BASE + 1,
+            "VISION_FALLBACK_MODEL" => ORDER_VISION_BASE + 2,
+            "VISION_FALLBACK_API_KEY" => ORDER_VISION_BASE + 3,
+            "VISION_FALLBACK_BASE_URL" => ORDER_VISION_BASE + 4,
+            "DOCUMENT_EXTRACTION_ENABLED" => ORDER_VISION_BASE + 5,
             _ => usize::MAX,
         }
     }
@@ -7039,6 +7473,137 @@ fn save_config_yaml(
 
     yaml.push_str("\n# Optional SOUL files directory (defaults to <data_dir>/souls)\n");
     yaml.push_str(&format!("souls_dir: {}\n", yaml_double_quoted(&souls_dir)));
+
+    // Voice & Speech
+    let tts_enabled = parse_boolish(&get(tts_enabled_key()), true)?;
+    let tts_provider = get(tts_provider_key());
+    let tts_provider = if tts_provider.trim().is_empty() {
+        "edge".to_string()
+    } else {
+        tts_provider.trim().to_string()
+    };
+    let tts_voice = get(tts_voice_key());
+    let tts_voice = if tts_voice.trim().is_empty() {
+        "en-US-AriaNeural".to_string()
+    } else {
+        tts_voice.trim().to_string()
+    };
+    let tts_api_key = get(tts_api_key_key());
+    let stt_enabled = parse_boolish(&get(stt_enabled_key()), true)?;
+    let stt_provider = get(stt_provider_key());
+    let stt_provider = if stt_provider.trim().is_empty() {
+        "whisper-local".to_string()
+    } else {
+        stt_provider.trim().to_string()
+    };
+    let stt_model = get(stt_model_key());
+    let stt_model = if stt_model.trim().is_empty() {
+        "base".to_string()
+    } else {
+        stt_model.trim().to_string()
+    };
+    yaml.push_str("\n# Voice & Speech\n");
+    yaml.push_str(&format!("tts_enabled: {}\n", tts_enabled));
+    yaml.push_str(&format!("tts_provider: {}\n", yaml_double_quoted(&tts_provider)));
+    yaml.push_str(&format!("tts_voice: {}\n", yaml_double_quoted(&tts_voice)));
+    if !tts_api_key.trim().is_empty() {
+        yaml.push_str(&format!("tts_api_key: {}\n", yaml_double_quoted(tts_api_key.trim())));
+    }
+    yaml.push_str(&format!("stt_enabled: {}\n", stt_enabled));
+    yaml.push_str(&format!("stt_provider: {}\n", yaml_double_quoted(&stt_provider)));
+    yaml.push_str(&format!("stt_model: {}\n", yaml_double_quoted(&stt_model)));
+
+    // Media Generation
+    let image_gen_enabled = parse_boolish(&get(image_gen_enabled_key()), true)?;
+    let image_gen_provider = get(image_gen_provider_key());
+    let image_gen_provider = if image_gen_provider.trim().is_empty() {
+        "openai".to_string()
+    } else {
+        image_gen_provider.trim().to_string()
+    };
+    let image_gen_api_key = get(image_gen_api_key_key());
+    let video_gen_enabled = parse_boolish(&get(video_gen_enabled_key()), false)?;
+    let video_gen_provider = get(video_gen_provider_key());
+    let video_gen_provider = if video_gen_provider.trim().is_empty() {
+        "sora".to_string()
+    } else {
+        video_gen_provider.trim().to_string()
+    };
+    let video_gen_api_key = get(video_gen_api_key_key());
+    yaml.push_str("\n# Media Generation\n");
+    yaml.push_str(&format!("image_gen_enabled: {}\n", image_gen_enabled));
+    yaml.push_str(&format!(
+        "image_gen_provider: {}\n",
+        yaml_double_quoted(&image_gen_provider)
+    ));
+    if !image_gen_api_key.trim().is_empty() {
+        yaml.push_str(&format!(
+            "image_gen_api_key: {}\n",
+            yaml_double_quoted(image_gen_api_key.trim())
+        ));
+    }
+    yaml.push_str(&format!("video_gen_enabled: {}\n", video_gen_enabled));
+    yaml.push_str(&format!(
+        "video_gen_provider: {}\n",
+        yaml_double_quoted(&video_gen_provider)
+    ));
+    if !video_gen_api_key.trim().is_empty() {
+        yaml.push_str(&format!(
+            "video_gen_api_key: {}\n",
+            yaml_double_quoted(video_gen_api_key.trim())
+        ));
+    }
+
+    // Vision & Documents
+    let vision_fallback_enabled = parse_boolish(&get(vision_fallback_enabled_key()), true)?;
+    let vision_fallback_provider = get(vision_fallback_provider_key());
+    let vision_fallback_provider = if vision_fallback_provider.trim().is_empty() {
+        "openrouter".to_string()
+    } else {
+        vision_fallback_provider.trim().to_string()
+    };
+    let vision_fallback_model = get(vision_fallback_model_key());
+    let vision_fallback_model = if vision_fallback_model.trim().is_empty() {
+        "anthropic/claude-sonnet-4".to_string()
+    } else {
+        vision_fallback_model.trim().to_string()
+    };
+    let vision_fallback_api_key = get(vision_fallback_api_key_key());
+    let vision_fallback_base_url = get(vision_fallback_base_url_key());
+    let vision_fallback_base_url = if vision_fallback_base_url.trim().is_empty() {
+        "https://openrouter.ai/api/v1".to_string()
+    } else {
+        vision_fallback_base_url.trim().to_string()
+    };
+    let document_extraction_enabled =
+        parse_boolish(&get(document_extraction_enabled_key()), true)?;
+    yaml.push_str("\n# Vision & Documents\n");
+    yaml.push_str(&format!(
+        "vision_fallback_enabled: {}\n",
+        vision_fallback_enabled
+    ));
+    yaml.push_str(&format!(
+        "vision_fallback_provider: {}\n",
+        yaml_double_quoted(&vision_fallback_provider)
+    ));
+    yaml.push_str(&format!(
+        "vision_fallback_model: {}\n",
+        yaml_double_quoted(&vision_fallback_model)
+    ));
+    if !vision_fallback_api_key.trim().is_empty() {
+        yaml.push_str(&format!(
+            "vision_fallback_api_key: {}\n",
+            yaml_double_quoted(vision_fallback_api_key.trim())
+        ));
+    }
+    yaml.push_str(&format!(
+        "vision_fallback_base_url: {}\n",
+        yaml_double_quoted(&vision_fallback_base_url)
+    ));
+    yaml.push_str(&format!(
+        "document_extraction_enabled: {}\n",
+        document_extraction_enabled
+    ));
 
     fs::write(path, yaml)?;
     Ok(backup)
