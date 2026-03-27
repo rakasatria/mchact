@@ -292,13 +292,22 @@ impl AnthropicProvider {
             "Sending LLM stream request"
         );
 
+        let mut stream_body = serde_json::to_value(&streamed_request)?;
+
+        if let Some(msgs) = stream_body
+            .get_mut("messages")
+            .and_then(|m: &mut serde_json::Value| m.as_array_mut())
+        {
+            apply_anthropic_cache_control(msgs);
+        }
+
         let response = self
             .http
             .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
-            .json(&streamed_request)
+            .json(&stream_body)
             .send()
             .await?;
 
@@ -892,6 +901,53 @@ struct AnthropicApiErrorDetail {
     error_type: String,
 }
 
+/// Apply Anthropic cache_control markers to reduce input token costs.
+/// Places up to 4 breakpoints: system prompt + last 3 non-system messages.
+pub fn apply_anthropic_cache_control(messages: &mut Vec<serde_json::Value>) {
+    let marker = serde_json::json!({"type": "ephemeral"});
+    let mut breakpoints_used = 0usize;
+    const MAX_BREAKPOINTS: usize = 4;
+
+    // Breakpoint 1: System prompt
+    if let Some(first) = messages.first_mut() {
+        if first.get("role").and_then(|r| r.as_str()) == Some("system") {
+            apply_cache_marker(first, &marker);
+            breakpoints_used += 1;
+        }
+    }
+
+    // Breakpoints 2-4: Last 3 non-system messages
+    let remaining = MAX_BREAKPOINTS - breakpoints_used;
+    let non_system_indices: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .map(|(i, _)| i)
+        .collect();
+
+    for &idx in non_system_indices.iter().rev().take(remaining) {
+        apply_cache_marker(&mut messages[idx], &marker);
+    }
+}
+
+fn apply_cache_marker(msg: &mut serde_json::Value, marker: &serde_json::Value) {
+    if let Some(content) = msg.get_mut("content") {
+        if content.is_string() {
+            let text = content.as_str().unwrap_or("").to_string();
+            *content = serde_json::json!([{
+                "type": "text",
+                "text": text,
+                "cache_control": marker
+            }]);
+        } else if let Some(arr) = content.as_array_mut() {
+            if let Some(last) = arr.last_mut() {
+                last.as_object_mut()
+                    .map(|obj| obj.insert("cache_control".to_string(), marker.clone()));
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
     async fn send_message(
@@ -923,6 +979,15 @@ impl LlmProvider for AnthropicProvider {
             stream: None,
         };
 
+        let mut body = serde_json::to_value(&request)?;
+
+        if let Some(msgs) = body
+            .get_mut("messages")
+            .and_then(|m: &mut serde_json::Value| m.as_array_mut())
+        {
+            apply_anthropic_cache_control(msgs);
+        }
+
         let mut retries = 0u32;
         let max_retries = 3;
 
@@ -933,7 +998,7 @@ impl LlmProvider for AnthropicProvider {
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
-                .json(&request)
+                .json(&body)
                 .send()
                 .await?;
 
@@ -4059,5 +4124,55 @@ data: [DONE]
             ResponseContentBlock::Text { text } => assert_eq!(text, "From SSE"),
             _ => panic!("Expected text block"),
         }
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_cache_control_string_content() {
+        let mut messages = vec![
+            json!({"role": "system", "content": "You are helpful."}),
+            json!({"role": "user", "content": "Hello"}),
+        ];
+        apply_anthropic_cache_control(&mut messages);
+        let sys_content = &messages[0]["content"];
+        assert!(sys_content.is_array());
+        assert!(sys_content[0]["cache_control"].is_object());
+        let user_content = &messages[1]["content"];
+        assert!(user_content.is_array());
+        assert!(user_content[0]["cache_control"].is_object());
+    }
+
+    #[test]
+    fn test_cache_control_max_breakpoints() {
+        let mut messages = vec![
+            json!({"role": "system", "content": "sys"}),
+            json!({"role": "user", "content": "msg1"}),
+            json!({"role": "assistant", "content": "msg2"}),
+            json!({"role": "user", "content": "msg3"}),
+            json!({"role": "assistant", "content": "msg4"}),
+            json!({"role": "user", "content": "msg5"}),
+        ];
+        apply_anthropic_cache_control(&mut messages);
+        // System (1) + last 3 non-system = 4 breakpoints
+        // msg1 should NOT have cache_control
+        assert!(messages[1]["content"].is_string());
+        // msg4, msg5 should have it
+        assert!(messages[4]["content"].is_array());
+        assert!(messages[5]["content"].is_array());
+    }
+
+    #[test]
+    fn test_cache_control_array_content() {
+        let mut messages = vec![json!({
+            "role": "user",
+            "content": [{"type": "text", "text": "Hello"}]
+        })];
+        apply_anthropic_cache_control(&mut messages);
+        assert!(messages[0]["content"][0]["cache_control"].is_object());
     }
 }
