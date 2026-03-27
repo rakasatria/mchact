@@ -228,6 +228,60 @@ fn default_voice_provider() -> String {
 fn default_true() -> bool {
     true
 }
+fn default_tts_enabled() -> bool {
+    true
+}
+fn default_tts_provider() -> String {
+    "edge".into()
+}
+fn default_tts_voice() -> String {
+    "en-US-AriaNeural".into()
+}
+fn default_stt_enabled() -> bool {
+    true
+}
+fn default_stt_provider() -> String {
+    "whisper-local".into()
+}
+fn default_stt_model() -> String {
+    "base".into()
+}
+fn default_image_gen_enabled() -> bool {
+    true
+}
+fn default_image_gen_provider() -> String {
+    "openai".into()
+}
+fn default_image_gen_size() -> String {
+    "1024x1024".into()
+}
+fn default_image_gen_quality() -> String {
+    "standard".into()
+}
+fn default_video_gen_enabled() -> bool {
+    false
+}
+fn default_video_gen_provider() -> String {
+    "sora".into()
+}
+fn default_video_gen_timeout() -> u64 {
+    300
+}
+fn default_vision_fallback_enabled() -> bool {
+    true
+}
+fn default_vision_fallback_provider() -> String {
+    "openrouter".into()
+}
+fn default_vision_fallback_model() -> String {
+    "anthropic/claude-sonnet-4".into()
+}
+fn default_vision_fallback_base_url() -> String {
+    "https://openrouter.ai/api/v1".into()
+}
+fn default_document_extraction_enabled() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClawHubConfig {
@@ -738,6 +792,72 @@ pub struct Config {
     #[serde(default, rename = "voice_transcription_command")]
     pub voice_transcription_command: Option<String>,
 
+    // --- Text-to-Speech ---
+    #[serde(default = "default_tts_enabled")]
+    pub tts_enabled: bool,
+    #[serde(default = "default_tts_provider")]
+    pub tts_provider: String,
+    #[serde(default = "default_tts_voice")]
+    pub tts_voice: String,
+    #[serde(default)]
+    pub tts_api_key: Option<String>,
+    #[serde(default)]
+    pub tts_elevenlabs_voice_id: Option<String>,
+
+    // --- Speech-to-Text ---
+    #[serde(default = "default_stt_enabled")]
+    pub stt_enabled: bool,
+    #[serde(default = "default_stt_provider")]
+    pub stt_provider: String,
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+    #[serde(default)]
+    pub stt_model_path: Option<String>,
+
+    // --- Image Generation ---
+    #[serde(default = "default_image_gen_enabled")]
+    pub image_gen_enabled: bool,
+    #[serde(default = "default_image_gen_provider")]
+    pub image_gen_provider: String,
+    #[serde(default)]
+    pub image_gen_api_key: Option<String>,
+    #[serde(default)]
+    pub image_gen_fal_key: Option<String>,
+    #[serde(default = "default_image_gen_size")]
+    pub image_gen_default_size: String,
+    #[serde(default = "default_image_gen_quality")]
+    pub image_gen_default_quality: String,
+
+    // --- Video Generation ---
+    #[serde(default = "default_video_gen_enabled")]
+    pub video_gen_enabled: bool,
+    #[serde(default = "default_video_gen_provider")]
+    pub video_gen_provider: String,
+    #[serde(default)]
+    pub video_gen_api_key: Option<String>,
+    #[serde(default)]
+    pub video_gen_fal_model: Option<String>,
+    #[serde(default)]
+    pub video_gen_minimax_key: Option<String>,
+    #[serde(default = "default_video_gen_timeout")]
+    pub video_gen_timeout_secs: u64,
+
+    // --- Vision Fallback ---
+    #[serde(default = "default_vision_fallback_enabled")]
+    pub vision_fallback_enabled: bool,
+    #[serde(default = "default_vision_fallback_provider")]
+    pub vision_fallback_provider: String,
+    #[serde(default = "default_vision_fallback_model")]
+    pub vision_fallback_model: String,
+    #[serde(default)]
+    pub vision_fallback_api_key: Option<String>,
+    #[serde(default = "default_vision_fallback_base_url")]
+    pub vision_fallback_base_url: String,
+
+    // --- Document Processing ---
+    #[serde(default = "default_document_extraction_enabled")]
+    pub document_extraction_enabled: bool,
+
     // --- Observation memory (mchact-memory) ---
     #[serde(default)]
     pub memory: mchact_memory::driver::MemoryConfig,
@@ -1199,6 +1319,33 @@ impl Config {
             plugins: PluginsConfig::default(),
             voice_provider: "openai".into(),
             voice_transcription_command: None,
+            tts_enabled: default_tts_enabled(),
+            tts_provider: default_tts_provider(),
+            tts_voice: default_tts_voice(),
+            tts_api_key: None,
+            tts_elevenlabs_voice_id: None,
+            stt_enabled: default_stt_enabled(),
+            stt_provider: default_stt_provider(),
+            stt_model: default_stt_model(),
+            stt_model_path: None,
+            image_gen_enabled: default_image_gen_enabled(),
+            image_gen_provider: default_image_gen_provider(),
+            image_gen_api_key: None,
+            image_gen_fal_key: None,
+            image_gen_default_size: default_image_gen_size(),
+            image_gen_default_quality: default_image_gen_quality(),
+            video_gen_enabled: default_video_gen_enabled(),
+            video_gen_provider: default_video_gen_provider(),
+            video_gen_api_key: None,
+            video_gen_fal_model: None,
+            video_gen_minimax_key: None,
+            video_gen_timeout_secs: default_video_gen_timeout(),
+            vision_fallback_enabled: default_vision_fallback_enabled(),
+            vision_fallback_provider: default_vision_fallback_provider(),
+            vision_fallback_model: default_vision_fallback_model(),
+            vision_fallback_api_key: None,
+            vision_fallback_base_url: default_vision_fallback_base_url(),
+            document_extraction_enabled: default_document_extraction_enabled(),
             observability: None,
             channels: HashMap::new(),
         }
