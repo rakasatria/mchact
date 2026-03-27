@@ -253,6 +253,33 @@ pub fn should_suppress_user_error(err: &anyhow::Error) -> bool {
         || text.contains("error sending request for url")
 }
 
+fn message_has_images(messages: &[Message]) -> bool {
+    messages.iter().any(|msg| {
+        if let MessageContent::Blocks(blocks) = &msg.content {
+            blocks.iter().any(|b| matches!(b, ContentBlock::Image { .. }))
+        } else {
+            false
+        }
+    })
+}
+
+fn model_supports_vision(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.contains("claude-3")
+        || m.contains("claude-sonnet-4")
+        || m.contains("claude-opus-4")
+        || m.contains("gpt-4o")
+        || m.contains("gpt-4.1")
+        || m.contains("gpt-5")
+        || m.contains("o1")
+        || m.contains("o3")
+        || m.contains("o4")
+        || m.contains("llava")
+        || m.contains("vision")
+        || m.contains("qwen2.5-vl")
+        || m.contains("gemma3")
+}
+
 fn build_provider_runtime_config(
     state: &AppState,
     profile: &ResolvedLlmProviderProfile,
@@ -823,6 +850,36 @@ async fn process_with_agent_logic(
     } else {
         None
     };
+
+    // Vision routing: if the current model doesn't support vision but messages contain images,
+    // fall back to a vision-capable provider.
+    let vision_provider = if state.config.vision_fallback_enabled
+        && message_has_images(&messages)
+        && !model_supports_vision(&effective_model)
+    {
+        info!(
+            chat_id,
+            current_model = %effective_model,
+            fallback_model = %state.config.vision_fallback_model,
+            fallback_provider = %state.config.vision_fallback_provider,
+            "Current model does not support vision; routing to vision fallback provider"
+        );
+        let mut vision_cfg = state.config.clone();
+        vision_cfg.llm_provider = state.config.vision_fallback_provider.clone();
+        vision_cfg.model = state.config.vision_fallback_model.clone();
+        vision_cfg.llm_base_url = Some(state.config.vision_fallback_base_url.clone());
+        if let Some(key) = &state.config.vision_fallback_api_key {
+            vision_cfg.api_key = key.clone();
+        }
+        Some(crate::llm::create_provider(&vision_cfg))
+    } else {
+        None
+    };
+    // Use vision_provider if available, otherwise fall back to scoped_provider or default.
+    // We rebind scoped_provider to incorporate vision routing transparently.
+    let scoped_provider: Option<Box<dyn crate::llm::LlmProvider>> =
+        vision_provider.or(scoped_provider);
+
     let mut consecutive_send_message_calls: usize = 0;
     let mut last_tool_use_fingerprint: Option<String> = None;
     let mut repeated_tool_use_streak: usize = 0;
