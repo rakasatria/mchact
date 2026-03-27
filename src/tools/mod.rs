@@ -9,6 +9,7 @@ pub mod glob;
 pub mod grep;
 pub mod mcp;
 pub mod memory;
+pub mod mixture_of_agents;
 pub mod read_file;
 pub mod schedule;
 pub mod send_message;
@@ -262,6 +263,11 @@ impl ToolRegistry {
             Box::new(session_search::SessionSearchTool::new(
                 db.clone(),
                 config.control_chat_ids.clone(),
+            )),
+            Box::new(mixture_of_agents::MixtureOfAgentsTool::new(
+                config,
+                db.clone(),
+                channel_registry.clone(),
             )),
         ];
 
