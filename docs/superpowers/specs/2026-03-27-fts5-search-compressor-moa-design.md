@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-27
 **Status:** Approved
-**Scope:** ~1,050 lines across 8 files (4 new, 4 modified)
+**Scope:** ~1,120 lines across 9 files (4 new, 5 modified)
 
 ## Problem
 
@@ -408,9 +408,154 @@ When `subagents_orchestrate` completes (all workers done or timeout), delete fin
 
 ---
 
+### Feature 4: Anthropic Prompt Caching
+
+Reduces input token costs ~75% for Anthropic provider by marking stable content with `cache_control` breakpoints.
+
+#### Background
+
+- **Anthropic**: Requires explicit `cache_control: {"type": "ephemeral"}` markers on content blocks. Up to 4 breakpoints per request. Cached tokens cost 90% less on cache hits.
+- **OpenAI / DeepSeek**: Automatic prefix caching, no code changes needed.
+- **Ollama / others**: No caching API, N/A.
+
+Only the Anthropic code path needs changes.
+
+#### Implementation
+
+**Modified file:** `src/llm.rs` — Anthropic serialization path only (~70 lines)
+
+```rust
+pub fn apply_anthropic_cache_control(messages: &mut Vec<serde_json::Value>) {
+    let marker = json!({"type": "ephemeral"});
+    let mut breakpoints_used = 0;
+    const MAX_BREAKPOINTS: usize = 4;
+
+    // Breakpoint 1: System prompt (stable across all iterations)
+    if let Some(first) = messages.first_mut() {
+        if first.get("role").and_then(|r| r.as_str()) == Some("system") {
+            apply_cache_marker(first, &marker);
+            breakpoints_used += 1;
+        }
+    }
+
+    // Breakpoints 2-4: Last 3 non-system messages (rolling window)
+    let remaining = MAX_BREAKPOINTS - breakpoints_used;
+    let non_system_indices: Vec<usize> = messages.iter().enumerate()
+        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+        .map(|(i, _)| i)
+        .collect();
+
+    for &idx in non_system_indices.iter().rev().take(remaining) {
+        apply_cache_marker(&mut messages[idx], &marker);
+    }
+}
+
+fn apply_cache_marker(msg: &mut serde_json::Value, marker: &serde_json::Value) {
+    // If content is a string, convert to array-of-blocks format:
+    //   "hello" -> [{"type": "text", "text": "hello", "cache_control": {...}}]
+    // If content is already an array, append cache_control to last block.
+    // Tool messages: add cache_control directly to message dict.
+}
+```
+
+#### Integration Point
+
+Applied in `src/llm.rs` **only** in the Anthropic provider's `send_request` implementation, after building the request body and before sending it. This is a serialization-time transformation — the shared `Message` / `ContentBlock` types in `llm_types.rs` are never modified.
+
+```rust
+// In Anthropic provider send_request():
+let mut body = build_anthropic_request_body(request);
+if self.enable_prompt_caching {
+    apply_anthropic_cache_control(&mut body["messages"]);
+}
+// send body...
+```
+
+#### Safety
+
+- **Non-Anthropic providers never see cache markers.** The function is only called in the Anthropic code path.
+- **If caching fails**, Anthropic silently ignores invalid markers — no error, just no discount.
+- **No changes to shared types.** `Message`, `ContentBlock`, `MessagesRequest` are untouched.
+- **Configurable.** Respect existing config; can be disabled if needed.
+
+#### Cost Impact
+
+For a 10-iteration tool loop with a 3K-token system prompt:
+- Without caching: ~30K input tokens for system prompt alone (3K x 10)
+- With caching: ~3K on first call + ~2.7K x 9 cache hits = ~27K tokens at 90% discount
+- **Effective savings: ~22K tokens per request (~75% reduction on repeated context)**
+
+---
+
+## File Map
+
+### New files (4)
+
+| File | Purpose | ~Lines |
+|------|---------|--------|
+| `crates/microclaw-storage/src/fts.rs` | FTS5 query sanitizer | 60 |
+| `src/tools/session_search.rs` | SessionSearchTool | 200 |
+| `src/compressor.rs` | 5-phase ContextCompressor | 350 |
+| `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool | 150 |
+
+### Modified files (5)
+
+| File | Change | ~Lines |
+|------|--------|--------|
+| `crates/microclaw-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
+| `crates/microclaw-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
+| `src/tools/mod.rs` | Register session_search + findings tools | 15 |
+| `src/agent_engine.rs` | Replace compact_messages body with ContextCompressor::compress() | 20 (net -80) |
+| `src/llm.rs` | `apply_anthropic_cache_control()` + `apply_cache_marker()` in Anthropic provider path | 70 |
+
+### Unchanged
+
+- `crates/microclaw-core/src/llm_types.rs` — no changes to Message/ContentBlock
+- `store_message` / `store_message_if_new` — FTS5 triggers handle sync
+- `archive_conversation` — still writes markdown before compaction
+- Sub-agent spawn/orchestrate logic — unchanged, just gets new tools
+- Non-Anthropic providers — untouched, automatic caching where supported
+
+---
+
+## Testing Strategy
+
+### Unit tests
+- `fts::sanitize_fts_query` — empty, special chars, normal, CJK
+- `ContextCompressor` — each phase independently, edge cases (short conversations, no tool results)
+- `apply_anthropic_cache_control` — string content conversion, array content, tool messages, max breakpoints
+
+### Integration tests
+- FTS5 search: insert messages, verify search returns correct results with snippets
+- FTS5 triggers: verify new messages auto-indexed
+- Migration v19->v20: verify FTS table + triggers + backfill
+- Context window retrieval: verify surrounding messages
+
+### Tool tests
+- `session_search`: empty query, valid query, chat authorization
+- `findings_write/read`: scoped to orchestration_id, cross-worker visibility
+- Compressor: full compress cycle, iterative re-compression, fallback on timeout
+
+---
+
+## Risks
+
+| Risk | Mitigation |
+|------|------------|
+| Large backfill during migration | Runs at startup before requests. Bulk INSERT completes in <1s for 100K messages. |
+| FTS5 index corruption | `rebuild_fts_index()` available for admin recovery. Triggers are idempotent. |
+| FTS5 query injection | `sanitize_fts_query()` strips all operators, quotes tokens. Parameterized queries. |
+| Compressor changes break sessions | Fallback to truncation on any error. Archive still written pre-compaction. |
+| Summary drift on re-compression | Phase 5 iterative updates preserve existing information. |
+| Findings table grows unbounded | Cleanup on orchestration completion. TTL-based cleanup as fallback. |
+| rusqlite bundled SQLite missing FTS5 | Bundled feature includes FTS5 by default. Verify with `pragma_compile_options`. |
+| Cache markers leak to non-Anthropic | Applied only in Anthropic serialization path. Shared types untouched. |
+| Cache marker breaks message format | If invalid, Anthropic silently ignores. No error, just no discount. |
+
+---
+
 ## Future Enhancements (out of scope)
 
-- Anthropic prompt caching (`cache_control` markers) — reduces cost 50-80%
 - Smart model routing for simple messages — 200x cost reduction on trivial turns
 - LLM summarization of FTS5 search results — structured output like Hermes
 - Findings promotion to structured memory — auto-extract valuable findings via reflector
