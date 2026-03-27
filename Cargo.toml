@@ -9,6 +9,7 @@ members = [
     "crates/microclaw-app",
     "crates/microclaw-observability",
     "crates/mchact-memory",
+    "crates/microclaw-media",
 ]
 resolver = "2"
 
@@ -33,6 +34,7 @@ microclaw-tools = { version = "0.1.0", path = "crates/microclaw-tools" }
 microclaw-channels = { version = "0.1.0", path = "crates/microclaw-channels" }
 microclaw-app = { version = "0.1.0", path = "crates/microclaw-app" }
 microclaw-observability = { version = "0.1.0", path = "crates/microclaw-observability" }
+microclaw-media = { version = "0.1.0", path = "crates/microclaw-media" }
 teloxide = { version = "0.17", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tokio-native-tls = "0.3"
