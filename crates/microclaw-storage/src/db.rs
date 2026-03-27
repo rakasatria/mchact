@@ -192,6 +192,27 @@ pub struct AuditLogRecord {
 pub type SessionMetaRow = (String, String, Option<String>, Option<i64>);
 pub type SessionTreeRow = (i64, Option<String>, Option<i64>, String);
 
+#[derive(Debug, Clone)]
+pub struct FtsSearchResult {
+    pub message_id: String,
+    pub chat_id: i64,
+    pub chat_title: Option<String>,
+    pub sender_name: String,
+    pub content_snippet: String,
+    pub timestamp: String,
+    pub rank: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Finding {
+    pub id: i64,
+    pub orchestration_id: String,
+    pub run_id: String,
+    pub finding: String,
+    pub category: String,
+    pub created_at: String,
+}
+
 const SCHEMA_VERSION_CURRENT: i64 = 20;
 
 #[derive(Debug, Clone)]
@@ -1287,6 +1308,152 @@ impl Database {
             ],
         )?;
         Ok(affected > 0)
+    }
+
+    pub fn search_messages_fts(
+        &self,
+        query: &str,
+        chat_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<FtsSearchResult>, MicroClawError> {
+        use crate::fts::sanitize_fts_query;
+        let match_expr = match sanitize_fts_query(query) {
+            Some(expr) => expr,
+            None => return Ok(vec![]),
+        };
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.chat_id, c.chat_title, m.sender_name,
+                    snippet(messages_fts, 1, '**', '**', '...', 48) AS snippet,
+                    m.timestamp, messages_fts.rank
+             FROM messages_fts
+             JOIN messages m ON m.rowid = messages_fts.rowid
+             LEFT JOIN chats c ON c.chat_id = m.chat_id
+             WHERE messages_fts MATCH ?1
+               AND (?2 IS NULL OR m.chat_id = ?2)
+             ORDER BY messages_fts.rank
+             LIMIT ?3",
+        )?;
+        let chat_id_param: Option<i64> = chat_id;
+        let limit_param = limit as i64;
+        let rows = stmt.query_map(params![match_expr, chat_id_param, limit_param], |row| {
+            Ok(FtsSearchResult {
+                message_id: row.get(0)?,
+                chat_id: row.get(1)?,
+                chat_title: row.get(2)?,
+                sender_name: row.get(3)?,
+                content_snippet: row.get(4)?,
+                timestamp: row.get(5)?,
+                rank: row.get(6)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_message_context(
+        &self,
+        chat_id: i64,
+        timestamp: &str,
+        window: usize,
+    ) -> Result<Vec<StoredMessage>, MicroClawError> {
+        let conn = self.lock_conn();
+        let window_param = window as i64;
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, sender_name, content, is_from_bot, timestamp FROM (
+                SELECT id, chat_id, sender_name, content, is_from_bot, timestamp
+                FROM messages WHERE chat_id = ?1 AND timestamp < ?2
+                ORDER BY timestamp DESC LIMIT ?3
+             )
+             UNION ALL
+             SELECT id, chat_id, sender_name, content, is_from_bot, timestamp FROM (
+                SELECT id, chat_id, sender_name, content, is_from_bot, timestamp
+                FROM messages WHERE chat_id = ?1 AND timestamp >= ?2
+                ORDER BY timestamp ASC LIMIT ?3
+             )
+             ORDER BY timestamp ASC",
+        )?;
+        let rows = stmt.query_map(params![chat_id, timestamp, window_param], |row| {
+            Ok(StoredMessage {
+                id: row.get(0)?,
+                chat_id: row.get(1)?,
+                sender_name: row.get(2)?,
+                content: row.get(3)?,
+                is_from_bot: row.get::<_, i32>(4)? != 0,
+                timestamp: row.get(5)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn rebuild_fts_index(&self) -> Result<(), MicroClawError> {
+        let conn = self.lock_conn();
+        conn.execute_batch("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")?;
+        Ok(())
+    }
+
+    pub fn insert_finding(
+        &self,
+        orchestration_id: &str,
+        run_id: &str,
+        finding: &str,
+        category: &str,
+    ) -> Result<i64, MicroClawError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO subagent_findings (orchestration_id, run_id, finding, category, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![orchestration_id, run_id, finding, category, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_findings(
+        &self,
+        orchestration_id: &str,
+    ) -> Result<Vec<Finding>, MicroClawError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, orchestration_id, run_id, finding, category, created_at
+             FROM subagent_findings
+             WHERE orchestration_id = ?1
+             ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![orchestration_id], |row| {
+            Ok(Finding {
+                id: row.get(0)?,
+                orchestration_id: row.get(1)?,
+                run_id: row.get(2)?,
+                finding: row.get(3)?,
+                category: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn delete_findings(
+        &self,
+        orchestration_id: &str,
+    ) -> Result<usize, MicroClawError> {
+        let conn = self.lock_conn();
+        let affected = conn.execute(
+            "DELETE FROM subagent_findings WHERE orchestration_id = ?1",
+            params![orchestration_id],
+        )?;
+        Ok(affected)
     }
 
     pub fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MicroClawError> {
