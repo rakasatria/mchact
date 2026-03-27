@@ -14,7 +14,6 @@ use crate::tools::ToolAuthContext;
 use microclaw_core::llm_types::{
     ContentBlock, ImageSource, Message, MessageContent, ResponseContentBlock,
 };
-use microclaw_core::text::floor_char_boundary;
 use microclaw_observability::traces::{
     kv, kv_int, new_span_id, new_trace_id, now_unix_nano, SpanData,
 };
@@ -2286,31 +2285,15 @@ async fn compact_messages(
         return messages.to_vec();
     }
 
-    let split_at = total - keep_recent;
-    let old_messages = &messages[..split_at];
-    let recent_messages = &messages[split_at..];
+    let config = crate::compressor::CompressorConfig {
+        tail_token_budget: 20_000,
+        protect_first_n: 3,
+        tool_result_max_chars: 200,
+        compaction_timeout_secs: state.config.compaction_timeout_secs,
+    };
+    let mut compressor = crate::compressor::ContextCompressor::new(config);
 
-    // Build text representation of old messages
-    let mut summary_input = String::new();
-    for msg in old_messages {
-        let role = &msg.role;
-        let text = message_to_text(msg);
-        summary_input.push_str(&format!("[{role}]: {text}\n\n"));
-    }
-
-    // Truncate if very long
-    if summary_input.len() > 20000 {
-        let cutoff = floor_char_boundary(&summary_input, 20000);
-        summary_input.truncate(cutoff);
-        summary_input.push_str("\n... (truncated)");
-    }
-
-    let summarize_prompt = "Summarize the following conversation concisely, preserving key facts, decisions, tool results, and context needed to continue the conversation. Be brief but thorough.";
-
-    let summarize_messages = vec![Message {
-        role: "user".into(),
-        content: MessageContent::Text(format!("{summarize_prompt}\n\n---\n\n{summary_input}")),
-    }];
+    let timeout_secs = state.config.compaction_timeout_secs;
     let (effective_profile, effective_model, _session_settings) =
         resolve_effective_provider_and_model(state, caller_channel, chat_id).await;
     let scoped_provider = if effective_profile.alias != state.config.llm_provider {
@@ -2323,112 +2306,79 @@ async fn compact_messages(
         None
     };
 
-    let timeout_secs = state.config.compaction_timeout_secs;
-    let summary = match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), async {
-        if let Some(provider) = scoped_provider.as_ref() {
-            provider
-                .send_message_with_model(
-                    "You are a helpful summarizer.",
-                    summarize_messages,
-                    None,
-                    Some(&effective_model),
-                )
-                .await
-        } else {
-            state
-                .llm
-                .send_message_with_model(
-                    "You are a helpful summarizer.",
-                    summarize_messages,
-                    None,
-                    Some(&effective_model),
-                )
-                .await
-        }
-    })
-    .await
-    {
-        Ok(Ok(response)) => {
-            if let Some(usage) = &response.usage {
-                let channel = caller_channel.to_string();
-                let provider = state.config.llm_provider.clone();
-                let model = effective_model.clone();
-                let input_tokens = i64::from(usage.input_tokens);
-                let output_tokens = i64::from(usage.output_tokens);
-                let _ = call_blocking(state.db.clone(), move |db| {
-                    db.log_llm_usage(
-                        chat_id,
-                        &channel,
-                        &provider,
-                        &model,
-                        input_tokens,
-                        output_tokens,
-                        "compaction",
-                    )
-                    .map(|_| ())
-                })
-                .await;
+    let state_ref = state;
+    let summarize_fn = |system: String, prompt: String| async move {
+        let summarize_messages = vec![Message {
+            role: "user".into(),
+            content: MessageContent::Text(prompt),
+        }];
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            async {
+                if let Some(provider) = scoped_provider.as_ref() {
+                    provider
+                        .send_message_with_model(
+                            &system,
+                            summarize_messages,
+                            None,
+                            Some(&effective_model),
+                        )
+                        .await
+                } else {
+                    state_ref
+                        .llm
+                        .send_message_with_model(
+                            &system,
+                            summarize_messages,
+                            None,
+                            Some(&effective_model),
+                        )
+                        .await
+                }
+            },
+        )
+        .await;
+
+        match result {
+            Ok(Ok(response)) => {
+                if let Some(usage) = &response.usage {
+                    let channel = caller_channel.to_string();
+                    let provider = state_ref.config.llm_provider.clone();
+                    let model = effective_model.clone();
+                    let input_tokens = i64::from(usage.input_tokens);
+                    let output_tokens = i64::from(usage.output_tokens);
+                    let _ = call_blocking(state_ref.db.clone(), move |db| {
+                        db.log_llm_usage(
+                            chat_id,
+                            &channel,
+                            &provider,
+                            &model,
+                            input_tokens,
+                            output_tokens,
+                            "compaction",
+                        )
+                        .map(|_| ())
+                    })
+                    .await;
+                }
+                let text = response
+                    .content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ResponseContentBlock::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                Ok(text)
             }
-            response
-                .content
-                .iter()
-                .filter_map(|b| match b {
-                    ResponseContentBlock::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("")
-        }
-        Ok(Err(e)) => {
-            tracing::warn!("Compaction summarization failed: {e}, falling back to truncation");
-            return recent_messages.to_vec();
-        }
-        Err(_) => {
-            tracing::warn!(
-                "Compaction summarization timed out after {timeout_secs}s, falling back to truncation"
-            );
-            return recent_messages.to_vec();
+            Ok(Err(e)) => Err(format!("LLM error: {e}")),
+            Err(_) => Err(format!("Timeout after {timeout_secs}s")),
         }
     };
 
-    // Build compacted message list: summary context + recent messages
-    let mut compacted = vec![
-        Message {
-            role: "user".into(),
-            content: MessageContent::Text(format!("[Conversation Summary]\n{summary}")),
-        },
-        Message {
-            role: "assistant".into(),
-            content: MessageContent::Text(
-                "Understood, I have the conversation context. How can I help?".into(),
-            ),
-        },
-    ];
-
-    // Append recent messages, fixing role alternation
-    for msg in recent_messages {
-        if let Some(last) = compacted.last() {
-            if last.role == msg.role {
-                // Merge with previous to maintain alternation
-                if let Some(last_mut) = compacted.last_mut() {
-                    let existing = message_to_text(last_mut);
-                    let new_text = message_to_text(msg);
-                    last_mut.content = MessageContent::Text(format!("{existing}\n{new_text}"));
-                }
-                continue;
-            }
-        }
-        compacted.push(msg.clone());
-    }
-
-    // Ensure last message is from user
-    if let Some(last) = compacted.last() {
-        if last.role == "assistant" {
-            compacted.pop();
-        }
-    }
-
-    compacted
+    compressor.compress(messages, summarize_fn).await
 }
 
 #[cfg(test)]

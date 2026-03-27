@@ -3,6 +3,7 @@ pub mod acp;
 pub mod acp_subagent;
 pub mod agent_engine;
 pub mod channels;
+pub mod compressor;
 pub mod chat_commands;
 pub mod clawhub;
 pub mod codex_auth;
