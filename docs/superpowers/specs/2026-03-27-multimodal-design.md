@@ -91,25 +91,120 @@ crates/microclaw-media/src/
 
 **Crate:** `kreuzberg` v4.6.2 (Rust-native, 91+ formats, MIT)
 
-**New tool:** `read_document`
+### Document Extraction Storage (per-chat persistent)
+
+Extracted content is stored per-chat to enable later recall without re-extraction. Privacy is preserved — each chat can only see its own documents. Control chats can optionally access cross-chat documents.
+
+**New table** (migration v21):
+
+```sql
+CREATE TABLE document_extractions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    file_hash TEXT NOT NULL,          -- SHA-256 of file bytes
+    filename TEXT NOT NULL,
+    mime_type TEXT,
+    file_size INTEGER,
+    extracted_text TEXT NOT NULL,
+    extraction_method TEXT DEFAULT 'kreuzberg',
+    char_count INTEGER,
+    created_at TEXT NOT NULL,
+    UNIQUE(chat_id, file_hash)       -- dedup per chat
+);
+
+CREATE INDEX idx_doc_extractions_chat ON document_extractions(chat_id);
+```
+
+**Upload flow (all channels):**
+
+```
+User uploads document in Chat A
+  |
+  v
+1. Save file to disk (existing)
+2. Compute SHA-256 hash of file bytes
+3. Check: SELECT extracted_text FROM document_extractions
+         WHERE chat_id = ? AND file_hash = ?
+   |
+   +-- Cache HIT: use stored text (skip re-extraction)
+   +-- Cache MISS: kreuzberg::extract_text() -> INSERT into table
+   |
+   v
+4. Inject into message: "[document] filename=X\n\nExtracted content:\n{text}"
+5. Agent processes with full document context
+```
+
+Large documents (>50K chars): truncate injected text with note `(truncated, {total_chars} chars total — use read_document tool for specific sections)`. Full text always stored in the table.
+
+### Database methods
 
 ```rust
-pub struct ReadDocumentTool {
-    data_dir: String,
+impl Database {
+    pub fn get_document_extraction(
+        &self,
+        chat_id: i64,
+        file_hash: &str,
+    ) -> Result<Option<DocumentExtraction>, MicroClawError>;
+
+    pub fn insert_document_extraction(
+        &self,
+        chat_id: i64,
+        file_hash: &str,
+        filename: &str,
+        mime_type: Option<&str>,
+        file_size: i64,
+        extracted_text: &str,
+    ) -> Result<i64, MicroClawError>;
+
+    pub fn search_document_extractions(
+        &self,
+        chat_id: Option<i64>,  // None = all chats (control only)
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<DocumentExtraction>, MicroClawError>;
+
+    pub fn list_document_extractions(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<DocumentExtraction>, MicroClawError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentExtraction {
+    pub id: i64,
+    pub chat_id: i64,
+    pub file_hash: String,
+    pub filename: String,
+    pub mime_type: Option<String>,
+    pub file_size: i64,
+    pub extracted_text: String,
+    pub char_count: i64,
+    pub created_at: String,
 }
 ```
 
-- Input: `{ "file_path": "/path/to/file" }`
-- Calls `kreuzberg::extract_text(file_path)` -> extracted text
-- Supports: PDF, DOCX, XLSX, PPTX, HTML, Markdown, plain text, email, archives
-- Path guard: reuse existing `path_guard` module
-- Large documents (>50K chars): truncate with note
+### New tool: `read_document`
 
-**Flow change in all channel document handlers:**
+```rust
+pub struct ReadDocumentTool {
+    db: Arc<Database>,
+    control_chat_ids: Vec<i64>,
+}
 ```
-Current:  document -> save to disk -> "[document] filename=X saved_path=Y"
-New:      document -> save to disk -> kreuzberg extract -> "[document] filename=X\n\nExtracted content:\n{text}"
-```
+
+**Modes:**
+
+- **Extract from path**: `{ "file_path": "/path/to/file" }` — extract via kreuzberg, store in DB, return text
+- **Search stored documents**: `{ "query": "budget projections" }` — search extracted_text via LIKE across this chat's documents
+- **List documents**: `{ "list": true }` — list all documents uploaded to this chat
+- **Retrieve by hash**: `{ "file_hash": "abc123" }` — get specific previously-extracted document
+
+**Authorization:** Non-control chats can only access their own documents. Control chats can pass `chat_id` to access any chat's documents (same pattern as `session_search`).
+
+**Supported formats:** PDF, DOCX, XLSX, PPTX, HTML, Markdown, plain text, email, archives (91+ via kreuzberg)
+
+**Path guard:** Reuse existing `path_guard` module to block sensitive paths
 
 **Feature flag:** `documents` on `microclaw-media`
 
@@ -640,7 +735,7 @@ Adapter accumulates media events and adds them to message attachments array.
 | `crates/microclaw-media/src/video_gen_sora.rs` | Sora 2 provider | 60 |
 | `crates/microclaw-media/src/video_gen_fal.rs` | FAL video provider | 60 |
 | `crates/microclaw-media/src/video_gen_minimax.rs` | MiniMax Hailuo 2.3 provider | 60 |
-| `crates/microclaw-media/src/documents.rs` | kreuzberg wrapper | 40 |
+| `crates/microclaw-media/src/documents.rs` | kreuzberg wrapper + hash computation | 60 |
 | `crates/microclaw-media/src/audio_encode.rs` | OGG Opus encoding | 60 |
 
 ### New files (tools)
@@ -650,7 +745,7 @@ Adapter accumulates media events and adds them to message attachments array.
 | `src/tools/text_to_speech.rs` | TTS tool | 80 |
 | `src/tools/image_generate.rs` | Image gen tool | 80 |
 | `src/tools/video_generate.rs` | Video gen tool | 100 |
-| `src/tools/read_document.rs` | Document extraction tool | 60 |
+| `src/tools/read_document.rs` | Document extraction tool (extract/search/list/retrieve) | 120 |
 
 ### New files (frontend)
 
@@ -667,7 +762,8 @@ Adapter accumulates media events and adds them to message attachments array.
 | File | Change | ~Lines |
 |---|---|---|
 | `Cargo.toml` (root) | Add `microclaw-media` to workspace | 5 |
-| `src/config.rs` | Add TTS/STT/image/video/vision/document config fields | 80 |
+| `crates/microclaw-storage/src/db.rs` | Migration v21 (document_extractions table), DocumentExtraction struct, document CRUD + search methods | 150 |
+| `src/config.rs` | Add TTS/STT/image/video/vision/document config fields with `*_enabled` toggles | 100 |
 | `src/tools/mod.rs` | Register 4 new tools (conditionally based on `*_enabled` config flags) | 30 |
 | `src/agent_engine.rs` | Vision routing check before LLM call | 30 |
 | `src/setup.rs` | 3 new multimodal setup pages | 150 |
