@@ -11,6 +11,7 @@ pub mod memory;
 pub mod read_file;
 pub mod schedule;
 pub mod send_message;
+pub mod session_search;
 pub mod structured_memory;
 pub mod subagents;
 pub mod sync_skills;
@@ -257,6 +258,10 @@ impl ToolRegistry {
                 db.clone(),
                 memory_backend.clone(),
             )),
+            Box::new(session_search::SessionSearchTool::new(
+                db.clone(),
+                config.control_chat_ids.clone(),
+            )),
         ];
 
         // Add ClawHub tools if enabled
@@ -353,6 +358,10 @@ impl ToolRegistry {
             Box::new(structured_memory::StructuredMemorySearchTool::new(
                 db.clone(),
                 memory_backend,
+            )),
+            Box::new(session_search::SessionSearchTool::new(
+                db.clone(),
+                config.control_chat_ids.clone(),
             )),
         ];
         if allow_session_tools {
