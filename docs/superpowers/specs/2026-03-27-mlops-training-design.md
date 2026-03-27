@@ -19,6 +19,350 @@ Six subsystems that transform mchact from an agent runtime into a training data 
 
 **Architecture principle:** Rust handles orchestration, checkpointing, format conversion, CLI, and agent tools. Python handles only what requires Python libraries (HuggingFace tokenizer, Atropos/Tinker/SGLang).
 
+**Three interaction modes:**
+- **CLI commands** — `mchact batch`, `mchact export`, `mchact compress`, `mchact rl` for scripts, CI/CD, power users
+- **Pipeline shortcut** — `mchact train` chains batch → export → compress in one command
+- **Agent tools** — `batch_generate`, `export_trajectories`, `compress_trajectories`, `rl_*` tools for conversational/agentic use within chat
+
+---
+
+## 0. Interaction Modes
+
+### Mode 1: Individual CLI Commands
+
+Building blocks for power users and scripts:
+
+```sh
+mchact batch prompts.jsonl --workers 4 --distribution research
+mchact export training-runs/run-001/trajectories.jsonl --format sharegpt --parser hermes
+mchact compress training-runs/run-001/trajectories.jsonl --target-tokens 15250
+mchact rl start
+```
+
+### Mode 2: Pipeline Shortcut (`mchact train`)
+
+Single command for the common workflow:
+
+```
+mchact train <dataset.jsonl> [options]
+  --workers <N>              Parallel workers (default: 4)
+  --distribution <name>      Toolset distribution (default: "default")
+  --max-iterations <N>       Tool iterations per prompt (default: 10)
+  --model <model>            Override model
+  --format <openai|sharegpt> Export format (default: openai)
+  --parser <name>            Tool-call parser for ShareGPT (default: hermes)
+  --compress                 Enable compression after export
+  --target-tokens <N>        Compression target (default: 15250)
+  --run-name <name>          Output directory name
+  --resume                   Resume from checkpoint
+  --output <dir>             Output directory
+```
+
+Pipeline flow:
+```
+mchact train prompts.jsonl --format sharegpt --parser qwen3 --compress
+
+Step 1/3: Generating trajectories...
+  [████████████████████████] 1000/1000 prompts (4 workers)
+  → training-runs/run-001/trajectories.jsonl (1000 entries)
+
+Step 2/3: Exporting to ShareGPT (parser: qwen3)...
+  → training-runs/run-001/trajectories_sharegpt.jsonl
+
+Step 3/3: Compressing to 15250 tokens...
+  → training-runs/run-001/trajectories_sharegpt_compressed.jsonl
+  Compression: 800/1000 compressed, 150 skipped (under target), 50 kept as-is
+
+Done. Output: training-runs/run-001/
+  trajectories.jsonl              (OpenAI format, canonical)
+  trajectories_sharegpt.jsonl     (ShareGPT + qwen3 parser)
+  trajectories_sharegpt_compressed.jsonl
+  statistics.json
+  compression_metrics.json
+```
+
+If `--format openai` (default) and no `--compress`, the pipeline is just batch generation — identical to `mchact batch`.
+
+### Mode 3: Agent Tools (Conversational/Agentic)
+
+The agent has 8 training tools available in the main tool registry:
+
+#### `batch_generate` — Generate trajectories from a dataset
+
+```json
+{
+  "name": "batch_generate",
+  "description": "Generate tool-calling trajectories from a prompt dataset. Spawns parallel workers that process each prompt through the agent engine.",
+  "parameters": {
+    "type": "object",
+    "required": ["dataset"],
+    "properties": {
+      "dataset": {
+        "type": "string",
+        "description": "Path to JSONL file with 'prompt' field per line"
+      },
+      "workers": {
+        "type": "integer",
+        "description": "Parallel worker processes (default: 4)"
+      },
+      "distribution": {
+        "type": "string",
+        "description": "Toolset distribution name (default: 'default')"
+      },
+      "max_iterations": {
+        "type": "integer",
+        "description": "Max tool-call iterations per prompt (default: 10)"
+      },
+      "model": {
+        "type": "string",
+        "description": "Override model for generation"
+      },
+      "run_name": {
+        "type": "string",
+        "description": "Output directory name (auto-generated if omitted)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"run_name": "run-001", "output_dir": "training-runs/run-001", "total_prompts": 1000, "completed": 950, "failed": 50, "duration_seconds": 3600}`
+
+#### `export_trajectories` — Convert format and apply parser
+
+```json
+{
+  "name": "export_trajectories",
+  "description": "Convert trajectories to a different format (OpenAI or ShareGPT) with model-specific tool-call parsers.",
+  "parameters": {
+    "type": "object",
+    "required": ["input"],
+    "properties": {
+      "input": {
+        "type": "string",
+        "description": "Path to trajectories.jsonl"
+      },
+      "format": {
+        "type": "string",
+        "enum": ["openai", "sharegpt"],
+        "description": "Output format (default: openai)"
+      },
+      "parser": {
+        "type": "string",
+        "enum": ["hermes", "longcat", "qwen", "llama3_json", "llama4_json", "mistral", "deepseek_v3", "deepseek_v3_1", "glm45", "glm47", "kimi_k2", "qwen3_coder"],
+        "description": "Tool-call parser for ShareGPT format (default: hermes)"
+      },
+      "filter_completed": {
+        "type": "boolean",
+        "description": "Only include completed trajectories (default: false)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"output": "training-runs/run-001/trajectories_sharegpt.jsonl", "entries": 950, "filtered": 50}`
+
+#### `compress_trajectories` — Fit trajectories to token budget
+
+```json
+{
+  "name": "compress_trajectories",
+  "description": "Compress trajectories to fit a token budget using LLM summarization. Requires Python 3.10+.",
+  "parameters": {
+    "type": "object",
+    "required": ["input"],
+    "properties": {
+      "input": {
+        "type": "string",
+        "description": "Path to trajectories JSONL file"
+      },
+      "target_tokens": {
+        "type": "integer",
+        "description": "Max tokens per trajectory (default: 15250)"
+      },
+      "summary_tokens": {
+        "type": "integer",
+        "description": "Target summary size (default: 750)"
+      },
+      "model": {
+        "type": "string",
+        "description": "Summarization model (default: google/gemini-3-flash-preview)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"output": "..._compressed.jsonl", "compressed": 800, "skipped": 150, "failed": 50, "tokens_saved": 8000000}`
+
+#### `train_pipeline` — Run full batch → export → compress chain
+
+```json
+{
+  "name": "train_pipeline",
+  "description": "Run the full training data pipeline: generate trajectories, export to target format, and optionally compress. Combines batch_generate + export_trajectories + compress_trajectories.",
+  "parameters": {
+    "type": "object",
+    "required": ["dataset"],
+    "properties": {
+      "dataset": {
+        "type": "string",
+        "description": "Path to JSONL dataset"
+      },
+      "distribution": {
+        "type": "string",
+        "description": "Toolset distribution (default: 'default')"
+      },
+      "format": {
+        "type": "string",
+        "enum": ["openai", "sharegpt"],
+        "description": "Export format (default: openai)"
+      },
+      "parser": {
+        "type": "string",
+        "description": "Tool-call parser for ShareGPT (default: hermes)"
+      },
+      "compress": {
+        "type": "boolean",
+        "description": "Run compression after export (default: false)"
+      },
+      "target_tokens": {
+        "type": "integer",
+        "description": "Compression target tokens (default: 15250)"
+      },
+      "workers": {
+        "type": "integer",
+        "description": "Parallel workers (default: 4)"
+      },
+      "model": {
+        "type": "string",
+        "description": "Override model"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"run_name": "...", "trajectories": "...", "exported": "...", "compressed": "...", "statistics": {...}}`
+
+#### `rl_start_training` — Start an RL training run
+
+```json
+{
+  "name": "rl_start_training",
+  "description": "Start an RL training run with the selected environment. Spawns 3 processes (API server, trainer, environment). Requires Python with atroposlib, tinker, wandb.",
+  "parameters": {
+    "type": "object",
+    "required": ["environment"],
+    "properties": {
+      "environment": {
+        "type": "string",
+        "description": "Environment name (use rl_list_environments to see available)"
+      },
+      "config_overrides": {
+        "type": "object",
+        "description": "Override configurable fields (not locked fields)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"run_id": "a1b2c3d4", "environment": "web_research", "status": "starting", "wandb_run_name": "web_research-20260327-1430"}`
+
+#### `rl_check_status` — Check training status and metrics
+
+```json
+{
+  "name": "rl_check_status",
+  "description": "Check the status of an RL training run. Rate-limited to once per 30 minutes. Returns WandB metrics if available.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "run_id": {
+        "type": "string",
+        "description": "Run ID (omit to check latest run)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"run_id": "...", "status": "running", "running_time_minutes": 45.2, "wandb_metrics": {"step": 150, "reward_mean": 0.72, "percent_correct": 68.5}}`
+
+#### `rl_stop_training` — Stop a training run
+
+```json
+{
+  "name": "rl_stop_training",
+  "description": "Stop an RL training run. Gracefully terminates all 3 processes.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "run_id": {
+        "type": "string",
+        "description": "Run ID (omit to stop latest run)"
+      }
+    }
+  }
+}
+```
+
+Returns: `{"run_id": "...", "status": "stopped"}`
+
+#### `rl_list_environments` — List available RL environments
+
+```json
+{
+  "name": "rl_list_environments",
+  "description": "List available RL training environments.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
+```
+
+Returns: `{"environments": [{"name": "web_research", "description": "...", "file": "..."}], "count": 3}`
+
+### Agent-Driven Workflow Examples
+
+**Example 1: "Generate training data from my prompts for Qwen fine-tuning"**
+
+Agent chains:
+1. `batch_generate(dataset="prompts.jsonl", distribution="research")`
+2. `export_trajectories(input="training-runs/run-001/trajectories.jsonl", format="sharegpt", parser="qwen3")`
+3. Reports results to user
+
+**Example 2: "Run the full pipeline with compression"**
+
+Agent calls:
+1. `train_pipeline(dataset="prompts.jsonl", format="sharegpt", parser="hermes", compress=true)`
+2. Reports results to user
+
+**Example 3: "Train on web research and tell me when accuracy hits 70%"**
+
+Agent chains:
+1. `rl_start_training(environment="web_research")`
+2. Waits, periodically calls `rl_check_status()`
+3. Reports: "Step 150, accuracy 68.5%. Not yet at 70%."
+4. Checks again after 30 minutes
+5. Reports: "Step 250, accuracy 71.2%. Hit your 70% target. Want me to stop training?"
+6. On user confirmation: `rl_stop_training()`
+
+**Example 4: "What training runs are active?"**
+
+Agent calls `rl_check_status()` for each active run, summarizes.
+
+### Tool Registration
+
+All 8 training tools registered in `src/tools/mod.rs` conditionally:
+- `batch_generate`, `export_trajectories`, `compress_trajectories`, `train_pipeline` — always available
+- `rl_start_training`, `rl_check_status`, `rl_stop_training`, `rl_list_environments` — available when `training.environments_dir` is configured
+
+Training tools are available in the **main agent registry only** (not sub-agents — training is a top-level operation).
+
 ---
 
 ## 1. Batch Runner (`mchact batch`)
@@ -1070,6 +1414,7 @@ skills:
 | `src/batch.rs` | Batch coordinator (CLI, checkpointing, stats) | Rust | ~600 |
 | `src/batch_worker.rs` | Worker process (prompt execution, trajectory output) | Rust | ~400 |
 | `src/export.rs` | Format conversion CLI | Rust | ~200 |
+| `src/train_pipeline.rs` | Pipeline shortcut (`mchact train`) — chains batch → export → compress | Rust | ~250 |
 | `src/parsers/mod.rs` | Parser trait + registry | Rust | ~80 |
 | `src/parsers/hermes.rs` | Hermes/Qwen/Longcat parsers | Rust | ~120 |
 | `src/parsers/llama.rs` | Llama 3/4 parser | Rust | ~150 |
@@ -1082,6 +1427,8 @@ skills:
 | `src/distributions.rs` | Distribution loading + sampling | Rust | ~150 |
 | `src/tools/create_skill.rs` | Skill auto-creation tool | Rust | ~150 |
 | `src/tools/browser_vision.rs` | Browser vision analysis tool | Rust | ~120 |
+| `src/tools/training.rs` | Agent tools: batch_generate, export_trajectories, compress_trajectories, train_pipeline | Rust | ~400 |
+| `src/tools/rl_training.rs` | Agent tools: rl_start_training, rl_check_status, rl_stop_training, rl_list_environments | Rust | ~350 |
 | `training/compress.py` | Trajectory compression | Python | ~400 |
 | `training/distributions.yaml` | Distribution definitions | YAML | ~200 |
 | `training/requirements.txt` | Python deps for RL | Text | ~10 |
@@ -1089,18 +1436,18 @@ skills:
 | `training/environments/terminal_tasks.py` | Starter environment | Python | ~250 |
 | `training/environments/swe.py` | Starter environment | Python | ~300 |
 
-**Total new Rust:** ~3,270 lines
+**Total new Rust:** ~4,270 lines
 **Total new Python:** ~1,260 lines
 
 ## Modified Files
 
 | File | Changes |
 |------|---------|
-| `src/main.rs` | Add `batch`, `export`, `compress`, `rl` subcommands |
+| `src/main.rs` | Add `batch`, `export`, `compress`, `rl`, `train` subcommands + `worker` mode |
 | `src/config.rs` | Add `training` and `skills.auto_nudge_*` config fields |
-| `src/tools/mod.rs` | Register `create_skill` and `browser_vision` tools |
+| `src/tools/mod.rs` | Register `create_skill`, `browser_vision`, 4 training tools, 4 RL tools (12 new tools total) |
 | `src/agent_engine.rs` | Skill nudge injection after complex conversations |
-| `src/lib.rs` | Add `batch`, `export`, `rl`, `distributions`, `parsers` modules |
+| `src/lib.rs` | Add `batch`, `batch_worker`, `export`, `train_pipeline`, `rl`, `distributions`, `parsers` modules |
 | `Cargo.toml` | Add `rand` dependency (for distribution sampling) |
 
 ## Config Fields
