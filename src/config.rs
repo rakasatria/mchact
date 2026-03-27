@@ -738,6 +738,10 @@ pub struct Config {
     #[serde(default, rename = "voice_transcription_command")]
     pub voice_transcription_command: Option<String>,
 
+    // --- Observation memory (mchact-memory) ---
+    #[serde(default)]
+    pub memory: mchact_memory::driver::MemoryConfig,
+
     // --- Observability ---
     #[serde(default)]
     pub observability: Option<serde_yaml::Value>,

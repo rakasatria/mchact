@@ -57,6 +57,7 @@ pub struct AppState {
     pub llm_model_overrides: Arc<RwLock<HashMap<String, String>>>,
     pub embedding: Option<Arc<dyn EmbeddingProvider>>,
     pub memory_backend: Arc<MemoryBackend>,
+    pub observation_store: Option<Arc<dyn mchact_memory::ObservationStore>>,
     pub tools: ToolRegistry,
     pub metric_exporter: Option<Arc<OtlpMetricExporter>>,
     pub trace_exporter: Option<Arc<OtlpTraceExporter>>,
@@ -443,6 +444,8 @@ pub async fn run(
         db.clone(),
         crate::memory_backend::MemoryMcpClient::discover(&mcp_manager),
     ));
+
+    let observation_store = mchact_memory::driver::create_store(&config.memory).await;
     let mut tools = ToolRegistry::new(
         &config,
         channel_registry.clone(),
@@ -473,6 +476,7 @@ pub async fn run(
         llm_model_overrides: Arc::new(RwLock::new(llm_model_overrides)),
         embedding,
         memory_backend,
+        observation_store,
         tools,
         metric_exporter,
         trace_exporter,

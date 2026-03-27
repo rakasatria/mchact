@@ -25,6 +25,7 @@ sqlite-vec = ["microclaw-storage/sqlite-vec"]
 journald = ["microclaw-app/journald"]
 
 [dependencies]
+mchact-memory = { version = "0.1.0", path = "crates/mchact-memory" }
 microclaw-core = { version = "0.1.0", path = "crates/microclaw-core" }
 microclaw-clawhub = { version = "0.1.0", path = "crates/microclaw-clawhub" }
 microclaw-storage = { version = "0.1.0", path = "crates/microclaw-storage" }

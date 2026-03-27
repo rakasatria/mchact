@@ -72,6 +72,7 @@ pub async fn serve(
         llm_model_overrides: Arc::new(RwLock::new(HashMap::new())),
         embedding,
         memory_backend,
+        observation_store: mchact_memory::driver::create_store(&config.memory).await,
         tools,
         metric_exporter: None,
         trace_exporter: None,
