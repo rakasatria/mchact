@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-27
 **Status:** Approved
-**Scope:** ~1,120 lines across 9 files (4 new, 5 modified)
+**Scope:** ~1,300 lines across 10 files (5 new, 5 modified)
 
 ## Problem
 
@@ -346,6 +346,113 @@ When `subagents_orchestrate` completes (all workers done or timeout), delete fin
 
 ---
 
+### Feature 5: Mixture of Agents Tool
+
+A dedicated `mixture_of_agents` tool that gives the **same question** to multiple independent agents and synthesizes a consensus answer. Built on top of existing `subagents_orchestrate` infrastructure + Feature 3's shared findings.
+
+#### How It Differs From `subagents_orchestrate`
+
+| | `subagents_orchestrate` | `mixture_of_agents` |
+|---|---|---|
+| Input | `goal` + `work_packages[]` (different tasks) | `question` (one shared task) |
+| Workers | Each gets a different package | All get the same question |
+| Approach diversity | Implicit (different tasks) | Explicit (different prompts/perspectives) |
+| Merge | Concatenate artifacts | LLM-synthesized consensus |
+| Output | Raw merged JSON | Single natural-language answer |
+
+#### Tool Definition
+
+**New file:** `src/tools/mixture_of_agents.rs`
+
+```rust
+pub struct MixtureOfAgentsTool {
+    config: Config,
+    db: Arc<Database>,
+    channel_registry: Arc<ChannelRegistry>,
+}
+```
+
+**Tool schema input:**
+- `question` (string, required) — the question or task all agents tackle
+- `perspectives` (integer, optional, default 3, max 5) — number of independent agents
+- `approach_hints` (string[], optional) — explicit perspective labels, e.g. `["security expert", "performance engineer", "user experience"]`
+- `wait_timeout_secs` (integer, optional, default 120, max 300)
+- `token_budget_total` (integer, optional, default from config)
+
+**Execute flow:**
+
+1. **Generate diverse prompts.** If `approach_hints` provided, use them. Otherwise, auto-generate N perspectives:
+   ```
+   Perspective 1: "Analyze this as a pragmatic engineer focused on simplicity."
+   Perspective 2: "Analyze this as a skeptic looking for edge cases and risks."
+   Perspective 3: "Analyze this as an architect focused on long-term maintainability."
+   ```
+
+2. **Spawn workers via `subagents_orchestrate` internally.** Each work_package is the same `question` but with a different perspective prefix in the context:
+   ```json
+   {
+     "goal": "Answer this question from multiple perspectives and synthesize",
+     "work_packages": [
+       "PERSPECTIVE: pragmatic engineer\nQUESTION: {question}",
+       "PERSPECTIVE: skeptic / edge cases\nQUESTION: {question}",
+       "PERSPECTIVE: architect / long-term\nQUESTION: {question}"
+     ],
+     "wait": true,
+     "wait_timeout_secs": timeout,
+     "token_budget_total": budget
+   }
+   ```
+
+3. **Workers execute independently.** Each can:
+   - Use `session_search` to find relevant past context
+   - Use `findings_write` / `findings_read` to share discoveries with siblings
+   - Return their perspective's answer as an artifact
+
+4. **Synthesize consensus.** After all workers complete, make one final LLM call to aggregate:
+   ```
+   You received answers to the same question from {N} independent perspectives:
+
+   ## Perspective 1: Pragmatic Engineer
+   {worker_1_result}
+
+   ## Perspective 2: Skeptic
+   {worker_2_result}
+
+   ## Perspective 3: Architect
+   {worker_3_result}
+
+   Synthesize these into a single answer that:
+   - Identifies points of agreement (high confidence)
+   - Notes disagreements and which perspective is most convincing
+   - Provides a final recommended answer
+   ```
+
+5. **Return synthesized answer** as `ToolResult::success`.
+
+#### Default Perspectives
+
+When no `approach_hints` provided, use these based on `perspectives` count:
+
+| Count | Perspectives |
+|-------|-------------|
+| 2 | Pragmatic engineer, Skeptic/edge-cases |
+| 3 | Pragmatic engineer, Skeptic/edge-cases, Architect/long-term |
+| 4 | + Security/risk analyst |
+| 5 | + User/stakeholder advocate |
+
+#### Registration
+
+Registered in `ToolRegistry::new()` (main agent only). Not available to sub-agents — MoA is a top-level orchestration pattern, not recursive.
+
+#### Cost Control
+
+- Each perspective runs within `token_budget_total / perspectives` budget
+- Synthesis call is a single LLM call (~2K tokens input for 3 perspectives)
+- Total cost: roughly `(perspectives + 1)` LLM calls per invocation
+- For 3 perspectives: ~4 LLM calls total
+
+---
+
 ## File Map
 
 ### New files (4)
@@ -372,39 +479,6 @@ When `subagents_orchestrate` completes (all workers done or timeout), delete fin
 - `store_message` / `store_message_if_new` — FTS5 triggers handle sync
 - `archive_conversation` — still writes markdown before compaction
 - Sub-agent spawn/orchestrate logic — unchanged, just gets new tools
-
----
-
-## Testing Strategy
-
-### Unit tests
-- `fts::sanitize_fts_query` — empty, special chars, normal, CJK
-- `ContextCompressor` — each phase independently, edge cases (short conversations, no tool results)
-
-### Integration tests
-- FTS5 search: insert messages, verify search returns correct results with snippets
-- FTS5 triggers: verify new messages auto-indexed
-- Migration v19->v20: verify FTS table + triggers + backfill
-- Context window retrieval: verify surrounding messages
-
-### Tool tests
-- `session_search`: empty query, valid query, chat authorization
-- `findings_write/read`: scoped to orchestration_id, cross-worker visibility
-- Compressor: full compress cycle, iterative re-compression, fallback on timeout
-
----
-
-## Risks
-
-| Risk | Mitigation |
-|------|------------|
-| Large backfill during migration | Runs at startup before requests. Bulk INSERT completes in <1s for 100K messages. |
-| FTS5 index corruption | `rebuild_fts_index()` available for admin recovery. Triggers are idempotent. |
-| FTS5 query injection | `sanitize_fts_query()` strips all operators, quotes tokens. Parameterized queries. |
-| Compressor changes break sessions | Fallback to truncation on any error. Archive still written pre-compaction. |
-| Summary drift on re-compression | Phase 5 iterative updates preserve existing information. |
-| Findings table grows unbounded | Cleanup on orchestration completion. TTL-based cleanup as fallback. |
-| rusqlite bundled SQLite missing FTS5 | Bundled feature includes FTS5 by default. Verify with `pragma_compile_options`. |
 
 ---
 
@@ -489,7 +563,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 
 ## File Map
 
-### New files (4)
+### New files (5)
 
 | File | Purpose | ~Lines |
 |------|---------|--------|
@@ -497,6 +571,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 | `src/tools/session_search.rs` | SessionSearchTool | 200 |
 | `src/compressor.rs` | 5-phase ContextCompressor | 350 |
 | `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool | 150 |
+| `src/tools/mixture_of_agents.rs` | MixtureOfAgentsTool | 180 |
 
 ### Modified files (5)
 
@@ -504,7 +579,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 |------|--------|--------|
 | `crates/microclaw-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
 | `crates/microclaw-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
-| `src/tools/mod.rs` | Register session_search + findings tools | 15 |
+| `src/tools/mod.rs` | Register session_search, findings, and mixture_of_agents tools | 20 |
 | `src/agent_engine.rs` | Replace compact_messages body with ContextCompressor::compress() | 20 (net -80) |
 | `src/llm.rs` | `apply_anthropic_cache_control()` + `apply_cache_marker()` in Anthropic provider path | 70 |
 
@@ -534,6 +609,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 ### Tool tests
 - `session_search`: empty query, valid query, chat authorization
 - `findings_write/read`: scoped to orchestration_id, cross-worker visibility
+- `mixture_of_agents`: perspective generation (default and custom hints), synthesis prompt construction, timeout handling, cost budget enforcement
 - Compressor: full compress cycle, iterative re-compression, fallback on timeout
 
 ---
@@ -551,6 +627,8 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 | rusqlite bundled SQLite missing FTS5 | Bundled feature includes FTS5 by default. Verify with `pragma_compile_options`. |
 | Cache markers leak to non-Anthropic | Applied only in Anthropic serialization path. Shared types untouched. |
 | Cache marker breaks message format | If invalid, Anthropic silently ignores. No error, just no discount. |
+| MoA synthesis quality varies | Structured synthesis prompt with explicit instructions. Worst case: returns concatenated perspectives without consensus. |
+| MoA cost multiplier (N+1 LLM calls) | Token budget enforced per perspective. Default 3 perspectives keeps cost at ~4x a single call. |
 
 ---
 
