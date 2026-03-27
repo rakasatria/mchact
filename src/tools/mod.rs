@@ -4,6 +4,7 @@ pub mod bash;
 pub mod browser;
 pub mod edit_file;
 pub mod export_chat;
+pub mod findings;
 pub mod glob;
 pub mod grep;
 pub mod mcp;
@@ -363,6 +364,8 @@ impl ToolRegistry {
                 db.clone(),
                 config.control_chat_ids.clone(),
             )),
+            Box::new(findings::FindingsWriteTool::new(db.clone())),
+            Box::new(findings::FindingsReadTool::new(db.clone())),
         ];
         if allow_session_tools {
             if let Some(channel_registry) = channel_registry {
