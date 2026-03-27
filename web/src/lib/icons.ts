@@ -16,6 +16,7 @@ import {
   faShieldHalved,
   faBell,
   faCommentDots,
+  faPhotoFilm,
 } from "@fortawesome/free-solid-svg-icons";
 import {
   faTelegram,
@@ -37,6 +38,7 @@ export const TAB_ICONS: Record<string, IconDefinition> = {
   web: faGlobe,
   access: faKey,
   a2a: faNetworkWired,
+  multimodal: faPhotoFilm,
 };
 
 export const CHANNEL_ICONS: Record<string, IconDefinition> = {

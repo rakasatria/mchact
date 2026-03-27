@@ -32,6 +32,7 @@ import { IrcTab } from "./irc-tab";
 import { DynamicChannelTab } from "./dynamic-channel-tab";
 import { WebTab } from "./web-tab";
 import { A2ATab } from "./a2a-tab";
+import { MultimodalTab } from "./multimodal-tab";
 
 export type SettingsDialogProps = {
   configOpen: boolean;
@@ -378,6 +379,16 @@ export function SettingsDialog(props: SettingsDialogProps): React.ReactElement {
                         />{" "}
                         A2A
                       </Tabs.Trigger>
+                      <Tabs.Trigger
+                        value="multimodal"
+                        className="mc-settings-tab-trigger w-full justify-start rounded-lg px-3 py-2 text-[18px] leading-6 bg-transparent data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-200 hover:bg-white/8"
+                      >
+                        <FontAwesomeIcon
+                          icon={TAB_ICONS.multimodal}
+                          className="mr-2"
+                        />{" "}
+                        Multimodal
+                      </Tabs.Trigger>
                       {authAuthenticated ? (
                         <div className="mt-auto pt-3">
                           <Separator size="4" />
@@ -486,6 +497,10 @@ export function SettingsDialog(props: SettingsDialogProps): React.ReactElement {
 
                     <Tabs.Content value="a2a">
                       <A2ATab />
+                    </Tabs.Content>
+
+                    <Tabs.Content value="multimodal">
+                      <MultimodalTab />
                     </Tabs.Content>
                   </div>
                 </div>
