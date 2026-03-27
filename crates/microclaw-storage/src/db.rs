@@ -192,7 +192,7 @@ pub struct AuditLogRecord {
 pub type SessionMetaRow = (String, String, Option<String>, Option<i64>);
 pub type SessionTreeRow = (i64, Option<String>, Option<i64>, String);
 
-const SCHEMA_VERSION_CURRENT: i64 = 19;
+const SCHEMA_VERSION_CURRENT: i64 = 20;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -853,6 +853,51 @@ fn apply_schema_migrations(conn: &Connection) -> Result<(), MicroClawError> {
         ensure_sessions_schema(conn)?;
         set_schema_version(conn, 19)?;
         version = 19;
+    }
+    if version < 20 {
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                sender_name,
+                content,
+                content='messages',
+                content_rowid='rowid'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, sender_name, content)
+                VALUES (new.rowid, new.sender_name, new.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, sender_name, content)
+                VALUES ('delete', old.rowid, old.sender_name, old.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, sender_name, content)
+                VALUES ('delete', old.rowid, old.sender_name, old.content);
+                INSERT INTO messages_fts(rowid, sender_name, content)
+                VALUES (new.rowid, new.sender_name, new.content);
+            END;
+
+            INSERT INTO messages_fts(rowid, sender_name, content)
+            SELECT rowid, sender_name, content FROM messages;
+
+            CREATE TABLE IF NOT EXISTS subagent_findings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                orchestration_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                finding TEXT NOT NULL,
+                category TEXT DEFAULT 'general',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_findings_orch
+                ON subagent_findings(orchestration_id);
+            ",
+        )?;
+        set_schema_version(conn, 20)?;
+        version = 20;
     }
     if version != SCHEMA_VERSION_CURRENT {
         set_schema_version(conn, SCHEMA_VERSION_CURRENT)?;
