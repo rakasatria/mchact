@@ -1,0 +1,603 @@
+use async_trait::async_trait;
+use serde_json::json;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::info;
+
+use crate::config::WorkingDirIsolation;
+use microclaw_core::llm_types::ToolDefinition;
+use microclaw_core::text::floor_char_boundary;
+use microclaw_tools::sandbox::{SandboxExecOptions, SandboxMode, SandboxRouter};
+
+use super::{schema_object, Tool, ToolResult};
+
+pub struct BashTool {
+    working_dir: PathBuf,
+    working_dir_isolation: WorkingDirIsolation,
+    default_timeout_secs: u64,
+    sandbox_router: Option<Arc<SandboxRouter>>,
+}
+
+impl BashTool {
+    pub fn new(working_dir: &str) -> Self {
+        Self::new_with_isolation(working_dir, WorkingDirIsolation::Shared)
+    }
+
+    pub fn new_with_isolation(
+        working_dir: &str,
+        working_dir_isolation: WorkingDirIsolation,
+    ) -> Self {
+        Self {
+            working_dir: PathBuf::from(working_dir),
+            working_dir_isolation,
+            default_timeout_secs: 120,
+            sandbox_router: None,
+        }
+    }
+
+    pub fn with_default_timeout_secs(mut self, timeout_secs: u64) -> Self {
+        self.default_timeout_secs = timeout_secs;
+        self
+    }
+
+    pub fn with_sandbox_router(mut self, router: Arc<SandboxRouter>) -> Self {
+        self.sandbox_router = Some(router);
+        self
+    }
+}
+
+fn extract_env_files(input: &serde_json::Value) -> Vec<PathBuf> {
+    super::auth_context_from_input(input)
+        .map(|auth| auth.env_files.iter().map(PathBuf::from).collect())
+        .unwrap_or_default()
+}
+
+const REDACT_MIN_VALUE_LEN: usize = 8;
+
+fn redact_env_secrets(output: &str, env_files: &[PathBuf]) -> String {
+    let mut secrets: Vec<(String, String)> = Vec::new();
+    for env_file in env_files {
+        if let Ok(content) = std::fs::read_to_string(env_file) {
+            for (key, value) in microclaw_tools::env_file::parse_dotenv(&content) {
+                if value.len() >= REDACT_MIN_VALUE_LEN {
+                    secrets.push((key, value));
+                }
+            }
+        }
+    }
+    if secrets.is_empty() {
+        return output.to_string();
+    }
+    secrets.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    let mut redacted = output.to_string();
+    for (key, value) in &secrets {
+        redacted = redacted.replace(value, &format!("[REDACTED:{key}]"));
+    }
+    redacted
+}
+
+fn contains_explicit_tmp_absolute_path(command: &str) -> bool {
+    let mut start = 0usize;
+    while let Some(offset) = command[start..].find("/tmp/") {
+        let idx = start + offset;
+        let prev = if idx == 0 {
+            None
+        } else {
+            command[..idx].chars().next_back()
+        };
+        if prev.is_none()
+            || matches!(
+                prev,
+                Some(' ' | '\t' | '\n' | '\'' | '"' | '=' | '(' | ':' | ';' | '|')
+            )
+        {
+            return true;
+        }
+        start = idx + 5;
+    }
+    false
+}
+
+fn extract_explicit_tmp_absolute_path(command: &str) -> Option<String> {
+    let mut start = 0usize;
+    while let Some(offset) = command[start..].find("/tmp/") {
+        let idx = start + offset;
+        let prev = if idx == 0 {
+            None
+        } else {
+            command[..idx].chars().next_back()
+        };
+        if prev.is_none()
+            || matches!(
+                prev,
+                Some(' ' | '\t' | '\n' | '\'' | '"' | '=' | '(' | ':' | ';' | '|')
+            )
+        {
+            let suffix = &command[idx + 5..];
+            let end = suffix
+                .find(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | ')' | ';' | '|'))
+                .unwrap_or(suffix.len());
+            return Some(command[idx..idx + 5 + end].to_string());
+        }
+        start = idx + 5;
+    }
+    None
+}
+
+fn suggested_tmp_working_dir_path(working_dir: &Path, command: &str) -> Option<PathBuf> {
+    let tmp_path = extract_explicit_tmp_absolute_path(command)?;
+    let relative = tmp_path.trim_start_matches("/tmp/").trim();
+    if relative.is_empty() {
+        return Some(working_dir.to_path_buf());
+    }
+    Some(working_dir.join(relative))
+}
+
+fn command_accesses_dotenv(command: &str) -> bool {
+    let patterns = [".env", "dotenv", "env_file"];
+    let lower = command.to_ascii_lowercase();
+    patterns.iter().any(|p| lower.contains(p))
+}
+
+fn command_not_found_hint(router: Option<&Arc<SandboxRouter>>) -> &'static str {
+    match router {
+        Some(router) if router.mode() == SandboxMode::All => {
+            "Command was not found in the current execution environment. Install it on the host, or ensure the configured sandbox image contains it."
+        }
+        _ => {
+            "Command was not found on the host. Install it, or enable sandbox mode with an image that already contains the dependency."
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for BashTool {
+    fn name(&self) -> &str {
+        "bash"
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "bash".into(),
+            description: "Execute a bash command and return the output. IMPORTANT: You must CALL this tool (not write it as text) to run a command. Use for running shell commands, scripts, or system operations. Prefer relative paths rooted in the current chat working directory, and use its tmp/ subdirectory instead of absolute /tmp paths. Do not invent machine-specific absolute paths like /home/... or /Users/... unless the user or a tool already provided them.".into(),
+            input_schema: schema_object(
+                json!({
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute"
+                    },
+                    "timeout_secs": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (defaults to configured tool timeout budget)"
+                    }
+                }),
+                &["command"],
+            ),
+        }
+    }
+
+    async fn execute(&self, input: serde_json::Value) -> ToolResult {
+        let command = match input.get("command").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => return ToolResult::error("Missing 'command' parameter".into()),
+        };
+
+        let timeout_secs = input
+            .get("timeout_secs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(self.default_timeout_secs);
+        let working_dir =
+            super::resolve_tool_working_dir(&self.working_dir, self.working_dir_isolation, &input)
+                .join("tmp");
+        if let Err(e) = tokio::fs::create_dir_all(&working_dir).await {
+            return ToolResult::error(format!(
+                "Failed to create working directory {}: {e}",
+                working_dir.display()
+            ));
+        }
+
+        if contains_explicit_tmp_absolute_path(command) {
+            let suggested_path = suggested_tmp_working_dir_path(&working_dir, command)
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| working_dir.display().to_string());
+            return ToolResult::error(format!(
+                "Command contains an absolute /tmp path. Use the current chat working directory instead: {}. For example, replace the /tmp path with {}.",
+                working_dir.display(),
+                suggested_path
+            ))
+            .with_error_type("path_policy_blocked");
+        }
+
+        let env_files = extract_env_files(&input);
+        if !env_files.is_empty() && command_accesses_dotenv(command) {
+            return ToolResult::error(
+                "Command appears to access .env files, which is blocked for security. Skill environment variables are already injected automatically.".into(),
+            )
+            .with_error_type("env_access_blocked");
+        }
+
+        info!("Executing bash in {}: {}", working_dir.display(), command);
+
+        let session_key = super::auth_context_from_input(&input)
+            .map(|auth| format!("{}-{}", auth.caller_channel, auth.caller_chat_id))
+            .unwrap_or_else(|| "shared".to_string());
+        let env_files_for_redact = env_files.clone();
+        let exec_opts = SandboxExecOptions {
+            timeout: std::time::Duration::from_secs(timeout_secs),
+            working_dir: Some(working_dir.clone()),
+            envs: std::collections::HashMap::new(),
+            env_files,
+        };
+        let result = if let Some(router) = &self.sandbox_router {
+            router.exec(&session_key, command, &exec_opts).await
+        } else {
+            microclaw_tools::sandbox::exec_host_command(command, &exec_opts).await
+        };
+
+        match result {
+            Ok(output) => {
+                let stdout = output.stdout;
+                let stderr = output.stderr;
+                let exit_code = output.exit_code;
+
+                let mut result_text = String::new();
+                if !stdout.is_empty() {
+                    result_text.push_str(stdout.as_str());
+                }
+                if !stderr.is_empty() {
+                    if !result_text.is_empty() {
+                        result_text.push('\n');
+                    }
+                    result_text.push_str("STDERR:\n");
+                    result_text.push_str(stderr.as_str());
+                }
+                if result_text.is_empty() {
+                    result_text = format!("Command completed with exit code {exit_code}");
+                }
+
+                result_text = redact_env_secrets(&result_text, &env_files_for_redact);
+
+                if exit_code == 127 && stderr.to_ascii_lowercase().contains("command not found") {
+                    if !result_text.ends_with('\n') {
+                        result_text.push('\n');
+                    }
+                    result_text.push_str(command_not_found_hint(self.sandbox_router.as_ref()));
+                }
+
+                // Truncate very long output
+                if result_text.len() > 30000 {
+                    let cutoff = floor_char_boundary(&result_text, 30000);
+                    result_text.truncate(cutoff);
+                    result_text.push_str("\n... (output truncated)");
+                }
+
+                if exit_code == 0 {
+                    ToolResult::success(result_text).with_status_code(exit_code)
+                } else {
+                    ToolResult::error(format!("Exit code {exit_code}\n{result_text}"))
+                        .with_status_code(exit_code)
+                        .with_error_type("process_exit")
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("timed out after") {
+                    ToolResult::error(format!("Command timed out after {timeout_secs} seconds"))
+                        .with_error_type("timeout")
+                } else {
+                    ToolResult::error(format!("Failed to execute command: {e}"))
+                        .with_error_type("spawn_error")
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn sleep_command(seconds: u64) -> String {
+        if cfg!(target_os = "windows") {
+            format!("Start-Sleep -Seconds {seconds}")
+        } else {
+            format!("sleep {seconds}")
+        }
+    }
+
+    fn stderr_command() -> &'static str {
+        if cfg!(target_os = "windows") {
+            "[Console]::Error.WriteLine('err')"
+        } else {
+            "echo err >&2"
+        }
+    }
+
+    fn write_marker_command(file_name: &str) -> String {
+        if cfg!(target_os = "windows") {
+            format!("New-Item -ItemType File -Path '{file_name}' -Force | Out-Null")
+        } else {
+            format!("touch '{file_name}'")
+        }
+    }
+
+    fn echo_env_command(var_name: &str) -> String {
+        if cfg!(target_os = "windows") {
+            format!("$env:{var_name}")
+        } else {
+            format!("echo ${var_name}")
+        }
+    }
+
+    #[test]
+    fn test_contains_explicit_tmp_absolute_path_detection() {
+        assert!(contains_explicit_tmp_absolute_path("ls /tmp/x"));
+        assert!(contains_explicit_tmp_absolute_path("A=\"/tmp/x\"; echo $A"));
+        assert!(!contains_explicit_tmp_absolute_path(
+            "ls /Users/eevv/work/project/tmp/x"
+        ));
+    }
+
+    #[test]
+    fn test_extract_explicit_tmp_absolute_path() {
+        assert_eq!(
+            extract_explicit_tmp_absolute_path("git clone repo /tmp/lootbox"),
+            Some("/tmp/lootbox".to_string())
+        );
+        assert_eq!(
+            extract_explicit_tmp_absolute_path("A=\"/tmp/lootbox\"; echo $A"),
+            Some("/tmp/lootbox".to_string())
+        );
+    }
+
+    #[test]
+    fn test_suggested_tmp_working_dir_path() {
+        let work = Path::new("/workspace/chat/tmp");
+        assert_eq!(
+            suggested_tmp_working_dir_path(work, "git clone repo /tmp/lootbox"),
+            Some(PathBuf::from("/workspace/chat/tmp/lootbox"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_bash_echo() {
+        let tool = BashTool::new(".");
+        let result = tool.execute(json!({"command": "echo hello"})).await;
+        assert!(!result.is_error);
+        assert!(result.content.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_exit_code_nonzero() {
+        let tool = BashTool::new(".");
+        let result = tool.execute(json!({"command": "exit 1"})).await;
+        assert!(result.is_error);
+        assert!(result.content.contains("Exit code 1"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_stderr() {
+        let tool = BashTool::new(".");
+        let result = tool.execute(json!({"command": stderr_command()})).await;
+        assert!(!result.is_error); // exit code is 0
+        assert!(result.content.contains("STDERR"));
+        assert!(result.content.contains("err"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_timeout() {
+        let tool = BashTool::new(".");
+        let result = tool
+            .execute(json!({"command": sleep_command(10), "timeout_secs": 1}))
+            .await;
+        assert!(result.is_error);
+        assert!(result.content.contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_blocks_tmp_absolute_path() {
+        let tool = BashTool::new(".");
+        let result = tool.execute(json!({"command": "ls /tmp/x"})).await;
+        assert!(result.is_error);
+        assert_eq!(result.error_type.as_deref(), Some("path_policy_blocked"));
+        assert!(result.content.contains("current chat working directory"));
+        assert!(result.content.contains("replace the /tmp path"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_missing_command() {
+        let tool = BashTool::new(".");
+        let result = tool.execute(json!({})).await;
+        assert!(result.is_error);
+        assert!(result.content.contains("Missing 'command'"));
+    }
+
+    #[test]
+    fn test_bash_tool_name_and_definition() {
+        let tool = BashTool::new(".");
+        assert_eq!(tool.name(), "bash");
+        let def = tool.definition();
+        assert_eq!(def.name, "bash");
+        assert!(def
+            .description
+            .contains("Prefer relative paths rooted in the current chat working directory"));
+        assert!(def.description.contains("/home/... or /Users/..."));
+        assert!(def.input_schema["properties"]["command"].is_object());
+    }
+
+    #[tokio::test]
+    async fn test_bash_uses_working_dir() {
+        let root = std::env::temp_dir().join(format!("microclaw_bash_{}", uuid::Uuid::new_v4()));
+        let work = root.join("workspace");
+        std::fs::create_dir_all(&work).unwrap();
+
+        let tool = BashTool::new(work.to_str().unwrap());
+        let marker = "cwd_marker.txt";
+        let result = tool
+            .execute(json!({"command": write_marker_command(marker)}))
+            .await;
+        assert!(!result.is_error);
+
+        let expected_marker = work.join("shared").join("tmp").join(marker);
+        assert!(expected_marker.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn test_bash_chat_isolation_uses_chat_working_dir() {
+        let root = std::env::temp_dir().join(format!("microclaw_bash_{}", uuid::Uuid::new_v4()));
+        let work = root.join("workspace");
+        std::fs::create_dir_all(&work).unwrap();
+
+        let tool = BashTool::new_with_isolation(work.to_str().unwrap(), WorkingDirIsolation::Chat);
+        let marker = "chat_marker.txt";
+        let result = tool
+            .execute(json!({
+                "command": write_marker_command(marker),
+                "__microclaw_auth": {
+                    "caller_channel": "telegram",
+                    "caller_chat_id": -100123,
+                    "control_chat_ids": []
+                }
+            }))
+            .await;
+        assert!(!result.is_error);
+
+        let expected_marker = work
+            .join("chat")
+            .join("telegram")
+            .join("neg100123")
+            .join("tmp")
+            .join(marker);
+        assert!(expected_marker.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_extract_env_files_from_input() {
+        let input = json!({
+            "command": "echo hi",
+            "__microclaw_auth": {
+                "caller_channel": "telegram",
+                "caller_chat_id": 1,
+                "control_chat_ids": [],
+                "env_files": [
+                    "/home/user/.microclaw/skills/outline/.env",
+                    "/home/user/.microclaw/skills/weather/.env"
+                ]
+            }
+        });
+        let files = extract_env_files(&input);
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            files[0],
+            PathBuf::from("/home/user/.microclaw/skills/outline/.env")
+        );
+    }
+
+    #[test]
+    fn test_extract_env_files_empty_when_absent() {
+        let input = json!({"command": "echo hi"});
+        let files = extract_env_files(&input);
+        assert!(files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_bash_injects_env_files_into_execution() {
+        let root =
+            std::env::temp_dir().join(format!("microclaw_bash_env_{}", uuid::Uuid::new_v4()));
+        let work = root.join("workspace");
+        std::fs::create_dir_all(&work).unwrap();
+
+        let env_dir = root.join("skill_env");
+        std::fs::create_dir_all(&env_dir).unwrap();
+        let env_file = env_dir.join(".env");
+        std::fs::write(&env_file, "TEST_SKILL_VAR=skill_value_42\n").unwrap();
+
+        let tool = BashTool::new(work.to_str().unwrap());
+        let result = tool
+            .execute(json!({
+                "command": echo_env_command("TEST_SKILL_VAR"),
+                "__microclaw_auth": {
+                    "caller_channel": "telegram",
+                    "caller_chat_id": 1,
+                    "control_chat_ids": [],
+                    "env_files": [env_file.to_string_lossy()]
+                }
+            }))
+            .await;
+        assert!(!result.is_error);
+        assert!(
+            result.content.contains("[REDACTED:TEST_SKILL_VAR]"),
+            "expected redacted output, got: {}",
+            result.content
+        );
+        assert!(!result.content.contains("skill_value_42"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_redact_env_secrets_replaces_values() {
+        let dir = std::env::temp_dir().join(format!("microclaw_redact_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let env_file = dir.join(".env");
+        std::fs::write(&env_file, "API_KEY=supersecretkey123\nSHORT=ab\n").unwrap();
+
+        let output = "Response: supersecretkey123 is the key";
+        let redacted = redact_env_secrets(output, &[env_file]);
+        assert!(redacted.contains("[REDACTED:API_KEY]"));
+        assert!(!redacted.contains("supersecretkey123"));
+        assert!(!redacted.contains("[REDACTED:SHORT]"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_redact_env_secrets_no_env_files() {
+        let output = "some output text";
+        let redacted = redact_env_secrets(output, &[]);
+        assert_eq!(redacted, output);
+    }
+
+    #[test]
+    fn test_command_accesses_dotenv_detection() {
+        assert!(command_accesses_dotenv("cat .env"));
+        assert!(command_accesses_dotenv("cat /path/to/.env.local"));
+        assert!(command_accesses_dotenv("source dotenv"));
+        assert!(!command_accesses_dotenv("echo hello"));
+        assert!(!command_accesses_dotenv("ls -la"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_blocks_dotenv_access_when_env_files_active() {
+        let tool = BashTool::new(".");
+        let result = tool
+            .execute(json!({
+                "command": "cat .env",
+                "__microclaw_auth": {
+                    "caller_channel": "telegram",
+                    "caller_chat_id": 1,
+                    "control_chat_ids": [],
+                    "env_files": ["/some/skill/.env"]
+                }
+            }))
+            .await;
+        assert!(result.is_error);
+        assert_eq!(result.error_type.as_deref(), Some("env_access_blocked"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_allows_dotenv_mention_without_env_files() {
+        let tool = BashTool::new(".");
+        let result = tool
+            .execute(json!({
+                "command": "echo .env is a file"
+            }))
+            .await;
+        assert!(!result.is_error);
+    }
+}
