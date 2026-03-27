@@ -5,6 +5,7 @@ pub mod agent_engine;
 pub mod channels;
 pub mod compressor;
 pub mod distributions;
+pub mod parsers;
 pub mod chat_commands;
 pub mod clawhub;
 pub mod codex_auth;
