@@ -3,6 +3,7 @@ use google_cloud_storage::client::{Client, ClientConfig};
 use google_cloud_storage::http::objects::delete::DeleteObjectRequest;
 use google_cloud_storage::http::objects::download::Range;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
+use google_cloud_storage::http::objects::list::ListObjectsRequest;
 use google_cloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
 
 use crate::{GcsConfig, ObjectStorage, StorageError, StorageResult};
@@ -97,6 +98,43 @@ impl ObjectStorage for GcsStorage {
             Err(e) if is_not_found(&e) => Ok(false),
             Err(e) => Err(StorageError::Backend(format!("GCS exists error: {e}"))),
         }
+    }
+
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        let full_prefix = self.full_key(prefix);
+        let mut result = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let req = ListObjectsRequest {
+                bucket: self.bucket.clone(),
+                prefix: Some(full_prefix.clone()),
+                page_token: page_token.take(),
+                ..Default::default()
+            };
+            let resp = self
+                .client
+                .list_objects(&req)
+                .await
+                .map_err(|e| StorageError::Backend(format!("GCS list_keys error: {e}")))?;
+            for obj in resp.items.unwrap_or_default() {
+                let key = obj.name.as_str();
+                let relative = if self.prefix.is_empty() {
+                    key.to_string()
+                } else {
+                    let prefix_with_slash = format!("{}/", self.prefix.trim_end_matches('/'));
+                    key.strip_prefix(&prefix_with_slash)
+                        .unwrap_or(key)
+                        .to_string()
+                };
+                result.push(relative);
+            }
+            match resp.next_page_token {
+                Some(token) if !token.is_empty() => page_token = Some(token),
+                _ => break,
+            }
+        }
+        result.sort();
+        Ok(result)
     }
 
     fn backend_name(&self) -> &'static str {

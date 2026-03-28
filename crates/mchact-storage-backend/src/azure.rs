@@ -4,6 +4,7 @@ use azure_core::auth::Secret;
 use azure_storage::ConnectionString;
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::ContainerClient;
+use futures::StreamExt;
 use tracing::instrument;
 
 use crate::{AzureConfig, ObjectStorage, StorageError, StorageResult};
@@ -131,6 +132,35 @@ impl ObjectStorage for AzureBlobStorage {
             .map_err(|e| {
                 StorageError::Backend(format!("azure exists error for '{blob_key}': {e}"))
             })
+    }
+
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        let full_prefix = self.full_key(prefix);
+        let mut result = Vec::new();
+        let mut stream = self
+            .container_client
+            .list_blobs()
+            .prefix(full_prefix.clone())
+            .into_stream();
+        while let Some(page) = stream.next().await {
+            let page = page.map_err(|e| {
+                StorageError::Backend(format!("azure list_blobs error: {e}"))
+            })?;
+            for blob in page.blobs.blobs() {
+                let key = blob.name.as_str();
+                let relative = if self.prefix.is_empty() {
+                    key.to_string()
+                } else {
+                    let prefix_with_slash = format!("{}/", self.prefix.trim_end_matches('/'));
+                    key.strip_prefix(&prefix_with_slash)
+                        .unwrap_or(key)
+                        .to_string()
+                };
+                result.push(relative);
+            }
+        }
+        result.sort();
+        Ok(result)
     }
 
     fn backend_name(&self) -> &'static str {

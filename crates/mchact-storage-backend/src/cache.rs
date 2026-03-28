@@ -283,6 +283,11 @@ impl ObjectStorage for CachedStorage {
         self.backend.exists(key).await
     }
 
+    /// Delegates to the inner backend; the cache layer has no index of all keys.
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        self.backend.list_keys(prefix).await
+    }
+
     fn backend_name(&self) -> &'static str {
         "cached"
     }

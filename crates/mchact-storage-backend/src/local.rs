@@ -75,6 +75,28 @@ impl ObjectStorage for LocalStorage {
         Ok(self.full_path(key).exists())
     }
 
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        let base = self.full_path(prefix);
+        let mut result = Vec::new();
+        if !base.exists() {
+            return Ok(result);
+        }
+        let mut stack = vec![base];
+        while let Some(dir) = stack.pop() {
+            let mut entries = tokio::fs::read_dir(&dir).await.map_err(StorageError::Io)?;
+            while let Some(entry) = entries.next_entry().await.map_err(StorageError::Io)? {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if let Ok(rel) = path.strip_prefix(&self.base_dir) {
+                    result.push(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+        result.sort();
+        Ok(result)
+    }
+
     fn backend_name(&self) -> &'static str {
         "local"
     }
@@ -147,5 +169,36 @@ mod tests {
     async fn test_backend_name() {
         let storage = temp_storage().await;
         assert_eq!(storage.backend_name(), "local");
+    }
+
+    #[tokio::test]
+    async fn test_list_keys_empty_prefix() {
+        let storage = temp_storage().await;
+        storage.put("a.txt", b"a".to_vec()).await.unwrap();
+        storage.put("b/c.txt", b"bc".to_vec()).await.unwrap();
+        storage.put("b/d.txt", b"bd".to_vec()).await.unwrap();
+
+        let mut keys = storage.list_keys("").await.unwrap();
+        keys.sort();
+        assert_eq!(keys, vec!["a.txt", "b/c.txt", "b/d.txt"]);
+    }
+
+    #[tokio::test]
+    async fn test_list_keys_with_prefix() {
+        let storage = temp_storage().await;
+        storage.put("souls/default.md", b"s1".to_vec()).await.unwrap();
+        storage.put("souls/custom.md", b"s2".to_vec()).await.unwrap();
+        storage.put("other/file.txt", b"x".to_vec()).await.unwrap();
+
+        let mut keys = storage.list_keys("souls").await.unwrap();
+        keys.sort();
+        assert_eq!(keys, vec!["souls/custom.md", "souls/default.md"]);
+    }
+
+    #[tokio::test]
+    async fn test_list_keys_nonexistent_prefix_returns_empty() {
+        let storage = temp_storage().await;
+        let keys = storage.list_keys("nonexistent/").await.unwrap();
+        assert!(keys.is_empty());
     }
 }

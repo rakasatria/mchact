@@ -167,6 +167,46 @@ impl ObjectStorage for S3Storage {
         }
     }
 
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        let full_prefix = self.full_key(prefix);
+        let mut result = Vec::new();
+        let mut continuation_token: Option<String> = None;
+        loop {
+            let mut req = self
+                .client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&full_prefix);
+            if let Some(token) = continuation_token.take() {
+                req = req.continuation_token(token);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| StorageError::Backend(format!("list_keys failed: {e}")))?;
+            for obj in resp.contents() {
+                let key = obj.key().unwrap_or_default();
+                let relative = if self.prefix.is_empty() {
+                    key.to_string()
+                } else {
+                    let prefix_with_slash =
+                        format!("{}/", self.prefix.trim_end_matches('/'));
+                    key.strip_prefix(&prefix_with_slash)
+                        .unwrap_or(key)
+                        .to_string()
+                };
+                result.push(relative);
+            }
+            if resp.is_truncated() == Some(true) {
+                continuation_token =
+                    resp.next_continuation_token().map(|s| s.to_string());
+            } else {
+                break;
+            }
+        }
+        Ok(result)
+    }
+
     fn backend_name(&self) -> &'static str {
         "s3"
     }

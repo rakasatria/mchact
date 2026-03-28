@@ -57,6 +57,13 @@ pub trait ObjectStorage: Send + Sync {
     /// Return `true` if an object exists at `key`.
     async fn exists(&self, key: &str) -> StorageResult<bool>;
 
+    /// List all keys under the given prefix.
+    ///
+    /// Returns keys relative to the storage root (including the prefix in the key).
+    /// An empty prefix lists all keys. If the prefix does not match anything,
+    /// an empty `Vec` is returned rather than an error.
+    async fn list_keys(&self, prefix: &str) -> StorageResult<Vec<String>>;
+
     /// Human-readable name of this backend (e.g. "local", "s3", "azure").
     fn backend_name(&self) -> &'static str;
 }
