@@ -20,6 +20,7 @@ pub mod gateway;
 pub mod hooks;
 pub mod http_client;
 pub mod knowledge;
+pub mod knowledge_scheduler;
 pub mod llm;
 pub mod mcp;
 pub mod media_manager;

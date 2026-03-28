@@ -344,6 +344,12 @@ pub fn spawn_reflector(state: Arc<AppState>) {
     });
 }
 
+/// Spawn the knowledge processing background tasks (embed, observe, autogroup,
+/// retry sweep).  Delegates to [`crate::knowledge_scheduler::spawn_knowledge_processor`].
+pub fn spawn_knowledge_processor(state: Arc<AppState>) {
+    crate::knowledge_scheduler::spawn_knowledge_processor(state);
+}
+
 fn strip_reflector_thinking_tags(input: &str) -> String {
     fn strip_tag(text: &str, open: &str, close: &str) -> String {
         let mut out = String::with_capacity(text.len());
