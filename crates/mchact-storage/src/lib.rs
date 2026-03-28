@@ -10,6 +10,9 @@ pub mod usage;
 
 pub use traits::DataStore;
 
+/// Thread-safe, dynamically-dispatched DataStore.
+pub type DynDataStore = dyn DataStore + Send + Sync;
+
 /// Prelude that re-exports all storage traits.
 /// Add `use mchact_storage::prelude::*;` in files that call Database methods.
 pub mod prelude {

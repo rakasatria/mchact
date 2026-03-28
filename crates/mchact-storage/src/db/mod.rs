@@ -47,10 +47,10 @@ type SqliteAutoExtensionFn = unsafe extern "C" fn(
     *const rusqlite::ffi::sqlite3_api_routines,
 ) -> i32;
 
-pub async fn call_blocking<T, F>(db: std::sync::Arc<Database>, f: F) -> Result<T, MchactError>
+pub async fn call_blocking<T, F>(db: std::sync::Arc<crate::DynDataStore>, f: F) -> Result<T, MchactError>
 where
     T: Send + 'static,
-    F: FnOnce(&Database) -> Result<T, MchactError> + Send + 'static,
+    F: FnOnce(&crate::DynDataStore) -> Result<T, MchactError> + Send + 'static,
 {
     tokio::task::spawn_blocking(move || f(db.as_ref()))
         .await

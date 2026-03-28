@@ -38,5 +38,7 @@ pub trait DataStore:
     + DocumentStore
     + MediaObjectStore
     + KnowledgeStore
+    + Send
+    + Sync
 {
 }
