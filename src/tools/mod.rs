@@ -258,7 +258,7 @@ impl ToolRegistry {
                 &skills_data_dir,
                 &config.data_dir,
             )),
-            Box::new(sync_skills::SyncSkillsTool::new(&skills_data_dir)),
+            Box::new(sync_skills::SyncSkillsTool::new(&skills_data_dir, local_storage.clone())),
             Box::new(todo::TodoReadTool::new(local_storage.clone())),
             Box::new(todo::TodoWriteTool::new(local_storage.clone())),
             Box::new(structured_memory::StructuredMemorySearchTool::new(
@@ -302,6 +302,7 @@ impl ToolRegistry {
         tools.push(Box::new(rl_training::RlStopTrainingTool::new(rl_manager)));
         tools.push(Box::new(create_skill::CreateSkillTool::new(
             &skills_data_dir,
+            local_storage.clone(),
         )));
 
         // Add ClawHub tools if enabled

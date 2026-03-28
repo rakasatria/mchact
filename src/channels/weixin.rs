@@ -381,7 +381,7 @@ struct NormalizedWeixinInbound {
     items: Vec<WeixinWebhookMessageItem>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WeixinRuntimeContext {
     pub channel_name: String,
     pub account_id: String,
@@ -393,6 +393,20 @@ pub struct WeixinRuntimeContext {
     pub base_url: String,
     pub cdn_base_url: String,
     pub state_root: PathBuf,
+    pub storage: Option<Arc<dyn mchact_storage_backend::ObjectStorage>>,
+}
+
+impl std::fmt::Debug for WeixinRuntimeContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WeixinRuntimeContext")
+            .field("channel_name", &self.channel_name)
+            .field("account_id", &self.account_id)
+            .field("local_account_key", &self.local_account_key)
+            .field("bot_username", &self.bot_username)
+            .field("state_root", &self.state_root)
+            .field("storage", &self.storage.as_ref().map(|s| s.backend_name()))
+            .finish()
+    }
 }
 
 static WEIXIN_CONTEXT_TOKENS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -550,7 +564,7 @@ fn resolve_context_token_from_store(
 }
 
 fn hydrate_context_token_cache(runtime: &WeixinRuntimeContext) {
-    let Some(account) = load_account_data(&runtime.state_root, &runtime.local_account_key) else {
+    let Some(account) = load_account(runtime) else {
         return;
     };
     for (external_chat_id, token) in account.context_tokens {
@@ -569,24 +583,48 @@ fn persist_context_token(
     }
     cache_context_token(&runtime.channel_name, external_chat_id, token);
 
-    let mut account = load_account_data(&runtime.state_root, &runtime.local_account_key)
-        .unwrap_or_else(|| StoredWeixinAccount {
-            base_url: runtime.base_url.clone(),
-            ..StoredWeixinAccount::default()
-        });
+    let mut account = load_account(runtime).unwrap_or_else(|| StoredWeixinAccount {
+        base_url: runtime.base_url.clone(),
+        ..StoredWeixinAccount::default()
+    });
     account
         .context_tokens
         .insert(external_chat_id.to_string(), token.to_string());
     if account.base_url.trim().is_empty() {
         account.base_url = runtime.base_url.clone();
     }
-    save_account_data(&runtime.state_root, &runtime.local_account_key, &account)
+    save_account(runtime, &account)
+}
+
+fn weixin_account_storage_key(local_account_key: &str) -> String {
+    format!(
+        "state/weixin/{}.json",
+        sanitize_account_key(local_account_key)
+    )
+}
+
+fn weixin_sync_buf_storage_key(local_account_key: &str) -> String {
+    format!(
+        "state/weixin/{}_sync.json",
+        sanitize_account_key(local_account_key)
+    )
 }
 
 fn load_account_data(state_root: &Path, local_account_key: &str) -> Option<StoredWeixinAccount> {
     let path = account_file_path(state_root, local_account_key);
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+fn load_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> Option<StoredWeixinAccount> {
+    let key = weixin_account_storage_key(local_account_key);
+    let bytes = tokio::runtime::Handle::current()
+        .block_on(async { storage.get(&key).await })
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn save_account_data(
@@ -601,13 +639,27 @@ fn save_account_data(
     }
     let raw = serde_json::to_string_pretty(account)
         .map_err(|e| format!("Failed to serialize Weixin account state: {e}"))?;
-    std::fs::write(&path, raw).map_err(|e| format!("Failed to write Weixin account state: {e}"))?;
+    std::fs::write(&path, &raw)
+        .map_err(|e| format!("Failed to write Weixin account state: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+fn save_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+    account: &StoredWeixinAccount,
+) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(account)
+        .map_err(|e| format!("Failed to serialize Weixin account state: {e}"))?;
+    let key = weixin_account_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.put(&key, raw.into_bytes()).await })
+        .map_err(|e| format!("Failed to write Weixin account state: {e}"))
 }
 
 fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(), String> {
@@ -624,8 +676,34 @@ fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(),
     Ok(())
 }
 
+fn delete_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> Result<(), String> {
+    let account_key = weixin_account_storage_key(local_account_key);
+    let sync_key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async {
+            let _ = storage.delete(&account_key).await;
+            let _ = storage.delete(&sync_key).await;
+        });
+    Ok(())
+}
+
 fn load_sync_buf(state_root: &Path, local_account_key: &str) -> String {
     std::fs::read_to_string(sync_buf_file_path(state_root, local_account_key)).unwrap_or_default()
+}
+
+fn load_sync_buf_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> String {
+    let key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.get(&key).await })
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default()
 }
 
 fn save_sync_buf(
@@ -642,10 +720,77 @@ fn save_sync_buf(
         .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
 }
 
+fn save_sync_buf_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+    get_updates_buf: &str,
+) -> Result<(), String> {
+    let key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.put(&key, get_updates_buf.as_bytes().to_vec()).await })
+        .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
+}
+
 fn stored_account_exists(state_root: &Path, local_account_key: &str) -> bool {
     load_account_data(state_root, local_account_key)
         .map(|account| !account.token.trim().is_empty())
         .unwrap_or(false)
+}
+
+/// Load account preferring ObjectStorage when available.
+fn load_account(
+    runtime: &WeixinRuntimeContext,
+) -> Option<StoredWeixinAccount> {
+    if let Some(ref storage) = runtime.storage {
+        return load_account_data_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    load_account_data(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Save account preferring ObjectStorage when available.
+fn save_account(
+    runtime: &WeixinRuntimeContext,
+    account: &StoredWeixinAccount,
+) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return save_account_data_via_storage(storage.as_ref(), &runtime.local_account_key, account);
+    }
+    save_account_data(&runtime.state_root, &runtime.local_account_key, account)
+}
+
+/// Delete account preferring ObjectStorage when available.
+fn delete_account(runtime: &WeixinRuntimeContext) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return delete_account_data_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    delete_account_data(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Load sync buf preferring ObjectStorage when available.
+fn load_sync(runtime: &WeixinRuntimeContext) -> String {
+    if let Some(ref storage) = runtime.storage {
+        return load_sync_buf_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    load_sync_buf(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Save sync buf preferring ObjectStorage when available.
+fn save_sync(
+    runtime: &WeixinRuntimeContext,
+    get_updates_buf: &str,
+) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return save_sync_buf_via_storage(
+            storage.as_ref(),
+            &runtime.local_account_key,
+            get_updates_buf,
+        );
+    }
+    save_sync_buf(
+        &runtime.state_root,
+        &runtime.local_account_key,
+        get_updates_buf,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1754,6 +1899,7 @@ pub fn build_weixin_runtime_contexts(config: &crate::config::Config) -> Vec<Weix
                 cdn_base_url
             },
             state_root: state_root.clone(),
+            storage: None,
         });
     }
 
@@ -1782,6 +1928,7 @@ pub fn build_weixin_runtime_contexts(config: &crate::config::Config) -> Vec<Weix
                 wx_cfg.cdn_base_url.trim().to_string()
             },
             state_root,
+            storage: None,
         });
     }
 
@@ -1838,6 +1985,7 @@ fn build_default_runtime_context(
         base_url: DEFAULT_BASE_URL.to_string(),
         cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
         state_root: weixin_state_root(Path::new(&config.runtime_data_dir())),
+        storage: None,
     }
 }
 
@@ -2945,6 +3093,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
             state_root: root.clone(),
+            storage: None,
         };
         let adapter = WeixinAdapter::from_runtime(&runtime);
         let err = adapter
@@ -3068,6 +3217,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
             state_root: root.clone(),
+            storage: None,
         };
         persist_context_token(&runtime, "alice@im.wechat", "ctx-a").unwrap();
         persist_context_token(&runtime, "bob@im.wechat", "ctx-b").unwrap();
@@ -3120,6 +3270,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: format!("http://{}", addr),
             state_root: root.clone(),
+            storage: None,
         };
 
         let text = enrich_weixin_inbound_text(
@@ -3186,6 +3337,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: format!("http://{}", addr),
             state_root: root.clone(),
+            storage: None,
         };
 
         let text = enrich_weixin_inbound_text(

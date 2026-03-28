@@ -189,6 +189,20 @@ pub fn load_checkpoint(output_dir: &Path) -> Option<Checkpoint> {
         .ok()
 }
 
+/// Load a checkpoint via ObjectStorage.
+pub fn load_checkpoint_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    run_id: &str,
+) -> Option<Checkpoint> {
+    let key = format!("batch/{run_id}/checkpoint.json");
+    let bytes = tokio::runtime::Handle::current()
+        .block_on(async { storage.get(&key).await })
+        .ok()?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| eprintln!("  [checkpoint] parse error: {e}"))
+        .ok()
+}
+
 /// Persist a checkpoint to `output_dir/checkpoint.json`.
 pub fn save_checkpoint(output_dir: &Path, checkpoint: &Checkpoint) -> Result<(), String> {
     std::fs::create_dir_all(output_dir)
@@ -198,8 +212,22 @@ pub fn save_checkpoint(output_dir: &Path, checkpoint: &Checkpoint) -> Result<(),
     let json = serde_json::to_string_pretty(checkpoint)
         .map_err(|e| format!("failed to serialize checkpoint: {e}"))?;
 
-    std::fs::write(&path, json)
+    std::fs::write(&path, &json)
         .map_err(|e| format!("failed to write checkpoint '{}': {e}", path.display()))
+}
+
+/// Persist a checkpoint via ObjectStorage.
+pub fn save_checkpoint_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    run_id: &str,
+    checkpoint: &Checkpoint,
+) -> Result<(), String> {
+    let key = format!("batch/{run_id}/checkpoint.json");
+    let json = serde_json::to_string_pretty(checkpoint)
+        .map_err(|e| format!("failed to serialize checkpoint: {e}"))?;
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.put(&key, json.into_bytes()).await })
+        .map_err(|e| format!("failed to write checkpoint '{}': {e}", key))
 }
 
 // ---------------------------------------------------------------------------
@@ -341,9 +369,26 @@ pub fn combine_batches(
         format!("{output}\n")
     };
 
-    std::fs::write(&trajectories_path, output)
+    std::fs::write(&trajectories_path, &output)
         .map_err(|e| format!("write '{}': {e}", trajectories_path.display()))?;
 
+    Ok(result)
+}
+
+/// Combine batch files and write trajectories via ObjectStorage.
+pub fn combine_batches_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    output_dir: &Path,
+    run_id: &str,
+    all_tool_names: &[String],
+) -> Result<CombineResult, String> {
+    let result = combine_batches(output_dir, all_tool_names)?;
+    let trajectories_path = output_dir.join("trajectories.jsonl");
+    if let Ok(content) = std::fs::read_to_string(&trajectories_path) {
+        let key = format!("batch/{run_id}/trajectories.jsonl");
+        let _ = tokio::runtime::Handle::current()
+            .block_on(async { storage.put(&key, content.into_bytes()).await });
+    }
     Ok(result)
 }
 

@@ -471,13 +471,14 @@ pub async fn run(
     );
     let media_manager = Arc::new(MediaManager::new(storage.clone(), db.clone()));
     let memory = MemoryManager::new(storage.clone(), "groups");
+    let skills = skills.with_storage(storage.clone());
 
     let mut tools = ToolRegistry::new(
         &config,
         channel_registry.clone(),
         db.clone(),
         memory_backend.clone(),
-        storage,
+        storage.clone(),
         media_manager.clone(),
     );
 
@@ -485,7 +486,11 @@ pub async fn run(
         tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
     }
 
-    let hooks = Arc::new(HookManager::from_config(&config).with_db(db.clone()));
+    let hooks = Arc::new(
+        HookManager::from_config(&config)
+            .with_db(db.clone())
+            .with_storage(storage),
+    );
     let llm_provider_overrides = config.llm_provider_overrides();
 
     let metric_exporter = OtlpMetricExporter::from_observability(config.observability.as_ref());

@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::Utc;
+use mchact_storage_backend::ObjectStorage;
 use serde_json::json;
 
 use mchact_core::llm_types::ToolDefinition;
@@ -8,12 +11,14 @@ use super::{schema_object, Tool, ToolResult};
 
 pub struct CreateSkillTool {
     skills_dir: std::path::PathBuf,
+    storage: Arc<dyn ObjectStorage>,
 }
 
 impl CreateSkillTool {
-    pub fn new(skills_dir: &str) -> Self {
+    pub fn new(skills_dir: &str, storage: Arc<dyn ObjectStorage>) -> Self {
         Self {
             skills_dir: std::path::PathBuf::from(skills_dir),
+            storage,
         }
     }
 
@@ -221,21 +226,13 @@ impl Tool for CreateSkillTool {
 
         let tags = extract_string_array(&input, "tags");
 
-        let out_dir = self.skills_dir.join(skill_name);
-        let out_file = out_dir.join("SKILL.md");
-
-        if out_file.exists() {
+        let storage_key = format!("skills/{}/SKILL.md", skill_name);
+        if self.storage.exists(&storage_key).await.unwrap_or(false) {
             return ToolResult::error(format!(
-                "Skill '{}' already exists at {}. Use a different name or delete the existing skill first.",
-                skill_name,
-                out_file.display()
+                "Skill '{}' already exists at key '{}'. Use a different name or delete the existing skill first.",
+                skill_name, storage_key,
             ))
             .with_error_type("duplicate_skill");
-        }
-
-        if let Err(e) = std::fs::create_dir_all(&out_dir) {
-            return ToolResult::error(format!("Failed to create skill directory: {e}"))
-                .with_error_type("write_failed");
         }
 
         let created_at = Utc::now().to_rfc3339();
@@ -250,17 +247,20 @@ impl Tool for CreateSkillTool {
             &created_at,
         );
 
-        if let Err(e) = std::fs::write(&out_file, &content) {
+        if let Err(e) = self
+            .storage
+            .put(&storage_key, content.into_bytes())
+            .await
+        {
             return ToolResult::error(format!("Failed to write SKILL.md: {e}"))
                 .with_error_type("write_failed");
         }
 
-        let path = out_file.display().to_string();
         let result_json = json!({
             "skill_name": skill_name,
-            "path": path,
+            "path": storage_key,
             "description": description,
-            "message": format!("Skill '{}' created successfully at {}", skill_name, path)
+            "message": format!("Skill '{}' created successfully at {}", skill_name, storage_key)
         });
 
         ToolResult::success(result_json.to_string())
@@ -353,7 +353,11 @@ mod tests {
     #[tokio::test]
     async fn test_create_skill_writes_file() {
         let tmp = TempDir::new().unwrap();
-        let tool = CreateSkillTool::new(tmp.path().to_str().unwrap());
+        let storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> =
+            std::sync::Arc::new(
+                mchact_storage_backend::local::LocalStorage::new_sync(tmp.path()).unwrap(),
+            );
+        let tool = CreateSkillTool::new(tmp.path().to_str().unwrap(), storage.clone());
 
         let result = tool
             .execute(json!({
@@ -366,10 +370,8 @@ mod tests {
 
         assert!(!result.is_error, "Expected success, got: {}", result.content);
 
-        let skill_file = tmp.path().join("test-skill").join("SKILL.md");
-        assert!(skill_file.exists(), "SKILL.md should have been written");
-
-        let written = std::fs::read_to_string(&skill_file).unwrap();
+        let bytes = storage.get("skills/test-skill/SKILL.md").await.unwrap();
+        let written = String::from_utf8(bytes).unwrap();
         assert!(written.contains("name: test-skill"));
         assert!(written.contains("Test skill description"));
         assert!(written.contains("Do the test thing."));
@@ -383,7 +385,11 @@ mod tests {
     #[tokio::test]
     async fn test_create_skill_rejects_duplicate() {
         let tmp = TempDir::new().unwrap();
-        let tool = CreateSkillTool::new(tmp.path().to_str().unwrap());
+        let storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> =
+            std::sync::Arc::new(
+                mchact_storage_backend::local::LocalStorage::new_sync(tmp.path()).unwrap(),
+            );
+        let tool = CreateSkillTool::new(tmp.path().to_str().unwrap(), storage);
 
         let input = json!({
             "skill_name": "duplicate-skill",

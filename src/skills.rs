@@ -1,6 +1,9 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use mchact_storage_backend::ObjectStorage;
 
 #[derive(Debug, Clone)]
 pub struct SkillMetadata {
@@ -86,6 +89,7 @@ struct SkillCompatibility {
 pub struct SkillManager {
     skills_dir: PathBuf,
     state_file: Option<PathBuf>,
+    storage: Option<Arc<dyn ObjectStorage>>,
 }
 
 const MAX_SKILLS_CATALOG_ITEMS: usize = 40;
@@ -98,6 +102,7 @@ impl SkillManager {
         SkillManager {
             skills_dir: PathBuf::from(skills_dir),
             state_file: None,
+            storage: None,
         }
     }
 
@@ -105,7 +110,13 @@ impl SkillManager {
         SkillManager {
             skills_dir: PathBuf::from(skills_dir),
             state_file: Some(PathBuf::from(runtime_dir).join(SKILLS_STATE_FILENAME)),
+            storage: None,
         }
+    }
+
+    pub fn with_storage(mut self, storage: Arc<dyn ObjectStorage>) -> Self {
+        self.storage = Some(storage);
+        self
     }
 
     #[allow(dead_code)]
@@ -114,6 +125,7 @@ impl SkillManager {
         SkillManager {
             skills_dir,
             state_file: None,
+            storage: None,
         }
     }
 
@@ -374,6 +386,18 @@ impl SkillManager {
     }
 
     fn read_state_file(&self) -> HashMap<String, bool> {
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let result = tokio::runtime::Handle::current()
+                .block_on(async move { storage.get("state/skills_state.json").await });
+            return match result {
+                Ok(bytes) => {
+                    let raw = String::from_utf8_lossy(&bytes);
+                    serde_json::from_str::<HashMap<String, bool>>(&raw).unwrap_or_default()
+                }
+                Err(_) => HashMap::new(),
+            };
+        }
         let Some(path) = self.state_file.as_ref() else {
             return HashMap::new();
         };
@@ -387,13 +411,20 @@ impl SkillManager {
     }
 
     fn write_state_file(&self, state: &HashMap<String, bool>) -> Result<(), String> {
+        let body = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let data = body.into_bytes();
+            return tokio::runtime::Handle::current()
+                .block_on(async move { storage.put("state/skills_state.json", data).await })
+                .map_err(|e| e.to_string());
+        }
         let Some(path) = self.state_file.as_ref() else {
             return Err("Skill state is not configured for this runtime.".to_string());
         };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let body = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
         std::fs::write(path, body).map_err(|e| e.to_string())
     }
 }

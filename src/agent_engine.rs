@@ -2411,11 +2411,11 @@ async fn compact_messages(
     compressor.compress(messages, summarize_fn).await
 }
 
-/// Check if last conversation exceeded skill nudge thresholds and write pending nudge file.
+/// Check if last conversation exceeded skill nudge thresholds and write pending nudge.
 #[cfg(test)]
-pub(crate) fn maybe_write_skill_nudge(
+pub(crate) async fn maybe_write_skill_nudge(
     config: &crate::config::Config,
-    data_dir: &str,
+    storage: &dyn mchact_storage_backend::ObjectStorage,
     tool_call_count: u32,
     turn_count: u32,
     duration_secs: u64,
@@ -2434,21 +2434,19 @@ pub(crate) fn maybe_write_skill_nudge(
          If the approach you used would be valuable for future tasks, consider using create_skill to save it as a reusable skill.",
         tool_call_count, turn_count, duration_secs
     );
-    let nudge_path = std::path::Path::new(data_dir)
-        .join("runtime")
-        .join("skill_nudge_pending.txt");
-    let _ = std::fs::create_dir_all(nudge_path.parent().unwrap_or(std::path::Path::new(".")));
-    let _ = std::fs::write(&nudge_path, &nudge);
+    let _ = storage
+        .put("state/skill_nudge_pending.txt", nudge.into_bytes())
+        .await;
 }
 
 /// Read and consume pending skill nudge (returns None if no nudge pending).
 #[cfg(test)]
-pub(crate) fn consume_skill_nudge(data_dir: &str) -> Option<String> {
-    let nudge_path = std::path::Path::new(data_dir)
-        .join("runtime")
-        .join("skill_nudge_pending.txt");
-    let content = std::fs::read_to_string(&nudge_path).ok()?;
-    let _ = std::fs::remove_file(&nudge_path);
+pub(crate) async fn consume_skill_nudge(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+) -> Option<String> {
+    let bytes = storage.get("state/skill_nudge_pending.txt").await.ok()?;
+    let _ = storage.delete("state/skill_nudge_pending.txt").await;
+    let content = String::from_utf8(bytes).ok()?;
     if content.trim().is_empty() {
         None
     } else {
@@ -2680,7 +2678,7 @@ mod tests {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
-            media_manager,
+            media_manager: media_manager.clone(),
             memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
@@ -2693,7 +2691,14 @@ mod tests {
             )),
             embedding: None,
             memory_backend: memory_backend.clone(),
-            tools: ToolRegistry::new(&cfg, channel_registry, db, memory_backend),
+            tools: ToolRegistry::new(
+                &cfg,
+                channel_registry,
+                db,
+                memory_backend,
+                local_storage,
+                media_manager,
+            ),
             observation_store: None,
             metric_exporter: None,
             trace_exporter: None,
@@ -2736,7 +2741,7 @@ mod tests {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
-            media_manager,
+            media_manager: media_manager.clone(),
             memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
@@ -2749,7 +2754,14 @@ mod tests {
             )),
             embedding: None,
             memory_backend: memory_backend.clone(),
-            tools: ToolRegistry::new(&cfg, channel_registry, db, memory_backend),
+            tools: ToolRegistry::new(
+                &cfg,
+                channel_registry,
+                db,
+                memory_backend,
+                local_storage,
+                media_manager,
+            ),
             observation_store: None,
             metric_exporter: None,
             trace_exporter: None,
@@ -3864,47 +3876,64 @@ timeout_ms: 1000
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_maybe_write_skill_nudge_writes_when_threshold_exceeded() {
+    #[tokio::test]
+    async fn test_maybe_write_skill_nudge_writes_when_threshold_exceeded() {
         let dir = std::env::temp_dir()
             .join(format!("mchact_nudge_test_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
         let config = Config::test_defaults();
         // Default threshold is 10 tool calls
-        maybe_write_skill_nudge(&config, &dir.to_string_lossy(), 15, 5, 60);
-        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
-        assert!(nudge_path.exists());
-        let content = std::fs::read_to_string(&nudge_path).unwrap();
+        maybe_write_skill_nudge(&config, storage.as_ref(), 15, 5, 60).await;
+        let bytes = storage.get("state/skill_nudge_pending.txt").await.unwrap();
+        let content = String::from_utf8(bytes).unwrap();
         assert!(content.contains("[SKILL SUGGESTION]"));
         assert!(content.contains("15 tool calls"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_maybe_write_skill_nudge_skips_when_below_threshold() {
+    #[tokio::test]
+    async fn test_maybe_write_skill_nudge_skips_when_below_threshold() {
         let dir = std::env::temp_dir()
             .join(format!("mchact_nudge_skip_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
         let config = Config::test_defaults();
-        maybe_write_skill_nudge(&config, &dir.to_string_lossy(), 3, 5, 60);
-        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
-        assert!(!nudge_path.exists());
+        maybe_write_skill_nudge(&config, storage.as_ref(), 3, 5, 60).await;
+        let exists = storage
+            .exists("state/skill_nudge_pending.txt")
+            .await
+            .unwrap_or(false);
+        assert!(!exists);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_consume_skill_nudge() {
+    #[tokio::test]
+    async fn test_consume_skill_nudge() {
         let dir = std::env::temp_dir()
             .join(format!("mchact_nudge_consume_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(dir.join("runtime")).unwrap();
-        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
-        std::fs::write(&nudge_path, "test nudge").unwrap();
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
+        storage
+            .put(
+                "state/skill_nudge_pending.txt",
+                b"test nudge".to_vec(),
+            )
+            .await
+            .unwrap();
 
-        let result = consume_skill_nudge(&dir.to_string_lossy());
+        let result = consume_skill_nudge(storage.as_ref()).await;
         assert_eq!(result, Some("test nudge".to_string()));
-        assert!(!nudge_path.exists()); // consumed = deleted
+        let exists = storage
+            .exists("state/skill_nudge_pending.txt")
+            .await
+            .unwrap_or(false);
+        assert!(!exists); // consumed = deleted
 
-        let result2 = consume_skill_nudge(&dir.to_string_lossy());
+        let result2 = consume_skill_nudge(storage.as_ref()).await;
         assert!(result2.is_none()); // already consumed
 
         let _ = std::fs::remove_dir_all(&dir);

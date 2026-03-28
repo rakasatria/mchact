@@ -105,18 +105,14 @@ pub async fn handle_chat_command(
 
     if trimmed == "/reset memory" {
         let _ = call_blocking(state.db.clone(), move |db| db.clear_chat_memory(chat_id)).await;
-        let groups_dir = std::path::PathBuf::from(&state.config.data_dir).join("groups");
-        let chat_memory_path = groups_dir
-            .join(caller_channel)
-            .join(chat_id.to_string())
-            .join("AGENTS.md");
-        if let Err(e) = std::fs::remove_file(&chat_memory_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        let safe_channel = caller_channel.replace('/', "_");
+        let key = format!("groups/{safe_channel}/{chat_id}/AGENTS.md");
+        let storage = state.media_manager.storage();
+        if let Err(e) = storage.delete(&key).await {
+            if !matches!(e, mchact_storage_backend::StorageError::NotFound(_)) {
                 warn!(
-                    "Failed to remove chat memory file for chat {} at {}: {}",
-                    chat_id,
-                    chat_memory_path.display(),
-                    e
+                    "Failed to remove chat memory for chat {} at key '{}': {}",
+                    chat_id, key, e
                 );
             }
         }

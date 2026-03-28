@@ -98,6 +98,7 @@ pub struct HookManager {
     hooks: Arc<RwLock<Vec<HookDef>>>,
     state_overrides: Arc<RwLock<HashMap<String, bool>>>,
     db: Option<Arc<DynDataStore>>,
+    storage: Option<Arc<dyn mchact_storage_backend::ObjectStorage>>,
     enabled: bool,
     max_input_bytes: usize,
     max_output_bytes: usize,
@@ -130,6 +131,7 @@ impl HookManager {
             hooks: Arc::new(RwLock::new(Vec::new())),
             state_overrides: Arc::new(RwLock::new(HashMap::new())),
             db: None,
+            storage: None,
             enabled,
             max_input_bytes,
             max_output_bytes,
@@ -143,6 +145,11 @@ impl HookManager {
         self
     }
 
+    pub fn with_storage(mut self, storage: Arc<dyn mchact_storage_backend::ObjectStorage>) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
     #[cfg(test)]
     pub fn for_tests() -> Self {
         let tmp = std::env::temp_dir().join(format!("mchact-hooks-{}", uuid::Uuid::new_v4()));
@@ -153,6 +160,7 @@ impl HookManager {
             hooks: Arc::new(RwLock::new(Vec::new())),
             state_overrides: Arc::new(RwLock::new(HashMap::new())),
             db: None,
+            storage: None,
             enabled: true,
             max_input_bytes: 128 * 1024,
             max_output_bytes: 64 * 1024,
@@ -169,6 +177,7 @@ impl HookManager {
             hooks: Arc::new(RwLock::new(Vec::new())),
             state_overrides: Arc::new(RwLock::new(HashMap::new())),
             db: None,
+            storage: None,
             enabled: true,
             max_input_bytes: 128 * 1024,
             max_output_bytes: 64 * 1024,
@@ -177,9 +186,46 @@ impl HookManager {
         manager
     }
 
+    fn read_hooks_state(&self) -> HashMap<String, bool> {
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let result = tokio::runtime::Handle::current()
+                .block_on(async move { storage.get("state/hooks_state.json").await });
+            return match result {
+                Ok(bytes) => {
+                    let raw = String::from_utf8_lossy(&bytes);
+                    serde_json::from_str::<HashMap<String, bool>>(&raw).unwrap_or_default()
+                }
+                Err(_) => HashMap::new(),
+            };
+        }
+        read_state_file(&self.state_file).unwrap_or_default()
+    }
+
+    fn write_hooks_state(&self, state: &HashMap<String, bool>) -> Result<()> {
+        let body = serde_json::to_string_pretty(state)?;
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let data = body.into_bytes();
+            return tokio::runtime::Handle::current()
+                .block_on(async move { storage.put("state/hooks_state.json", data).await })
+                .map_err(|e| anyhow!("{e}"));
+        }
+        write_state_file(&self.state_file, state)
+    }
+
     pub fn reload_sync(&self) {
         let hooks = discover_hooks(&self.hooks_dir_candidates);
-        let state = read_state_file(&self.state_file).unwrap_or_default();
+        let state = if self.storage.is_some() {
+            // Storage available but we may not have a tokio runtime during init.
+            // Fall back to the fs-based reader when no Handle is available.
+            tokio::runtime::Handle::try_current()
+                .ok()
+                .map(|_| self.read_hooks_state())
+                .unwrap_or_else(|| read_state_file(&self.state_file).unwrap_or_default())
+        } else {
+            read_state_file(&self.state_file).unwrap_or_default()
+        };
         if let Some(parent) = self.state_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -228,7 +274,7 @@ impl HookManager {
         {
             let mut state = self.state_overrides.write().await;
             state.insert(name.to_string(), enabled);
-            write_state_file(&self.state_file, &state)?;
+            self.write_hooks_state(&state)?;
         }
         Ok(())
     }
