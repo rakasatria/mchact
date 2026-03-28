@@ -2007,17 +2007,30 @@ async fn api_upload(
         .to_string()
     });
 
-    let media_id = format!("{}.{}", uuid::Uuid::new_v4(), out_ext);
+    let filename_for_storage = original_filename
+        .as_deref()
+        .unwrap_or(&format!("upload.{out_ext}"))
+        .to_string();
 
-    let uploads_dir = state.app_state.config.data_root_dir().join("uploads");
-    tokio::fs::create_dir_all(&uploads_dir)
+    let local_storage = Arc::new(
+        mchact_storage_backend::local::LocalStorage::new(
+            state.app_state.config.data_root_dir(),
+        )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to create uploads dir: {e}")))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to init storage: {e}")))?,
+    );
+    let media_mgr = crate::media_manager::MediaManager::new(local_storage, state.app_state.db.clone());
 
-    let dest = uploads_dir.join(&media_id);
-    tokio::fs::write(&dest, &file_bytes)
+    let media_id = media_mgr
+        .store_file(
+            file_bytes,
+            &filename_for_storage,
+            Some(mime_type.as_str()),
+            0,
+            "upload",
+        )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to write file: {e}")))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to store file: {e}")))?;
 
     info!(
         target: "web",
@@ -2030,6 +2043,7 @@ async fn api_upload(
     Ok(Json(json!({
         "ok": true,
         "media_id": media_id,
+        "url": format!("/api/media/{media_id}"),
         "mime_type": mime_type,
         "size": size,
     })))
@@ -2039,6 +2053,43 @@ async fn api_media(
     State(state): State<WebState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    // If id is an integer, use MediaManager to retrieve by database ID.
+    if let Ok(media_id) = id.parse::<i64>() {
+        let local_storage = match mchact_storage_backend::local::LocalStorage::new(
+            state.app_state.config.data_root_dir(),
+        )
+        .await
+        {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                error!(target: "web", error = %e, "Failed to init storage for media retrieval");
+                return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new());
+            }
+        };
+        let media_mgr =
+            crate::media_manager::MediaManager::new(local_storage, state.app_state.db.clone());
+        return match media_mgr.get_file(media_id).await {
+            Ok((bytes, obj)) => {
+                let mime_str = obj
+                    .mime_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let mut headers = HeaderMap::new();
+                if let Ok(val) = axum::http::HeaderValue::from_str(&mime_str) {
+                    headers.insert(axum::http::header::CONTENT_TYPE, val);
+                }
+                (StatusCode::OK, headers, axum::body::Bytes::from(bytes))
+            }
+            Err(e) => {
+                error!(target: "web", media_id, error = %e, "Media object not found");
+                (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new())
+            }
+        };
+    }
+
+    // Legacy: filename-based lookup for backward compatibility.
+
     // Sanitise: reject path traversal
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return (StatusCode::BAD_REQUEST, HeaderMap::new(), axum::body::Bytes::new());
