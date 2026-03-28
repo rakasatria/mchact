@@ -5054,6 +5054,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-s3",
+ "azure_core",
  "azure_storage",
  "azure_storage_blobs",
  "google-cloud-storage",
