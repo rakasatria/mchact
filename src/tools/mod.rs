@@ -8,6 +8,7 @@ pub mod edit_file;
 pub mod export_chat;
 pub mod findings;
 pub mod glob;
+pub mod knowledge;
 pub mod grep;
 pub mod image_generate;
 pub mod mcp;
@@ -325,6 +326,34 @@ impl ToolRegistry {
                 db.clone(),
                 config.control_chat_ids.clone(),
                 media_manager.clone(),
+            )));
+        }
+
+        // Add knowledge tools
+        {
+            let knowledge_manager = Arc::new(crate::knowledge::KnowledgeManager::new(db.clone()));
+            tools.push(Box::new(knowledge::CreateKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::AddDocumentToKnowledgeTool::new(
+                knowledge_manager.clone(),
+                db.clone(),
+            )));
+            tools.push(Box::new(knowledge::RemoveDocumentFromKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::ListKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::QueryKnowledgeTool::new(
+                knowledge_manager.clone(),
+                None,
+            )));
+            tools.push(Box::new(knowledge::AttachKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::DeleteKnowledgeTool::new(
+                knowledge_manager,
             )));
         }
 

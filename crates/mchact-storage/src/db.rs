@@ -1852,6 +1852,21 @@ impl Database {
         Ok(())
     }
 
+    pub fn get_document_extraction_id_by_media_object_id(
+        &self,
+        media_object_id: i64,
+    ) -> Result<Option<i64>, MchactError> {
+        let conn = self.lock_conn();
+        let result = conn
+            .query_row(
+                "SELECT id FROM document_extractions WHERE media_object_id = ?1 LIMIT 1",
+                params![media_object_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
     pub fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let exists = conn
