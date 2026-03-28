@@ -124,10 +124,8 @@ impl ToolRegistry {
             "Sandbox initialized"
         );
         let local_storage: Arc<dyn mchact_storage_backend::ObjectStorage> = {
-            let data_dir = config.data_dir.clone();
-            let storage = tokio::runtime::Handle::current()
-                .block_on(mchact_storage_backend::local::LocalStorage::new(&data_dir))
-                .unwrap_or_else(|e| panic!("Cannot initialize media storage at '{data_dir}': {e}"));
+            let storage = mchact_storage_backend::local::LocalStorage::new_sync(&config.data_dir)
+                .unwrap_or_else(|e| panic!("Cannot initialize media storage at '{}': {e}", config.data_dir));
             Arc::new(storage)
         };
         let media_manager = Arc::new(crate::media_manager::MediaManager::new(

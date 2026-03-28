@@ -21,6 +21,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/mchact-core/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mchact-media/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mchact-observability/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-storage-backend/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mchact-storage/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mchact-tools/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
