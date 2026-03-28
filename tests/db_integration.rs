@@ -3,10 +3,11 @@
 //! Tests full lifecycle operations across multiple tables,
 //! verifying cross-table consistency and complex query patterns.
 
-use microclaw::db::{Database, StoredMessage};
+use mchact::db::{Database, StoredMessage};
+use mchact_storage::prelude::*;
 
 fn test_db() -> (Database, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!("microclaw_integ_{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("mchact_integ_{}", uuid::Uuid::new_v4()));
     let db = Database::new(dir.to_str().unwrap()).unwrap();
     (db, dir)
 }

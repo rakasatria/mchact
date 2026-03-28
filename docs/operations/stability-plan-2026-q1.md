@@ -2,7 +2,7 @@
 
 ## Objective
 
-Move MicroClaw from feature-growth mode to reliability mode with explicit service-level targets, release gates, and rollback criteria.
+Move mchact from feature-growth mode to reliability mode with explicit service-level targets, release gates, and rollback criteria.
 
 ## Scope
 

@@ -17,17 +17,17 @@ These examples exercise:
 1. Create your plugins directory (default):
 
 ```sh
-mkdir -p ~/.microclaw/plugins
+mkdir -p ~/.mchact/plugins
 ```
 
 2. Copy one or both example manifests:
 
 ```sh
-cp examples/plugins/smoke-test.yaml ~/.microclaw/plugins/
-cp examples/plugins/context-test.yaml ~/.microclaw/plugins/
+cp examples/plugins/smoke-test.yaml ~/.mchact/plugins/
+cp examples/plugins/context-test.yaml ~/.mchact/plugins/
 ```
 
-If you use a custom plugin directory, set it in `microclaw.config.yaml`:
+If you use a custom plugin directory, set it in `mchact.config.yaml`:
 
 ```yaml
 plugins:

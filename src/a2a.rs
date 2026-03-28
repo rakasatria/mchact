@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
-pub const A2A_PROTOCOL_VERSION: &str = "microclaw-a2a/v1";
+pub const A2A_PROTOCOL_VERSION: &str = "mchact-a2a/v1";
 pub const A2A_AGENT_CARD_PATH: &str = "/api/a2a/agent-card";
 pub const A2A_MESSAGE_PATH: &str = "/api/a2a/message";
 
@@ -85,7 +85,7 @@ pub fn local_agent_name(config: &Config) -> String {
                 Some(bot.to_string())
             }
         })
-        .unwrap_or_else(|| "MicroClaw".to_string())
+        .unwrap_or_else(|| "mchact".to_string())
 }
 
 pub fn default_session_key_for_source(source_agent: Option<&str>) -> String {
@@ -118,7 +118,7 @@ pub fn build_agent_card(config: &Config) -> A2AAgentCard {
     A2AAgentCard {
         protocol_version: A2A_PROTOCOL_VERSION.to_string(),
         agent_id: if agent_id.is_empty() {
-            "microclaw".to_string()
+            "mchact".to_string()
         } else {
             agent_id
         },

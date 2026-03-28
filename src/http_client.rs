@@ -3,7 +3,7 @@ pub fn default_llm_user_agent() -> String {
     let mut parts = raw.split('.');
     let major = parts.next().unwrap_or(raw);
     let minor = parts.next().unwrap_or("0");
-    format!("MicroClaw/{major}.{minor}")
+    format!("mchact/{major}.{minor}")
 }
 
 /// Returns the User-Agent string used for outbound LLM HTTP calls.
@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn test_llm_user_agent_default() {
         let ua = default_llm_user_agent();
-        assert!(ua.starts_with("MicroClaw/"));
+        assert!(ua.starts_with("mchact/"));
     }
 
     #[test]

@@ -25,8 +25,8 @@ use crate::codex_auth::{
 };
 use crate::config::{Config, LlmProviderProfile, SandboxBackend, SandboxMode};
 use crate::http_client::llm_user_agent;
-use microclaw_core::error::MicroClawError;
-use microclaw_core::text::floor_char_boundary;
+use mchact_core::error::MchactError;
+use mchact_core::text::floor_char_boundary;
 
 use crate::channels::{
     dingtalk, email, feishu, imessage, irc, matrix, nostr, qq, signal, slack, weixin, whatsapp,
@@ -69,7 +69,7 @@ const UI_FIELD_WINDOW: usize = 14;
 // Header contains 2 content lines, so it needs at least 4 rows.
 const UI_HEADER_HEIGHT: u16 = 4;
 const UI_STATUS_HEIGHT: u16 = 3;
-const CONFIG_BACKUP_DIR_NAME: &str = "microclaw.config.backups";
+const CONFIG_BACKUP_DIR_NAME: &str = "mchact.config.backups";
 const MAX_CONFIG_BACKUPS: usize = 50;
 
 fn telegram_slot_id_key(slot: usize) -> String {
@@ -473,13 +473,13 @@ fn compact_json_string(value: &serde_yaml::Value) -> Option<String> {
 fn parse_accounts_json_value(
     raw: &str,
     field_key: &str,
-) -> Result<Option<serde_json::Map<String, serde_json::Value>>, MicroClawError> {
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>, MchactError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     let parsed: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
-        MicroClawError::Config(format!("{field_key} must be valid JSON object: {e}"))
+        MchactError::Config(format!("{field_key} must be valid JSON object: {e}"))
     })?;
     let obj = if let Some(map_obj) = parsed.as_object() {
         map_obj.clone()
@@ -487,7 +487,7 @@ fn parse_accounts_json_value(
         let mut out = serde_json::Map::new();
         for (idx, item) in items.iter().enumerate() {
             let Some(entry) = item.as_object() else {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{field_key}[{idx}] must be an object with at least 'id'"
                 )));
             };
@@ -497,12 +497,12 @@ fn parse_accounts_json_value(
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
                 .ok_or_else(|| {
-                    MicroClawError::Config(format!(
+                    MchactError::Config(format!(
                         "{field_key}[{idx}] is missing required string field 'id'"
                     ))
                 })?;
             if !is_valid_account_id(id) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{field_key}[{idx}] has invalid id '{id}' (allowed: letters, numbers, '_' or '-')"
                 )));
             }
@@ -512,13 +512,13 @@ fn parse_accounts_json_value(
         }
         out
     } else {
-        return Err(MicroClawError::Config(format!(
+        return Err(MchactError::Config(format!(
             "{field_key} must be a JSON object {{id: config}} or JSON array [{{id, ...config}}]"
         )));
     };
     for account_id in obj.keys() {
         if !is_valid_account_id(account_id) {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "{field_key} contains invalid account id '{account_id}' (allowed: letters, numbers, '_' or '-')"
             )));
         }
@@ -529,14 +529,14 @@ fn parse_accounts_json_value(
 fn parse_provider_presets_json_value(
     raw: &str,
     field_key: &str,
-) -> Result<HashMap<String, LlmProviderProfile>, MicroClawError> {
+) -> Result<HashMap<String, LlmProviderProfile>, MchactError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Ok(HashMap::new());
     }
     let mut presets: HashMap<String, LlmProviderProfile> =
         serde_json::from_str(trimmed).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{field_key} must be a valid JSON object {{preset_id: {{provider,...}}}}: {e}"
             ))
         })?;
@@ -544,17 +544,17 @@ fn parse_provider_presets_json_value(
     for (preset_id, profile) in presets.drain() {
         let preset_id = preset_id.trim().to_ascii_lowercase();
         if preset_id.is_empty() {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "{field_key} contains an empty preset id"
             )));
         }
         if preset_id == "main" {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "{field_key} preset id 'main' is reserved for the global default"
             )));
         }
         if !is_valid_account_id(&preset_id) {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "{field_key} contains invalid preset id '{preset_id}' (allowed: letters, numbers, '_' or '-')"
             )));
         }
@@ -581,7 +581,7 @@ fn yaml_double_quoted(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn parse_boolish(value: &str, default_if_empty: bool) -> Result<bool, MicroClawError> {
+fn parse_boolish(value: &str, default_if_empty: bool) -> Result<bool, MchactError> {
     let raw = value.trim().to_ascii_lowercase();
     if raw.is_empty() {
         return Ok(default_if_empty);
@@ -589,7 +589,7 @@ fn parse_boolish(value: &str, default_if_empty: bool) -> Result<bool, MicroClawE
     match raw.as_str() {
         "true" | "1" | "yes" => Ok(true),
         "false" | "0" | "no" => Ok(false),
-        _ => Err(MicroClawError::Config(format!(
+        _ => Err(MchactError::Config(format!(
             "invalid bool value '{value}', expected true/false"
         ))),
     }
@@ -606,45 +606,45 @@ fn dynamic_field_is_u64(channel: &str, yaml_key: &str) -> bool {
     matches!((channel, yaml_key), ("slack", "inbound_image_max_mb"))
 }
 
-fn parse_bot_count(value: &str, field_key: &str) -> Result<usize, MicroClawError> {
+fn parse_bot_count(value: &str, field_key: &str) -> Result<usize, MchactError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Ok(1);
     }
     let parsed = trimmed.parse::<usize>().map_err(|_| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "{field_key} must be an integer between 1 and {MAX_BOT_SLOTS}"
         ))
     })?;
     if !(1..=MAX_BOT_SLOTS).contains(&parsed) {
-        return Err(MicroClawError::Config(format!(
+        return Err(MchactError::Config(format!(
             "{field_key} must be between 1 and {MAX_BOT_SLOTS}"
         )));
     }
     Ok(parsed)
 }
 
-fn parse_u64_field(value: &str, field_key: &str) -> Result<u64, MicroClawError> {
+fn parse_u64_field(value: &str, field_key: &str) -> Result<u64, MchactError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err(MicroClawError::Config(format!(
+        return Err(MchactError::Config(format!(
             "{field_key} must be a positive integer"
         )));
     }
     trimmed
         .parse::<u64>()
-        .map_err(|_| MicroClawError::Config(format!("{field_key} must be a positive integer")))
+        .map_err(|_| MchactError::Config(format!("{field_key} must be a positive integer")))
 }
 
-fn parse_i64_list_field(value: &str, field_key: &str) -> Result<Vec<i64>, MicroClawError> {
+fn parse_i64_list_field(value: &str, field_key: &str) -> Result<Vec<i64>, MchactError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
 
-    let parse_item = |raw: &str| -> Result<i64, MicroClawError> {
+    let parse_item = |raw: &str| -> Result<i64, MchactError> {
         raw.trim().parse::<i64>().map_err(|_| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{field_key} must contain integer IDs (csv like '123,456' or JSON array like '[123,456]')"
             ))
         })
@@ -652,12 +652,12 @@ fn parse_i64_list_field(value: &str, field_key: &str) -> Result<Vec<i64>, MicroC
 
     if trimmed.starts_with('[') {
         let parsed: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{field_key} must be a valid JSON array when using [] syntax: {e}"
             ))
         })?;
         let arr = parsed.as_array().ok_or_else(|| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{field_key} must be a JSON array when using [] syntax"
             ))
         })?;
@@ -666,13 +666,13 @@ fn parse_i64_list_field(value: &str, field_key: &str) -> Result<Vec<i64>, MicroC
             match item {
                 serde_json::Value::Number(n) => {
                     let id = n.as_i64().ok_or_else(|| {
-                        MicroClawError::Config(format!("{field_key} contains non-integer number"))
+                        MchactError::Config(format!("{field_key} contains non-integer number"))
                     })?;
                     out.push(id);
                 }
                 serde_json::Value::String(s) => out.push(parse_item(s)?),
                 _ => {
-                    return Err(MicroClawError::Config(format!(
+                    return Err(MchactError::Config(format!(
                         "{field_key} supports only integer values"
                     )));
                 }
@@ -689,17 +689,17 @@ fn parse_i64_list_field(value: &str, field_key: &str) -> Result<Vec<i64>, MicroC
         .collect()
 }
 
-fn parse_string_list_field(value: &str) -> Result<Vec<String>, MicroClawError> {
+fn parse_string_list_field(value: &str) -> Result<Vec<String>, MchactError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
     if trimmed.starts_with('[') {
         let parsed: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
-            MicroClawError::Config(format!("invalid string list JSON array syntax: {e}"))
+            MchactError::Config(format!("invalid string list JSON array syntax: {e}"))
         })?;
         let arr = parsed.as_array().ok_or_else(|| {
-            MicroClawError::Config("string list must be a JSON array when using [] syntax".into())
+            MchactError::Config("string list must be a JSON array when using [] syntax".into())
         })?;
         let mut out = Vec::new();
         for item in arr {
@@ -708,7 +708,7 @@ fn parse_string_list_field(value: &str) -> Result<Vec<String>, MicroClawError> {
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
                 .ok_or_else(|| {
-                    MicroClawError::Config(
+                    MchactError::Config(
                         "string list supports only non-empty string values".into(),
                     )
                 })?;
@@ -794,8 +794,8 @@ fn default_data_dir_for_setup() -> String {
     std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))
-        .map(|p| p.join(".microclaw"))
-        .unwrap_or_else(|| std::path::PathBuf::from(".microclaw"))
+        .map(|p| p.join(".mchact"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".mchact"))
         .to_string_lossy()
         .to_string()
 }
@@ -2313,12 +2313,12 @@ impl SetupApp {
         app
     }
 
-    /// Load existing config values from microclaw.config.yaml/.yml.
+    /// Load existing config values from mchact.config.yaml/.yml.
     fn load_existing_config() -> HashMap<String, String> {
-        let yaml_path = if Path::new("./microclaw.config.yaml").exists() {
-            Some("./microclaw.config.yaml")
-        } else if Path::new("./microclaw.config.yml").exists() {
-            Some("./microclaw.config.yml")
+        let yaml_path = if Path::new("./mchact.config.yaml").exists() {
+            Some("./mchact.config.yaml")
+        } else if Path::new("./mchact.config.yml").exists() {
+            Some("./mchact.config.yml")
         } else {
             None
         };
@@ -3273,7 +3273,7 @@ impl SetupApp {
 
     fn serialize_provider_preset_drafts(
         drafts: &[ProviderPresetDraft],
-    ) -> Result<String, MicroClawError> {
+    ) -> Result<String, MchactError> {
         let mut presets = HashMap::new();
         for draft in drafts {
             let id = draft.id.trim().to_ascii_lowercase();
@@ -3281,12 +3281,12 @@ impl SetupApp {
                 continue;
             }
             if id == "main" {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "provider preset id 'main' is reserved for the global default".into(),
                 ));
             }
             if !is_valid_account_id(&id) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "provider preset id '{id}' must use only letters, numbers, '_' or '-'"
                 )));
             }
@@ -3304,11 +3304,11 @@ impl SetupApp {
             presets.insert(id, profile);
         }
         serde_json::to_string(&presets).map_err(|e| {
-            MicroClawError::Config(format!("Failed to serialize provider profiles: {e}"))
+            MchactError::Config(format!("Failed to serialize provider profiles: {e}"))
         })
     }
 
-    fn sync_provider_preset_page_field(&mut self) -> Result<(), MicroClawError> {
+    fn sync_provider_preset_page_field(&mut self) -> Result<(), MchactError> {
         let Some(page) = self.provider_preset_page.as_ref() else {
             return Ok(());
         };
@@ -3484,7 +3484,7 @@ impl SetupApp {
             .filter(|id| !id.is_empty())
     }
 
-    fn clone_selected_provider_preset(&mut self) -> Result<Option<String>, MicroClawError> {
+    fn clone_selected_provider_preset(&mut self) -> Result<Option<String>, MchactError> {
         let Some(page) = self.provider_preset_page.as_mut() else {
             return Ok(None);
         };
@@ -3505,13 +3505,13 @@ impl SetupApp {
     fn delete_selected_provider_preset(
         &mut self,
         fallback_to_main: bool,
-    ) -> Result<Vec<String>, MicroClawError> {
+    ) -> Result<Vec<String>, MchactError> {
         let Some(preset_id) = self.selected_provider_preset_id() else {
             return Ok(Vec::new());
         };
         let refs = self.provider_preset_references(&preset_id);
         if !refs.is_empty() && !fallback_to_main {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "Preset '{preset_id}' is still referenced by {}. Press x to reset those references to main and delete it.",
                 refs.join(", ")
             )));
@@ -4084,7 +4084,7 @@ impl SetupApp {
 
     fn telegram_slot_accounts_from_fields(
         &self,
-    ) -> Result<serde_json::Map<String, serde_json::Value>, MicroClawError> {
+    ) -> Result<serde_json::Map<String, serde_json::Value>, MchactError> {
         let mut out = serde_json::Map::new();
         for slot in 1..=self.telegram_bot_count() {
             let id = self.field_value(&telegram_slot_id_key(slot));
@@ -4103,7 +4103,7 @@ impl SetupApp {
                 None
             } else {
                 Some(parse_boolish(&topic_routing_raw, false).map_err(|_| {
-                    MicroClawError::Config(format!(
+                    MchactError::Config(format!(
                         "{} must be true/false (or 1/0)",
                         telegram_slot_topic_routing_key(slot)
                     ))
@@ -4120,7 +4120,7 @@ impl SetupApp {
                 continue;
             }
             let account_id = if id.is_empty() {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{} is required when Telegram bot slot #{slot} is used",
                     telegram_slot_id_key(slot)
                 )));
@@ -4128,7 +4128,7 @@ impl SetupApp {
                 id
             };
             if !is_valid_account_id(&account_id) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{} must use only letters, numbers, '_' or '-'",
                     telegram_slot_id_key(slot)
                 )));
@@ -4496,17 +4496,17 @@ impl SetupApp {
         field.required
     }
 
-    fn validate_local(&self) -> Result<(), MicroClawError> {
+    fn validate_local(&self) -> Result<(), MchactError> {
         for field in &self.fields {
             if self.is_field_required(field) && field.value.trim().is_empty() {
-                return Err(MicroClawError::Config(format!("{} is required", field.key)));
+                return Err(MchactError::Config(format!("{} is required", field.key)));
             }
         }
 
         let hooks_allow_raw = self.field_value(web_hooks_allow_request_session_key_key());
         if !hooks_allow_raw.trim().is_empty() {
             let _ = parse_boolish(&hooks_allow_raw, false).map_err(|_| {
-                MicroClawError::Config(format!(
+                MchactError::Config(format!(
                     "{} must be true/false",
                     web_hooks_allow_request_session_key_key()
                 ))
@@ -4516,7 +4516,7 @@ impl SetupApp {
             &self.field_value(web_hooks_allowed_session_key_prefixes_key()),
         )
         .map_err(|_| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{} must be csv or JSON string array",
                 web_hooks_allowed_session_key_prefixes_key()
             ))
@@ -4534,7 +4534,7 @@ impl SetupApp {
             let topic_routing_raw = self.field_value(telegram_topic_routing_key());
             if !topic_routing_raw.trim().is_empty() {
                 let _ = parse_boolish(&topic_routing_raw, false).map_err(|_| {
-                    MicroClawError::Config(format!(
+                    MchactError::Config(format!(
                         "{} must be true/false (or 1/0)",
                         telegram_topic_routing_key()
                     ))
@@ -4546,7 +4546,7 @@ impl SetupApp {
             )?;
             let account_id = account_id_from_value(&self.field_value(&telegram_slot_id_key(1)));
             if !is_valid_account_id(&account_id) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{} must use only letters, numbers, '_' or '-'",
                     telegram_slot_id_key(1)
                 )));
@@ -4561,13 +4561,13 @@ impl SetupApp {
                     .is_some()
             });
             if self.telegram_bot_count() > 1 && telegram_slot_accounts.is_empty() {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "Provide Telegram multi-bot entries via TELEGRAM_BOT#_* fields when TELEGRAM_BOT_COUNT > 1".into(),
                 ));
             }
             if self.field_value("TELEGRAM_BOT_TOKEN").is_empty() && !telegram_slot_has_account_token
             {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "TELEGRAM_BOT_TOKEN or TELEGRAM_BOT#_TOKEN is required when telegram is enabled".into(),
                 ));
             }
@@ -4578,20 +4578,20 @@ impl SetupApp {
                     .is_empty()
             });
             if self.field_value("BOT_USERNAME").is_empty() && !slot_has_username {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "TELEGRAM_BOT#_USERNAME is required when telegram is enabled".into(),
                 ));
             }
             let username = self.field_value("BOT_USERNAME");
             if username.starts_with('@') {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "BOT_USERNAME should not include '@'".into(),
                 ));
             }
             for slot in 1..=self.telegram_bot_count() {
                 let username = self.field_value(&telegram_slot_username_key(slot));
                 if username.starts_with('@') {
-                    return Err(MicroClawError::Config(format!(
+                    return Err(MchactError::Config(format!(
                         "{} should not include '@'",
                         telegram_slot_username_key(slot)
                     )));
@@ -4602,7 +4602,7 @@ impl SetupApp {
         if self.channel_enabled("discord") {
             let account_id = account_id_from_value(&self.field_value("DISCORD_ACCOUNT_ID"));
             if !is_valid_account_id(&account_id) {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "DISCORD_ACCOUNT_ID must use only letters, numbers, '_' or '-'".into(),
                 ));
             }
@@ -4624,7 +4624,7 @@ impl SetupApp {
                 })
                 .unwrap_or(false);
             if self.field_value("DISCORD_BOT_TOKEN").is_empty() && !discord_has_account_token {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "DISCORD_BOT_TOKEN or DISCORD_ACCOUNTS_JSON(bot_token) is required when discord is enabled".into(),
                 ));
             }
@@ -4656,14 +4656,14 @@ impl SetupApp {
                     seen_any = true;
                     let account_id = account_id_from_value(&id_raw);
                     if !is_valid_account_id(&account_id) {
-                        return Err(MicroClawError::Config(format!(
+                        return Err(MchactError::Config(format!(
                             "{} must use only letters, numbers, '_' or '-'",
                             id_key
                         )));
                     }
                     let enabled_key = dynamic_slot_enabled_field_key(ch.name, slot);
                     let _ = parse_boolish(&self.field_value(&enabled_key), true).map_err(|_| {
-                        MicroClawError::Config(format!(
+                        MchactError::Config(format!(
                             "{} must be true/false (or 1/0)",
                             enabled_key
                         ))
@@ -4677,7 +4677,7 @@ impl SetupApp {
                                 false
                             } else {
                                 parse_boolish(&field_raw, false).map_err(|_| {
-                                    MicroClawError::Config(format!(
+                                    MchactError::Config(format!(
                                         "{} must be true/false (or 1/0)",
                                         field_key
                                     ))
@@ -4696,7 +4696,7 @@ impl SetupApp {
                                 domain.as_str()
                             };
                             if domain != "feishu" && domain != "lark" {
-                                return Err(MicroClawError::Config(format!(
+                                return Err(MchactError::Config(format!(
                                     "{} topic_mode is only supported when domain is feishu or lark",
                                     id_key
                                 )));
@@ -4713,7 +4713,7 @@ impl SetupApp {
                         })
                         .is_empty()
                         {
-                            return Err(MicroClawError::Config(format!(
+                            return Err(MchactError::Config(format!(
                                 "{} is required when {} bot slot #{} is configured",
                                 key, ch.name, slot
                             )));
@@ -4721,7 +4721,7 @@ impl SetupApp {
                     }
                 }
                 if !seen_any {
-                    return Err(MicroClawError::Config(format!(
+                    return Err(MchactError::Config(format!(
                         "Provide at least one {} bot slot (1..{}) with required fields",
                         ch.name, bot_count
                     )));
@@ -4731,16 +4731,16 @@ impl SetupApp {
 
         let provider = self.field_value("LLM_PROVIDER");
         if provider.is_empty() {
-            return Err(MicroClawError::Config("LLM_PROVIDER is required".into()));
+            return Err(MchactError::Config("LLM_PROVIDER is required".into()));
         }
         if is_openai_codex_provider(&provider) {
             if !self.field_value("LLM_API_KEY").trim().is_empty() {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "openai-codex ignores LLM_API_KEY here. Configure ~/.codex/auth.json or run `codex login`.".into(),
                 ));
             }
             if !self.field_value("LLM_BASE_URL").trim().is_empty() {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "openai-codex ignores LLM_BASE_URL here. Configure ~/.codex/config.toml instead.".into(),
                 ));
             }
@@ -4748,7 +4748,7 @@ impl SetupApp {
             && self.field_value("LLM_API_KEY").trim().is_empty()
             && !qwen_oauth_file_has_access_token()?
         {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "qwen-portal requires LLM_API_KEY, or ~/.qwen/oauth_creds.json (access_token), or QWEN_PORTAL_ACCESS_TOKEN.".into(),
             ));
         }
@@ -4757,7 +4757,7 @@ impl SetupApp {
         let tz = override_timezone.trim();
         if !tz.is_empty() && !tz.eq_ignore_ascii_case("auto") {
             tz.parse::<chrono_tz::Tz>()
-                .map_err(|_| MicroClawError::Config(format!("Invalid OVERRIDE_TIMEZONE: {tz}")))?;
+                .map_err(|_| MchactError::Config(format!("Invalid OVERRIDE_TIMEZONE: {tz}")))?;
         }
 
         let data_dir = self.field_value("DATA_DIR");
@@ -4784,7 +4784,7 @@ impl SetupApp {
             let lower = sandbox_enabled.to_ascii_lowercase();
             let valid = matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no");
             if !valid {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "SANDBOX_ENABLED must be true/false (or 1/0)".into(),
                 ));
             }
@@ -4794,14 +4794,14 @@ impl SetupApp {
             let lower = high_risk_confirm.to_ascii_lowercase();
             let valid = matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no");
             if !valid {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "HIGH_RISK_TOOL_USER_CONFIRMATION_REQUIRED must be true/false (or 1/0)".into(),
                 ));
             }
         }
         let show_thinking = self.field_value("SHOW_THINKING");
         if !show_thinking.is_empty() && parse_bool_like(&show_thinking).is_none() {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "SHOW_THINKING must be true/false (or 1/0)".into(),
             ));
         }
@@ -4809,10 +4809,10 @@ impl SetupApp {
         let memory_token_budget_raw = self.field_value("MEMORY_TOKEN_BUDGET");
         if !memory_token_budget_raw.is_empty() {
             let memory_token_budget = memory_token_budget_raw.parse::<usize>().map_err(|_| {
-                MicroClawError::Config("MEMORY_TOKEN_BUDGET must be a positive integer".into())
+                MchactError::Config("MEMORY_TOKEN_BUDGET must be a positive integer".into())
             })?;
             if memory_token_budget == 0 {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "MEMORY_TOKEN_BUDGET must be greater than 0".into(),
                 ));
             }
@@ -4834,9 +4834,9 @@ impl SetupApp {
             }
             let value = raw
                 .parse::<u64>()
-                .map_err(|_| MicroClawError::Config(format!("{key} must be a positive integer")))?;
+                .map_err(|_| MchactError::Config(format!("{key} must be a positive integer")))?;
             if value == 0 {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{key} must be greater than 0"
                 )));
             }
@@ -4855,7 +4855,7 @@ impl SetupApp {
             let lower = raw.to_ascii_lowercase();
             let valid = matches!(lower.as_str(), "true" | "false" | "1" | "0" | "yes" | "no");
             if !valid {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{key} must be true/false (or 1/0)"
                 )));
             }
@@ -4868,7 +4868,7 @@ impl SetupApp {
         let acp_env_raw = self.field_value(subagents_acp_env_json_key());
         if !acp_env_raw.trim().is_empty() {
             serde_json::from_str::<HashMap<String, String>>(acp_env_raw.trim()).map_err(|e| {
-                MicroClawError::Config(format!(
+                MchactError::Config(format!(
                     "{} must be valid JSON object: {e}",
                     subagents_acp_env_json_key()
                 ))
@@ -4880,7 +4880,7 @@ impl SetupApp {
                 acp_targets_raw.trim(),
             )
             .map_err(|e| {
-                MicroClawError::Config(format!(
+                MchactError::Config(format!(
                     "{} must be valid JSON object: {e}",
                     subagents_acp_targets_json_key()
                 ))
@@ -4890,10 +4890,10 @@ impl SetupApp {
         let embedding_dim_raw = self.field_value("EMBEDDING_DIM");
         if !embedding_dim_raw.is_empty() {
             let embedding_dim = embedding_dim_raw.parse::<usize>().map_err(|_| {
-                MicroClawError::Config("EMBEDDING_DIM must be a positive integer".into())
+                MchactError::Config("EMBEDDING_DIM must be a positive integer".into())
             })?;
             if embedding_dim == 0 {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "EMBEDDING_DIM must be greater than 0".into(),
                 ));
             }
@@ -4902,7 +4902,7 @@ impl SetupApp {
         Ok(())
     }
 
-    fn validate_online(&self) -> Result<Vec<String>, MicroClawError> {
+    fn validate_online(&self) -> Result<Vec<String>, MchactError> {
         let tg_enabled = self.channel_enabled("telegram");
         let tg_token = if !self.field_value("TELEGRAM_BOT_TOKEN").is_empty() {
             self.field_value("TELEGRAM_BOT_TOKEN")
@@ -4970,26 +4970,26 @@ impl SetupApp {
             )
         })
         .join()
-        .map_err(|_| MicroClawError::Config("Validation thread panicked".into()))?
+        .map_err(|_| MchactError::Config("Validation thread panicked".into()))?
     }
 
     fn selected_provider_preset_validation_request(
         &self,
-    ) -> Result<ProviderPresetValidationRequest, MicroClawError> {
+    ) -> Result<ProviderPresetValidationRequest, MchactError> {
         let Some(page) = self.provider_preset_page.as_ref() else {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "No provider profile is currently selected".into(),
             ));
         };
         let Some(entry) = page.entries.get(page.selected) else {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "No provider profile is currently selected".into(),
             ));
         };
 
         let provider = entry.provider.trim().to_ascii_lowercase();
         if provider.is_empty() {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "Provider profile must set a provider before testing".into(),
             ));
         }
@@ -5026,7 +5026,7 @@ impl SetupApp {
 
     fn validate_selected_provider_preset_online(
         &self,
-    ) -> Result<(String, Vec<String>), MicroClawError> {
+    ) -> Result<(String, Vec<String>), MchactError> {
         let request = self.selected_provider_preset_validation_request()?;
         let profile_id = request.profile_id.clone();
         let checks = std::thread::spawn(move || {
@@ -5044,7 +5044,7 @@ impl SetupApp {
             )
         })
         .join()
-        .map_err(|_| MicroClawError::Config("Validation thread panicked".into()))??;
+        .map_err(|_| MchactError::Config("Validation thread panicked".into()))??;
         Ok((profile_id, checks))
     }
 
@@ -5646,7 +5646,7 @@ impl SetupApp {
                 "Example: https://dashscope.aliyuncs.com/compatible-mode/v1",
             ),
             "LLM_USER_AGENT" => (
-                "HTTP User-Agent for LLM requests. Empty means automatic MicroClaw/<version>.",
+                "HTTP User-Agent for LLM requests. Empty means automatic mchact/<version>.",
                 "Example: OpenClaw-Gateway/1.0",
             ),
             _ if key == llm_provider_profiles_key() => (
@@ -5771,7 +5771,7 @@ impl SetupApp {
             ),
             "DATA_DIR" => (
                 "Root directory for runtime data (DB, sessions, memory, skills).",
-                "Example: ./microclaw.data",
+                "Example: ./mchact.data",
             ),
             "WORKING_DIR" => (
                 "Filesystem base path for tools like read/write/bash/glob.",
@@ -5783,7 +5783,7 @@ impl SetupApp {
             ),
             "SOULS_DIR" => (
                 "Directory storing SOUL.md personalities. Empty uses <data_dir>/souls.",
-                "Example: ./microclaw.data/souls",
+                "Example: ./mchact.data/souls",
             ),
             "REFLECTOR_ENABLED" => (
                 "Enable periodic memory reflection that extracts structured memories from chat.",
@@ -6145,7 +6145,7 @@ fn perform_online_validation(
     configured_user_agent: &str,
     model: &str,
     codex_account_id: Option<&str>,
-) -> Result<Vec<String>, MicroClawError> {
+) -> Result<Vec<String>, MchactError> {
     const VALIDATION_MAX_OUTPUT_TOKENS: u32 = 64;
     let mut checks = Vec::new();
     let client = reqwest::blocking::Client::builder()
@@ -6161,7 +6161,7 @@ fn perform_online_validation(
             .json()?;
         let ok = tg_resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
         if !ok {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "Telegram getMe failed (check TELEGRAM_BOT_TOKEN)".into(),
             ));
         }
@@ -6227,7 +6227,7 @@ fn perform_online_validation(
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_else(|| format!("HTTP {status}"));
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "LLM validation failed: {detail}"
             )));
         }
@@ -6271,7 +6271,7 @@ fn perform_online_validation(
                 {
                     resp = send_openai_validation_chat_request(&client, &endpoint, api_key, &body)?;
                 } else {
-                    return Err(MicroClawError::Config(format!(
+                    return Err(MchactError::Config(format!(
                         "LLM validation failed: {}",
                         extract_openai_error_detail(status, &text)
                     )));
@@ -6289,7 +6289,7 @@ fn perform_online_validation(
                 return Ok(checks);
             }
             let detail = extract_openai_error_detail(status, &text);
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "LLM validation failed: {detail}"
             )));
         }
@@ -6449,7 +6449,7 @@ fn prune_old_config_backups(
     backup_dir: &Path,
     file_name: &str,
     keep_latest: usize,
-) -> Result<(), MicroClawError> {
+) -> Result<(), MchactError> {
     let prefix = format!("{file_name}.bak.");
     let mut entries = Vec::new();
     for entry in fs::read_dir(backup_dir)? {
@@ -6471,14 +6471,14 @@ fn prune_old_config_backups(
     Ok(())
 }
 
-fn create_config_backup(path: &Path) -> Result<Option<String>, MicroClawError> {
+fn create_config_backup(path: &Path) -> Result<Option<String>, MchactError> {
     if !path.exists() {
         return Ok(None);
     }
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("microclaw.config.yaml");
+        .unwrap_or("mchact.config.yaml");
     let backup_dir = config_backup_dir_for(path);
     fs::create_dir_all(&backup_dir)?;
     let ts = Utc::now().format("%Y%m%d%H%M%S").to_string();
@@ -6491,7 +6491,7 @@ fn create_config_backup(path: &Path) -> Result<Option<String>, MicroClawError> {
 fn save_config_yaml(
     path: &Path,
     values: &HashMap<String, String>,
-) -> Result<Option<String>, MicroClawError> {
+) -> Result<Option<String>, MchactError> {
     let backup = create_config_backup(path)?;
 
     let get = |key: &str| values.get(key).cloned().unwrap_or_default();
@@ -6558,7 +6558,7 @@ fn save_config_yaml(
     } else {
         serde_json::from_str::<HashMap<String, crate::config::A2APeerConfig>>(a2a_peers_raw.trim())
             .map_err(|e| {
-                MicroClawError::Config(format!(
+                MchactError::Config(format!(
                     "{} must be valid JSON object: {e}",
                     a2a_peers_json_key()
                 ))
@@ -6575,7 +6575,7 @@ fn save_config_yaml(
         }
         trimmed
             .parse::<usize>()
-            .map_err(|e| MicroClawError::Config(format!("{key} must be a positive integer: {e}")))
+            .map_err(|e| MchactError::Config(format!("{key} must be a positive integer: {e}")))
     };
     let parse_u64_or_default = |raw: String, key: &str, default: u64| {
         let trimmed = raw.trim();
@@ -6584,7 +6584,7 @@ fn save_config_yaml(
         }
         trimmed
             .parse::<u64>()
-            .map_err(|e| MicroClawError::Config(format!("{key} must be a positive integer: {e}")))
+            .map_err(|e| MchactError::Config(format!("{key} must be a positive integer: {e}")))
     };
     let parse_i64_or_default = |raw: String, key: &str, default: i64| {
         let trimmed = raw.trim();
@@ -6593,7 +6593,7 @@ fn save_config_yaml(
         }
         trimmed
             .parse::<i64>()
-            .map_err(|e| MicroClawError::Config(format!("{key} must be a positive integer: {e}")))
+            .map_err(|e| MchactError::Config(format!("{key} must be a positive integer: {e}")))
     };
     let subagents_max_concurrent = parse_usize_or_default(
         get_with_fallback(subagents_max_concurrent_key(), "4"),
@@ -6647,7 +6647,7 @@ fn save_config_yaml(
     } else {
         serde_json::from_str::<HashMap<String, String>>(subagents_acp_env_raw.trim()).map_err(
             |e| {
-                MicroClawError::Config(format!(
+                MchactError::Config(format!(
                     "{} must be valid JSON object: {e}",
                     subagents_acp_env_json_key()
                 ))
@@ -6664,7 +6664,7 @@ fn save_config_yaml(
             subagents_acp_targets_raw.trim(),
         )
         .map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{} must be valid JSON object: {e}",
                 subagents_acp_targets_json_key()
             ))
@@ -6692,7 +6692,7 @@ fn save_config_yaml(
         false
     } else {
         parse_boolish(telegram_topic_routing_raw.trim(), false).map_err(|_| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "{} must be true/false (or 1/0)",
                 telegram_topic_routing_key()
             ))
@@ -6731,7 +6731,7 @@ fn save_config_yaml(
         } else {
             Some(
                 parse_boolish(slot_topic_routing_raw.trim(), false).map_err(|_| {
-                    MicroClawError::Config(format!(
+                    MchactError::Config(format!(
                         "{} must be true/false (or 1/0)",
                         telegram_slot_topic_routing_key(slot)
                     ))
@@ -6750,7 +6750,7 @@ fn save_config_yaml(
         }
         let account_id = account_id_from_value(&id);
         if !is_valid_account_id(&account_id) {
-            return Err(MicroClawError::Config(format!(
+            return Err(MchactError::Config(format!(
                 "{} must use only letters, numbers, '_' or '-'",
                 telegram_slot_id_key(slot)
             )));
@@ -6895,7 +6895,7 @@ fn save_config_yaml(
         .collect();
 
     let mut yaml = String::new();
-    yaml.push_str("# MicroClaw configuration\n\n");
+    yaml.push_str("# mchact configuration\n\n");
     yaml.push_str(
         "# Channel settings (set `enabled: false` to keep credentials without activating the channel)\n",
     );
@@ -6970,7 +6970,7 @@ fn save_config_yaml(
             yaml.push_str("    accounts:\n");
             let yaml_accounts = serde_yaml::to_value(serde_json::Value::Object(accounts.clone()))
                 .map_err(|e| {
-                MicroClawError::Config(format!("Failed to render Telegram multi-bot accounts: {e}"))
+                MchactError::Config(format!("Failed to render Telegram multi-bot accounts: {e}"))
             })?;
             append_yaml_value(&mut yaml, 6, &yaml_accounts);
         } else if telegram_present {
@@ -7029,7 +7029,7 @@ fn save_config_yaml(
             yaml.push_str("    accounts:\n");
             let yaml_accounts = serde_yaml::to_value(serde_json::Value::Object(accounts.clone()))
                 .map_err(|e| {
-                MicroClawError::Config(format!("Failed to render DISCORD_ACCOUNTS_JSON: {e}"))
+                MchactError::Config(format!("Failed to render DISCORD_ACCOUNTS_JSON: {e}"))
             })?;
             append_yaml_value(&mut yaml, 6, &yaml_accounts);
         } else if discord_present {
@@ -7076,7 +7076,7 @@ fn save_config_yaml(
             }
             let account_id = account_id_from_value(&id);
             if !is_valid_account_id(&account_id) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "{} must use only letters, numbers, '_' or '-'",
                     dynamic_slot_id_field_key(ch.name, slot)
                 )));
@@ -7090,7 +7090,7 @@ fn save_config_yaml(
                 }
                 if dynamic_field_is_bool(ch.name, f.yaml_key) {
                     let parsed = parse_boolish(v.trim(), false).map_err(|_| {
-                        MicroClawError::Config(format!(
+                        MchactError::Config(format!(
                             "{} must be true/false (or 1/0)",
                             dynamic_slot_field_key(ch.name, slot, f.yaml_key)
                         ))
@@ -7127,7 +7127,7 @@ fn save_config_yaml(
                         .unwrap_or("feishu")
                         .to_ascii_lowercase();
                     if domain != "feishu" && domain != "lark" {
-                        return Err(MicroClawError::Config(format!(
+                        return Err(MchactError::Config(format!(
                             "{} topic_mode is only supported when domain is feishu or lark",
                             dynamic_slot_id_field_key(ch.name, slot)
                         )));
@@ -7169,7 +7169,7 @@ fn save_config_yaml(
             yaml.push_str("    accounts:\n");
             let yaml_accounts = serde_yaml::to_value(serde_json::Value::Object(accounts_map))
                 .map_err(|e| {
-                    MicroClawError::Config(format!("Failed to render {} accounts: {e}", ch.name))
+                    MchactError::Config(format!("Failed to render {} accounts: {e}", ch.name))
                 })?;
             append_yaml_value(&mut yaml, 6, &yaml_accounts);
         }
@@ -7210,7 +7210,7 @@ fn save_config_yaml(
         if !a2a_peers.is_empty() {
             yaml.push_str("  peers:\n");
             let yaml_peers = serde_yaml::to_value(&a2a_peers)
-                .map_err(|e| MicroClawError::Config(format!("Failed to render A2A peers: {e}")))?;
+                .map_err(|e| MchactError::Config(format!("Failed to render A2A peers: {e}")))?;
             append_yaml_value(&mut yaml, 4, &yaml_peers);
         }
     }
@@ -7277,7 +7277,7 @@ fn save_config_yaml(
         if !subagents_acp_env.is_empty() {
             yaml.push_str("    env:\n");
             let yaml_env = serde_yaml::to_value(&subagents_acp_env).map_err(|e| {
-                MicroClawError::Config(format!("Failed to render ACP env config: {e}"))
+                MchactError::Config(format!("Failed to render ACP env config: {e}"))
             })?;
             append_yaml_value(&mut yaml, 6, &yaml_env);
         }
@@ -7294,7 +7294,7 @@ fn save_config_yaml(
         if !subagents_acp_targets.is_empty() {
             yaml.push_str("    targets:\n");
             let yaml_targets = serde_yaml::to_value(&subagents_acp_targets).map_err(|e| {
-                MicroClawError::Config(format!("Failed to render ACP targets config: {e}"))
+                MchactError::Config(format!("Failed to render ACP targets config: {e}"))
             })?;
             append_yaml_value(&mut yaml, 6, &yaml_targets);
         }
@@ -7331,7 +7331,7 @@ fn save_config_yaml(
         yaml.push_str("#     provider: \"openai\"\n");
         yaml.push_str("#     api_key: \"sk-...\"\n");
         yaml.push_str("#     llm_base_url: \"https://example.com/v1\"\n");
-        yaml.push_str("#     llm_user_agent: \"microclaw/1.0\"\n");
+        yaml.push_str("#     llm_user_agent: \"mchact/1.0\"\n");
         yaml.push_str("#     default_model: \"gpt-5.2\"\n");
         yaml.push_str("#     show_thinking: false\n");
         yaml.push_str("#   deepseek-hk:\n");
@@ -7340,7 +7340,7 @@ fn save_config_yaml(
     } else {
         yaml.push_str("provider_presets:\n");
         let yaml_presets = serde_yaml::to_value(&provider_presets).map_err(|e| {
-            MicroClawError::Config(format!("Failed to render provider_presets: {e}"))
+            MchactError::Config(format!("Failed to render provider_presets: {e}"))
         })?;
         append_yaml_value(&mut yaml, 2, &yaml_presets);
     }
@@ -7452,7 +7452,7 @@ fn save_config_yaml(
         || !embedding_dim.is_empty()
     {
         yaml.push_str(
-            "\n# Optional embedding config for semantic memory retrieval (requires sqlite-vec feature)\n",
+            "\n# Optional embedding config for semantic memory retrieval (requires vector-search feature)\n",
         );
         if !embedding_provider.is_empty() {
             yaml.push_str(&format!("embedding_provider: \"{}\"\n", embedding_provider));
@@ -7651,7 +7651,7 @@ fn draw_ui(frame: &mut ratatui::Frame<'_>, app: &SetupApp) {
             )),
             Line::from(""),
             Line::from("Next:"),
-            Line::from("  1) microclaw start"),
+            Line::from("  1) mchact start"),
             Line::from(""),
             Line::from("Press Enter to finish."),
         ])
@@ -7676,7 +7676,7 @@ fn draw_ui(frame: &mut ratatui::Frame<'_>, app: &SetupApp) {
     let (selected_visible, visible_total) = app.selected_progress();
     let header = Paragraph::new(vec![
         Line::from(Span::styled(
-            "MicroClaw • Interactive Setup",
+            "mchact • Interactive Setup",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -8216,12 +8216,12 @@ fn run_with_spinner<T, F>(
     app: &mut SetupApp,
     label: &str,
     work: F,
-) -> Result<T, MicroClawError>
+) -> Result<T, MchactError>
 where
     T: Send + 'static,
-    F: FnOnce() -> Result<T, MicroClawError> + Send + 'static,
+    F: FnOnce() -> Result<T, MchactError> + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<Result<T, MicroClawError>>();
+    let (tx, rx) = mpsc::channel::<Result<T, MchactError>>();
     std::thread::spawn(move || {
         let _ = tx.send(work());
     });
@@ -8237,7 +8237,7 @@ where
             Ok(result) => return result,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "save worker disconnected unexpectedly".into(),
                 ));
             }
@@ -8245,7 +8245,7 @@ where
     }
 }
 
-fn try_save(terminal: &mut DefaultTerminal, app: &mut SetupApp) -> Result<(), MicroClawError> {
+fn try_save(terminal: &mut DefaultTerminal, app: &mut SetupApp) -> Result<(), MchactError> {
     app.status = "Saving (1/3): local validation...".into();
     terminal.draw(|f| draw_ui(f, app))?;
     if let Err(e) = app.validate_local() {
@@ -8271,8 +8271,8 @@ fn try_save(terminal: &mut DefaultTerminal, app: &mut SetupApp) -> Result<(), Mi
     let backup = match run_with_spinner(
         terminal,
         app,
-        "Saving (3/3): writing microclaw.config.yaml",
-        move || save_config_yaml(Path::new("microclaw.config.yaml"), &values),
+        "Saving (3/3): writing mchact.config.yaml",
+        move || save_config_yaml(Path::new("mchact.config.yaml"), &values),
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -8283,7 +8283,7 @@ fn try_save(terminal: &mut DefaultTerminal, app: &mut SetupApp) -> Result<(), Mi
 
     app.backup_path = backup;
     app.completion_summary = checks;
-    app.status = "Saved microclaw.config.yaml".into();
+    app.status = "Saved mchact.config.yaml".into();
     app.completed = true;
     Ok(())
 }
@@ -8291,7 +8291,7 @@ fn try_save(terminal: &mut DefaultTerminal, app: &mut SetupApp) -> Result<(), Mi
 fn try_save_skip_online(
     terminal: &mut DefaultTerminal,
     app: &mut SetupApp,
-) -> Result<(), MicroClawError> {
+) -> Result<(), MchactError> {
     app.status = "Saving (1/2): local validation...".into();
     terminal.draw(|f| draw_ui(f, app))?;
     if let Err(e) = app.validate_local() {
@@ -8303,8 +8303,8 @@ fn try_save_skip_online(
     let backup = match run_with_spinner(
         terminal,
         app,
-        "Saving (2/2): writing microclaw.config.yaml",
-        move || save_config_yaml(Path::new("microclaw.config.yaml"), &values),
+        "Saving (2/2): writing mchact.config.yaml",
+        move || save_config_yaml(Path::new("mchact.config.yaml"), &values),
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -8315,12 +8315,12 @@ fn try_save_skip_online(
 
     app.backup_path = backup;
     app.completion_summary = vec!["Online/model validation skipped by user".to_string()];
-    app.status = "Saved microclaw.config.yaml (online validation skipped)".into();
+    app.status = "Saved mchact.config.yaml (online validation skipped)".into();
     app.completed = true;
     Ok(())
 }
 
-fn run_wizard(mut terminal: DefaultTerminal) -> Result<bool, MicroClawError> {
+fn run_wizard(mut terminal: DefaultTerminal) -> Result<bool, MchactError> {
     let mut app = SetupApp::new();
 
     loop {
@@ -9016,7 +9016,7 @@ fn run_wizard(mut terminal: DefaultTerminal) -> Result<bool, MicroClawError> {
     }
 }
 
-pub fn run_setup_wizard() -> Result<bool, MicroClawError> {
+pub fn run_setup_wizard() -> Result<bool, MchactError> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -9027,10 +9027,10 @@ pub fn run_setup_wizard() -> Result<bool, MicroClawError> {
     result
 }
 
-pub fn enable_sandbox_in_config() -> Result<String, MicroClawError> {
+pub fn enable_sandbox_in_config() -> Result<String, MchactError> {
     let Some(path) = Config::resolve_config_path()? else {
-        return Err(MicroClawError::Config(
-            "No microclaw.config.yaml found. Run `microclaw setup` first.".to_string(),
+        return Err(MchactError::Config(
+            "No mchact.config.yaml found. Run `mchact setup` first.".to_string(),
         ));
     };
     let mut cfg = Config::load()?;
@@ -9072,14 +9072,14 @@ mod tests {
     fn test_setup_loads_existing_web_hook_settings() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_setup_load_web_hooks_{}",
+            "mchact_setup_load_web_hooks_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         std::fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -9112,7 +9112,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = std::fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
 
@@ -9120,14 +9120,14 @@ channels:
     fn test_setup_loads_existing_a2a_settings() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_setup_load_a2a_{}",
+            "mchact_setup_load_a2a_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         std::fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -9160,7 +9160,7 @@ a2a:
         assert!(app.field_value(a2a_peers_json_key()).contains("\"worker\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = std::fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
 
@@ -9168,14 +9168,14 @@ a2a:
     fn test_setup_loads_existing_provider_presets_from_legacy_llm_providers() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_setup_load_provider_presets_{}",
+            "mchact_setup_load_provider_presets_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         std::fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 llm_provider: anthropic
@@ -9195,7 +9195,7 @@ llm_providers:
         assert!(presets.contains("\"provider\":\"openai\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = std::fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
 
@@ -9226,14 +9226,14 @@ llm_providers:
     fn test_setup_loads_existing_telegram_topic_routing() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_setup_load_telegram_topic_routing_{}",
+            "mchact_setup_load_telegram_topic_routing_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         std::fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -9250,7 +9250,7 @@ channels:
         assert_eq!(app.field_value(telegram_topic_routing_key()), "true");
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = std::fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
 
@@ -9258,14 +9258,14 @@ channels:
     fn test_setup_loads_existing_subagents_settings() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_setup_load_subagents_{}",
+            "mchact_setup_load_subagents_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         std::fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -9340,14 +9340,14 @@ subagents:
             .contains("\"codex-fast\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = std::fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]
     fn test_save_config_yaml() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_test_{}.yaml",
+            "mchact_setup_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -9425,7 +9425,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_writes_provider_presets_and_channel_refs() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_provider_presets_test_{}.yaml",
+            "mchact_setup_provider_presets_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -9462,7 +9462,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_writes_profile_overrides_as_provider_presets_not_models() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_provider_profile_override_test_{}.yaml",
+            "mchact_setup_provider_profile_override_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -9554,7 +9554,7 @@ subagents:
             provider: "openai".into(),
             api_key: "sk-test".into(),
             base_url: "https://example.com/v1".into(),
-            user_agent: "microclaw-test/1.0".into(),
+            user_agent: "mchact-test/1.0".into(),
             default_model: "gpt-5.2".into(),
             show_thinking: true,
         }])
@@ -9562,7 +9562,7 @@ subagents:
         let presets =
             parse_provider_presets_json_value(&json, llm_provider_profiles_key()).unwrap();
         let preset = presets.get("provider1").unwrap();
-        assert_eq!(preset.llm_user_agent.as_deref(), Some("microclaw-test/1.0"));
+        assert_eq!(preset.llm_user_agent.as_deref(), Some("mchact-test/1.0"));
         assert_eq!(preset.show_thinking, Some(true));
     }
 
@@ -9575,7 +9575,7 @@ subagents:
                 provider: "anthropic".into(),
                 api_key: "sk-test".into(),
                 base_url: "https://example.com/v1".into(),
-                user_agent: "microclaw-test/1.0".into(),
+                user_agent: "mchact-test/1.0".into(),
                 default_model: "claude-sonnet-4-5-20250929".into(),
                 show_thinking: true,
             }],
@@ -9610,7 +9610,7 @@ subagents:
                 provider: "anthropic".into(),
                 api_key: "sk-test".into(),
                 base_url: "https://example.com/v1".into(),
-                user_agent: "microclaw-test/1.0".into(),
+                user_agent: "mchact-test/1.0".into(),
                 default_model: String::new(),
                 show_thinking: false,
             }],
@@ -9627,7 +9627,7 @@ subagents:
         assert_eq!(request.provider, "anthropic");
         assert_eq!(request.api_key, "sk-test");
         assert_eq!(request.base_url, "https://example.com/v1");
-        assert_eq!(request.user_agent, "microclaw-test/1.0");
+        assert_eq!(request.user_agent, "mchact-test/1.0");
         assert_eq!(request.model, "claude-sonnet-4-5-20250929");
         assert_eq!(request.codex_account_id, None);
     }
@@ -9981,7 +9981,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_respects_high_risk_confirmation_toggle() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_high_risk_confirm_test_{}.yaml",
+            "mchact_setup_high_risk_confirm_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10004,7 +10004,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_writes_a2a_section() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_a2a_test_{}.yaml",
+            "mchact_setup_a2a_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10041,7 +10041,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_writes_subagents_section() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_subagents_test_{}.yaml",
+            "mchact_setup_subagents_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10118,7 +10118,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_escapes_windows_directory_paths() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_windows_path_test_{}.yaml",
+            "mchact_setup_windows_path_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10126,20 +10126,20 @@ subagents:
         values.insert("ENABLED_CHANNELS".into(), "web".into());
         values.insert("LLM_PROVIDER".into(), "anthropic".into());
         values.insert("LLM_API_KEY".into(), "key".into());
-        values.insert("DATA_DIR".into(), r#"C:\Users\alice\.microclaw"#.into());
+        values.insert("DATA_DIR".into(), r#"C:\Users\alice\.mchact"#.into());
         values.insert(
             "WORKING_DIR".into(),
-            r#"C:\Users\alice\.microclaw\working_dir"#.into(),
+            r#"C:\Users\alice\.mchact\working_dir"#.into(),
         );
 
         save_config_yaml(&yaml_path, &values).unwrap();
         let s = fs::read_to_string(&yaml_path).unwrap();
-        assert!(s.contains(r#"data_dir: "C:\\Users\\alice\\.microclaw""#));
-        assert!(s.contains(r#"working_dir: "C:\\Users\\alice\\.microclaw\\working_dir""#));
+        assert!(s.contains(r#"data_dir: "C:\\Users\\alice\\.mchact""#));
+        assert!(s.contains(r#"working_dir: "C:\\Users\\alice\\.mchact\\working_dir""#));
 
         let cfg: crate::config::Config = serde_yaml::from_str(&s).unwrap();
-        assert_eq!(cfg.data_dir, r#"C:\Users\alice\.microclaw"#);
-        assert_eq!(cfg.working_dir, r#"C:\Users\alice\.microclaw\working_dir"#);
+        assert_eq!(cfg.data_dir, r#"C:\Users\alice\.mchact"#);
+        assert_eq!(cfg.working_dir, r#"C:\Users\alice\.mchact\working_dir"#);
 
         let _ = fs::remove_file(&yaml_path);
     }
@@ -10147,7 +10147,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_keeps_unix_directory_paths_unchanged() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_unix_path_test_{}.yaml",
+            "mchact_setup_unix_path_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10155,20 +10155,20 @@ subagents:
         values.insert("ENABLED_CHANNELS".into(), "web".into());
         values.insert("LLM_PROVIDER".into(), "anthropic".into());
         values.insert("LLM_API_KEY".into(), "key".into());
-        values.insert("DATA_DIR".into(), "/home/alice/.microclaw".into());
+        values.insert("DATA_DIR".into(), "/home/alice/.mchact".into());
         values.insert(
             "WORKING_DIR".into(),
-            "/home/alice/.microclaw/working_dir".into(),
+            "/home/alice/.mchact/working_dir".into(),
         );
 
         save_config_yaml(&yaml_path, &values).unwrap();
         let s = fs::read_to_string(&yaml_path).unwrap();
-        assert!(s.contains(r#"data_dir: "/home/alice/.microclaw""#));
-        assert!(s.contains(r#"working_dir: "/home/alice/.microclaw/working_dir""#));
+        assert!(s.contains(r#"data_dir: "/home/alice/.mchact""#));
+        assert!(s.contains(r#"working_dir: "/home/alice/.mchact/working_dir""#));
 
         let cfg: crate::config::Config = serde_yaml::from_str(&s).unwrap();
-        assert_eq!(cfg.data_dir, "/home/alice/.microclaw");
-        assert_eq!(cfg.working_dir, "/home/alice/.microclaw/working_dir");
+        assert_eq!(cfg.data_dir, "/home/alice/.mchact");
+        assert_eq!(cfg.working_dir, "/home/alice/.mchact/working_dir");
 
         let _ = fs::remove_file(&yaml_path);
     }
@@ -10176,7 +10176,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_writes_web_hook_settings() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_web_hooks_test_{}.yaml",
+            "mchact_setup_web_hooks_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10214,7 +10214,7 @@ subagents:
     #[test]
     fn test_save_config_yaml_uses_accounts_json_for_telegram_and_discord() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_accounts_json_test_{}.yaml",
+            "mchact_setup_accounts_json_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10261,7 +10261,7 @@ subagents:
     fn test_enable_sandbox_in_config_updates_mode() {
         let _guard = env_lock();
         let path = std::env::temp_dir().join(format!(
-            "microclaw_setup_enable_sandbox_{}.yaml",
+            "mchact_setup_enable_sandbox_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         std::fs::write(
@@ -10277,19 +10277,19 @@ sandbox:
 "#,
         )
         .unwrap();
-        std::env::set_var("MICROCLAW_CONFIG", &path);
+        std::env::set_var("MCHACT_CONFIG", &path);
         let out = enable_sandbox_in_config().unwrap();
         assert!(out.contains(path.to_string_lossy().as_ref()));
         let cfg = Config::load().unwrap();
         assert!(matches!(cfg.sandbox.mode, SandboxMode::All));
         assert!(cfg.sandbox.require_runtime);
-        std::env::remove_var("MICROCLAW_CONFIG");
+        std::env::remove_var("MCHACT_CONFIG");
         let _ = std::fs::remove_file(path);
     }
     #[test]
     fn test_save_config_yaml_preserves_discord_token_without_enabled_channels() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_discord_test_{}.yaml",
+            "mchact_setup_discord_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10319,7 +10319,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_disables_web_when_not_selected() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_web_toggle_test_{}.yaml",
+            "mchact_setup_web_toggle_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10343,7 +10343,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_keeps_telegram_disabled_with_credentials() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_telegram_disabled_test_{}.yaml",
+            "mchact_setup_telegram_disabled_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10438,7 +10438,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_keeps_dynamic_channel_disabled_when_not_selected() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_dynamic_skip_test_{}.yaml",
+            "mchact_setup_dynamic_skip_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10477,7 +10477,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_includes_dynamic_channel_when_selected() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_dynamic_include_test_{}.yaml",
+            "mchact_setup_dynamic_include_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10516,7 +10516,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_keeps_weixin_minimal_when_selected() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_weixin_minimal_test_{}.yaml",
+            "mchact_setup_weixin_minimal_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10542,7 +10542,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_writes_feishu_topic_mode_as_bool() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_feishu_topic_mode_test_{}.yaml",
+            "mchact_setup_feishu_topic_mode_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10579,7 +10579,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_writes_feishu_show_progress_as_bool() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_feishu_show_progress_test_{}.yaml",
+            "mchact_setup_feishu_show_progress_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10612,7 +10612,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_writes_slack_inbound_image_max_mb_as_number() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_slack_inbound_image_max_mb_test_{}.yaml",
+            "mchact_setup_slack_inbound_image_max_mb_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
 
@@ -10971,7 +10971,7 @@ sandbox:
     #[test]
     fn test_save_config_yaml_uses_telegram_slot_fields_when_multibot_enabled() {
         let yaml_path = std::env::temp_dir().join(format!(
-            "microclaw_setup_tg_slots_test_{}.yaml",
+            "mchact_setup_tg_slots_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         let mut values = HashMap::new();
@@ -11008,7 +11008,7 @@ sandbox:
         let _guard = env_lock();
         let prev_codex_home = std::env::var("CODEX_HOME").ok();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw-setup-codex-base-{}",
+            "mchact-setup-codex-base-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

@@ -20,11 +20,11 @@ use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_comman
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
 use crate::tools::ToolAuthContext;
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_core::text::split_text;
-use microclaw_storage::db::call_blocking;
-use microclaw_storage::db::StoredMessage;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_core::text::split_text;
+use mchact_storage::db::call_blocking;
+use mchact_storage::db::StoredMessage;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "slack",

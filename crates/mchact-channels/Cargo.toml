@@ -1,0 +1,12 @@
+[package]
+name = "mchact-channels"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+mchact-storage = { version = "0.1.0", path = "../mchact-storage" }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }

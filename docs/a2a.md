@@ -1,6 +1,6 @@
-# MicroClaw A2A
+# mchact A2A
 
-MicroClaw now supports a lightweight agent-to-agent HTTP flow for instance-to-instance delegation.
+mchact now supports a lightweight agent-to-agent HTTP flow for instance-to-instance delegation.
 
 ## What it provides
 
@@ -12,7 +12,7 @@ MicroClaw now supports a lightweight agent-to-agent HTTP flow for instance-to-in
 
 ## Configuration
 
-Add an `a2a` section to `microclaw.config.yaml`:
+Add an `a2a` section to `mchact.config.yaml`:
 
 ```yaml
 a2a:
@@ -62,7 +62,7 @@ The endpoint returns:
 ```json
 {
   "ok": true,
-  "protocol_version": "microclaw-a2a/v1",
+  "protocol_version": "mchact-a2a/v1",
   "agent_name": "Worker",
   "session_key": "a2a:worker",
   "response": "..."

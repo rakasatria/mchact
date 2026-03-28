@@ -26,9 +26,9 @@ use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_comman
 use crate::config::Config;
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 const CHANNEL_KEY: &str = "weixin";
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
@@ -380,7 +380,7 @@ struct NormalizedWeixinInbound {
     items: Vec<WeixinWebhookMessageItem>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WeixinRuntimeContext {
     pub channel_name: String,
     pub account_id: String,
@@ -392,6 +392,20 @@ pub struct WeixinRuntimeContext {
     pub base_url: String,
     pub cdn_base_url: String,
     pub state_root: PathBuf,
+    pub storage: Option<Arc<dyn mchact_storage_backend::ObjectStorage>>,
+}
+
+impl std::fmt::Debug for WeixinRuntimeContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WeixinRuntimeContext")
+            .field("channel_name", &self.channel_name)
+            .field("account_id", &self.account_id)
+            .field("local_account_key", &self.local_account_key)
+            .field("bot_username", &self.bot_username)
+            .field("state_root", &self.state_root)
+            .field("storage", &self.storage.as_ref().map(|s| s.backend_name()))
+            .finish()
+    }
 }
 
 static WEIXIN_CONTEXT_TOKENS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -549,7 +563,7 @@ fn resolve_context_token_from_store(
 }
 
 fn hydrate_context_token_cache(runtime: &WeixinRuntimeContext) {
-    let Some(account) = load_account_data(&runtime.state_root, &runtime.local_account_key) else {
+    let Some(account) = load_account(runtime) else {
         return;
     };
     for (external_chat_id, token) in account.context_tokens {
@@ -568,24 +582,49 @@ fn persist_context_token(
     }
     cache_context_token(&runtime.channel_name, external_chat_id, token);
 
-    let mut account = load_account_data(&runtime.state_root, &runtime.local_account_key)
-        .unwrap_or_else(|| StoredWeixinAccount {
-            base_url: runtime.base_url.clone(),
-            ..StoredWeixinAccount::default()
-        });
+    let mut account = load_account(runtime).unwrap_or_else(|| StoredWeixinAccount {
+        base_url: runtime.base_url.clone(),
+        ..StoredWeixinAccount::default()
+    });
     account
         .context_tokens
         .insert(external_chat_id.to_string(), token.to_string());
     if account.base_url.trim().is_empty() {
         account.base_url = runtime.base_url.clone();
     }
-    save_account_data(&runtime.state_root, &runtime.local_account_key, &account)
+    save_account(runtime, &account)
+}
+
+fn weixin_account_storage_key(local_account_key: &str) -> String {
+    format!(
+        "state/weixin/{}.json",
+        sanitize_account_key(local_account_key)
+    )
+}
+
+#[allow(dead_code)]
+fn weixin_sync_buf_storage_key(local_account_key: &str) -> String {
+    format!(
+        "state/weixin/{}_sync.json",
+        sanitize_account_key(local_account_key)
+    )
 }
 
 fn load_account_data(state_root: &Path, local_account_key: &str) -> Option<StoredWeixinAccount> {
     let path = account_file_path(state_root, local_account_key);
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+fn load_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> Option<StoredWeixinAccount> {
+    let key = weixin_account_storage_key(local_account_key);
+    let bytes = tokio::runtime::Handle::current()
+        .block_on(async { storage.get(&key).await })
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn save_account_data(
@@ -600,13 +639,27 @@ fn save_account_data(
     }
     let raw = serde_json::to_string_pretty(account)
         .map_err(|e| format!("Failed to serialize Weixin account state: {e}"))?;
-    std::fs::write(&path, raw).map_err(|e| format!("Failed to write Weixin account state: {e}"))?;
+    std::fs::write(&path, &raw)
+        .map_err(|e| format!("Failed to write Weixin account state: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+fn save_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+    account: &StoredWeixinAccount,
+) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(account)
+        .map_err(|e| format!("Failed to serialize Weixin account state: {e}"))?;
+    let key = weixin_account_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.put(&key, raw.into_bytes()).await })
+        .map_err(|e| format!("Failed to write Weixin account state: {e}"))
 }
 
 fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(), String> {
@@ -623,8 +676,36 @@ fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(),
     Ok(())
 }
 
+#[allow(dead_code)]
+fn delete_account_data_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> Result<(), String> {
+    let account_key = weixin_account_storage_key(local_account_key);
+    let sync_key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async {
+            let _ = storage.delete(&account_key).await;
+            let _ = storage.delete(&sync_key).await;
+        });
+    Ok(())
+}
+
 fn load_sync_buf(state_root: &Path, local_account_key: &str) -> String {
     std::fs::read_to_string(sync_buf_file_path(state_root, local_account_key)).unwrap_or_default()
+}
+
+#[allow(dead_code)]
+fn load_sync_buf_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+) -> String {
+    let key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.get(&key).await })
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default()
 }
 
 fn save_sync_buf(
@@ -641,10 +722,81 @@ fn save_sync_buf(
         .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
 }
 
+#[allow(dead_code)]
+fn save_sync_buf_via_storage(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    local_account_key: &str,
+    get_updates_buf: &str,
+) -> Result<(), String> {
+    let key = weixin_sync_buf_storage_key(local_account_key);
+    tokio::runtime::Handle::current()
+        .block_on(async { storage.put(&key, get_updates_buf.as_bytes().to_vec()).await })
+        .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
+}
+
 fn stored_account_exists(state_root: &Path, local_account_key: &str) -> bool {
     load_account_data(state_root, local_account_key)
         .map(|account| !account.token.trim().is_empty())
         .unwrap_or(false)
+}
+
+/// Load account preferring ObjectStorage when available.
+fn load_account(
+    runtime: &WeixinRuntimeContext,
+) -> Option<StoredWeixinAccount> {
+    if let Some(ref storage) = runtime.storage {
+        return load_account_data_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    load_account_data(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Save account preferring ObjectStorage when available.
+fn save_account(
+    runtime: &WeixinRuntimeContext,
+    account: &StoredWeixinAccount,
+) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return save_account_data_via_storage(storage.as_ref(), &runtime.local_account_key, account);
+    }
+    save_account_data(&runtime.state_root, &runtime.local_account_key, account)
+}
+
+/// Delete account preferring ObjectStorage when available.
+#[allow(dead_code)]
+fn delete_account(runtime: &WeixinRuntimeContext) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return delete_account_data_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    delete_account_data(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Load sync buf preferring ObjectStorage when available.
+#[allow(dead_code)]
+fn load_sync(runtime: &WeixinRuntimeContext) -> String {
+    if let Some(ref storage) = runtime.storage {
+        return load_sync_buf_via_storage(storage.as_ref(), &runtime.local_account_key);
+    }
+    load_sync_buf(&runtime.state_root, &runtime.local_account_key)
+}
+
+/// Save sync buf preferring ObjectStorage when available.
+#[allow(dead_code)]
+fn save_sync(
+    runtime: &WeixinRuntimeContext,
+    get_updates_buf: &str,
+) -> Result<(), String> {
+    if let Some(ref storage) = runtime.storage {
+        return save_sync_buf_via_storage(
+            storage.as_ref(),
+            &runtime.local_account_key,
+            get_updates_buf,
+        );
+    }
+    save_sync_buf(
+        &runtime.state_root,
+        &runtime.local_account_key,
+        get_updates_buf,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1318,7 +1470,7 @@ async fn send_typing(
 }
 
 fn generate_client_id() -> String {
-    format!("microclaw-weixin:{}", uuid::Uuid::new_v4())
+    format!("mchact-weixin:{}", uuid::Uuid::new_v4())
 }
 
 async fn send_text_message_native(
@@ -1753,6 +1905,7 @@ pub fn build_weixin_runtime_contexts(config: &crate::config::Config) -> Vec<Weix
                 cdn_base_url
             },
             state_root: state_root.clone(),
+            storage: None,
         });
     }
 
@@ -1781,6 +1934,7 @@ pub fn build_weixin_runtime_contexts(config: &crate::config::Config) -> Vec<Weix
                 wx_cfg.cdn_base_url.trim().to_string()
             },
             state_root,
+            storage: None,
         });
     }
 
@@ -1837,6 +1991,7 @@ fn build_default_runtime_context(
         base_url: DEFAULT_BASE_URL.to_string(),
         cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
         state_root: weixin_state_root(Path::new(&config.runtime_data_dir())),
+        storage: None,
     }
 }
 
@@ -1896,7 +2051,7 @@ impl WeixinAdapter {
         let stored =
             load_account_data(&self.state_root, &self.local_account_key).ok_or_else(|| {
                 format!(
-                    "No Weixin credentials found for '{}'. Run `microclaw weixin login{}` first. Expected path: {}",
+                    "No Weixin credentials found for '{}'. Run `mchact weixin login{}` first. Expected path: {}",
                     self.name,
                     if self.local_account_key == "default" {
                         "".to_string()
@@ -1981,8 +2136,11 @@ impl ChannelAdapter for WeixinAdapter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_weixin_file_note(
     config: &Config,
+    media_manager: &crate::media_manager::MediaManager,
+    chat_id: i64,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2085,57 +2243,33 @@ async fn build_weixin_file_note(
                 );
             }
 
-            let dir = Path::new(&config.working_dir)
-                .join("uploads")
-                .join(runtime_ctx.channel_name.replace('/', "_"))
-                .join(external_chat_id);
-            if let Err(err) = std::fs::create_dir_all(&dir) {
-                error!(
-                    "Weixin: failed to create upload dir {}: {err}",
-                    dir.display()
-                );
-                return format!(
-                    "[document] filename={} bytes={} save_failed=create_dir",
-                    file_name,
-                    bytes.len()
-                );
-            }
-
-            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-            let safe_message_id = sanitize_upload_file_name(inbound_message_id, "message");
             let safe_name = sanitize_upload_file_name(&file_name, "weixin-file.bin");
-            let path = dir.join(format!(
-                "{}-{}-{}-{}",
-                ts, safe_message_id, item_index, safe_name
-            ));
-            match tokio::fs::write(&path, &bytes).await {
-                Ok(()) => {
+            match media_manager
+                .store_file(bytes, &safe_name, None, chat_id, "channel_inbound")
+                .await
+            {
+                Ok(media_id) => {
                     info!(
-                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} path={} bytes={}",
+                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} media_id={} filename={}",
                         runtime_ctx.channel_name,
                         external_chat_id,
                         inbound_message_id,
                         item_index,
-                        path.display(),
-                        bytes.len()
-                    );
-                    format!(
-                        "[document] filename={} bytes={} saved_path={}",
+                        media_id,
                         file_name,
-                        bytes.len(),
-                        path.display()
-                    )
+                    );
+                    format!("[document] filename={} saved_path=media:{media_id}", file_name)
                 }
                 Err(err) => {
                     error!(
-                        "Weixin: failed to save inbound file {}: {err}",
-                        path.display()
-                    );
-                    format!(
-                        "[document] filename={} bytes={} save_failed=write",
+                        "Weixin: failed to save inbound file channel={} sender={} message_id={} item_index={} filename={}: {err}",
+                        runtime_ctx.channel_name,
+                        external_chat_id,
+                        inbound_message_id,
+                        item_index,
                         file_name,
-                        bytes.len()
-                    )
+                    );
+                    format!("[document] filename={} save_failed=storage_write", file_name)
                 }
             }
         }
@@ -2161,8 +2295,11 @@ async fn build_weixin_file_note(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn enrich_weixin_inbound_text(
     config: &Config,
+    media_manager: &crate::media_manager::MediaManager,
+    chat_id: i64,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2187,6 +2324,8 @@ async fn enrich_weixin_inbound_text(
         notes.push(
             build_weixin_file_note(
                 config,
+                media_manager,
+                chat_id,
                 runtime_ctx,
                 external_chat_id,
                 inbound_message_id,
@@ -2289,6 +2428,8 @@ async fn process_weixin_inbound_message(
 
     let text = enrich_weixin_inbound_text(
         &app_state.config,
+        &app_state.media_manager,
+        chat_id,
         &runtime_ctx,
         &external_chat_id,
         &inbound_message_id,
@@ -2507,7 +2648,7 @@ async fn start_native_poll_loop(
                     if response.ret == SESSION_EXPIRED_ERRCODE || errcode == SESSION_EXPIRED_ERRCODE
                     {
                         error!(
-                            "Weixin session expired for '{}'; run `microclaw weixin login{}` again",
+                            "Weixin session expired for '{}'; run `mchact weixin login{}` again",
                             runtime.channel_name,
                             if runtime.local_account_key == "default" {
                                 "".to_string()
@@ -2849,12 +2990,23 @@ mod tests {
     use crate::config::Config;
     use axum::http::{HeaderMap, HeaderValue};
     use axum::{routing::get, Router};
-    use microclaw_channels::channel_adapter::ChannelAdapter;
+    use mchact_channels::channel_adapter::ChannelAdapter;
 
     fn unique_temp_dir() -> PathBuf {
         let root = std::env::temp_dir().join(format!("mc_weixin_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    fn make_test_media_manager(root: &std::path::Path) -> crate::media_manager::MediaManager {
+        use mchact_storage::db::Database;
+        use std::sync::Arc;
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
+                .expect("local storage"),
+        );
+        let db = Arc::new(Database::new(root.to_str().unwrap()).expect("test db"));
+        crate::media_manager::MediaManager::new(storage, db)
     }
 
     async fn spawn_test_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
@@ -2949,6 +3101,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
             state_root: root.clone(),
+            storage: None,
         };
         let adapter = WeixinAdapter::from_runtime(&runtime);
         let err = adapter
@@ -3072,6 +3225,7 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: DEFAULT_CDN_BASE_URL.to_string(),
             state_root: root.clone(),
+            storage: None,
         };
         persist_context_token(&runtime, "alice@im.wechat", "ctx-a").unwrap();
         persist_context_token(&runtime, "bob@im.wechat", "ctx-b").unwrap();
@@ -3112,6 +3266,7 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
+        let media_manager = make_test_media_manager(&root);
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3123,10 +3278,13 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: format!("http://{}", addr),
             state_root: root.clone(),
+            storage: None,
         };
 
         let text = enrich_weixin_inbound_text(
             &cfg,
+            &media_manager,
+            1,
             &runtime,
             "alice@im.wechat",
             "wx-msg-1",
@@ -3149,12 +3307,10 @@ weixin:
 
         handle.abort();
 
-        let saved_path = text
-            .split("saved_path=")
-            .nth(1)
-            .and_then(|value| value.lines().next())
-            .expect("saved_path missing in enriched text");
-        assert_eq!(fs::read(saved_path).unwrap(), plaintext);
+        assert!(
+            text.contains("saved_path=media:"),
+            "expected media reference in: {text}"
+        );
         assert!(text.contains("[document] filename=shuangpin.pdf"));
 
         let _ = fs::remove_dir_all(root);
@@ -3177,6 +3333,7 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
+        let media_manager = make_test_media_manager(&root);
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3188,10 +3345,13 @@ weixin:
             base_url: DEFAULT_BASE_URL.to_string(),
             cdn_base_url: format!("http://{}", addr),
             state_root: root.clone(),
+            storage: None,
         };
 
         let text = enrich_weixin_inbound_text(
             &cfg,
+            &media_manager,
+            1,
             &runtime,
             "alice@im.wechat",
             "wx-msg-2",

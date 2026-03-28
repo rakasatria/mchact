@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_tools::sandbox::{SandboxExecOptions, SandboxExecResult, SandboxMode, SandboxRouter};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_tools::sandbox::{SandboxExecOptions, SandboxExecResult, SandboxMode, SandboxRouter};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::warn;
@@ -865,7 +865,7 @@ fn make_tool_working_dir(
 
     let mut input = serde_json::Map::new();
     input.insert(
-        "__microclaw_auth".to_string(),
+        "__mchact_auth".to_string(),
         serde_json::Value::Object(auth),
     );
 
@@ -939,14 +939,14 @@ async fn execute_command_with_policy(
     let session_key = format!("{}-{}", caller_channel, caller_chat_id);
     match execution_policy {
         PluginExecutionPolicy::HostOnly => {
-            microclaw_tools::sandbox::exec_host_command(command, &opts).await
+            mchact_tools::sandbox::exec_host_command(command, &opts).await
         }
         PluginExecutionPolicy::SandboxOnly => router.exec(&session_key, command, &opts).await,
         PluginExecutionPolicy::Dual => {
             if router.mode() == SandboxMode::All {
                 router.exec(&session_key, command, &opts).await
             } else {
-                microclaw_tools::sandbox::exec_host_command(command, &opts).await
+                mchact_tools::sandbox::exec_host_command(command, &opts).await
             }
         }
     }
@@ -1003,7 +1003,7 @@ async fn execute_plugin_tool_spec(
     vars.insert("chat_id".to_string(), caller_chat_id.to_string());
     if let Some(map) = input.as_object() {
         for (k, v) in map {
-            if k == "__microclaw_auth" {
+            if k == "__mchact_auth" {
                 continue;
             }
             let value = if let Some(s) = v.as_str() {
@@ -1140,7 +1140,7 @@ mod tests {
 
     fn make_temp_plugins_dir(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "microclaw_plugin_tests_{}_{}",
+            "mchact_plugin_tests_{}_{}",
             name,
             uuid::Uuid::new_v4()
         ));
@@ -1160,7 +1160,7 @@ mod tests {
     fn test_command_matches_first_token() {
         assert!(command_matches("/hello world", "/hello"));
         assert!(command_matches(" /HELLO   world", "/hello"));
-        assert!(command_matches("/hello@MicroClawBot world", "/hello"));
+        assert!(command_matches("/hello@mchactBot world", "/hello"));
         assert!(!command_matches("/hello-world", "/hello"));
         assert!(!command_matches("hello", "/hello"));
     }
@@ -1547,7 +1547,7 @@ tools:
 
         let cfg = config_with_plugins_dir(&root);
         let auth_input = json!({
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "web",
                 "caller_chat_id": 9,
                 "control_chat_ids": []

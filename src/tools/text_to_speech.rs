@@ -1,28 +1,30 @@
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_media::{
-    tts::TtsRouter,
-    AudioFormat,
-};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_media::{tts::TtsRouter, AudioFormat};
 use serde_json::json;
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use super::{schema_object, Tool, ToolResult};
+use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 
 pub struct TextToSpeechTool {
     tts_provider: String,
     tts_api_key: Option<String>,
     tts_voice: String,
-    data_dir: String,
+    media_manager: Arc<crate::media_manager::MediaManager>,
 }
 
 impl TextToSpeechTool {
-    pub fn new(provider: &str, api_key: Option<&str>, voice: &str, data_dir: &str) -> Self {
+    pub fn new(
+        provider: &str,
+        api_key: Option<&str>,
+        voice: &str,
+        media_manager: Arc<crate::media_manager::MediaManager>,
+    ) -> Self {
         Self {
             tts_provider: provider.to_string(),
             tts_api_key: api_key.map(String::from),
             tts_voice: voice.to_string(),
-            data_dir: data_dir.to_string(),
+            media_manager,
         }
     }
 }
@@ -91,29 +93,45 @@ impl Tool for TextToSpeechTool {
 
         let ext = audio_format_ext(output.format);
         let filename = format!("tts_{}.{}", uuid::Uuid::new_v4(), ext);
-        let media_dir = PathBuf::from(&self.data_dir).join("media");
+        let mime = format!("audio/{ext}");
+        let auth = auth_context_from_input(&input);
+        let chat_id = auth.map(|a| a.caller_chat_id).unwrap_or(0);
 
-        if let Err(e) = std::fs::create_dir_all(&media_dir) {
-            return ToolResult::error(format!("Failed to create media directory: {e}"));
-        }
+        let media_id = match self
+            .media_manager
+            .store_file(output.audio_bytes, &filename, Some(&mime), chat_id, "tts")
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => return ToolResult::error(format!("Failed to store: {e}")),
+        };
 
-        let file_path = media_dir.join(&filename);
-        if let Err(e) = std::fs::write(&file_path, &output.audio_bytes) {
-            return ToolResult::error(format!("Failed to save audio file: {e}"));
-        }
-
-        ToolResult::success(file_path.to_string_lossy().to_string())
+        ToolResult::success(
+            serde_json::json!({"media_object_id": media_id, "type": "audio"}).to_string(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
+    use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 
-    #[test]
-    fn test_definition() {
-        let tool = TextToSpeechTool::new("openai", None, "alloy", "/tmp/data");
+    async fn make_media_manager() -> Arc<crate::media_manager::MediaManager> {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_tts_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> =
+            Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap());
+        let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
+        Arc::new(crate::media_manager::MediaManager::new(storage, db))
+    }
+
+    #[tokio::test]
+    async fn test_definition() {
+        let tool = TextToSpeechTool::new("openai", None, "alloy", make_media_manager().await);
         assert_eq!(tool.name(), "text_to_speech");
         let def = tool.definition();
         assert_eq!(def.name, "text_to_speech");
@@ -126,7 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_missing_text_returns_error() {
-        let tool = TextToSpeechTool::new("openai", None, "alloy", "/tmp/data");
+        let tool = TextToSpeechTool::new("openai", None, "alloy", make_media_manager().await);
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing required parameter: text"));
@@ -134,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_text_returns_error() {
-        let tool = TextToSpeechTool::new("openai", None, "alloy", "/tmp/data");
+        let tool = TextToSpeechTool::new("openai", None, "alloy", make_media_manager().await);
         let result = tool.execute(json!({"text": "   "})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing required parameter: text"));
@@ -142,7 +160,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_provider_returns_error() {
-        let tool = TextToSpeechTool::new("nonexistent_provider", None, "alloy", "/tmp/data");
+        let tool =
+            TextToSpeechTool::new("nonexistent_provider", None, "alloy", make_media_manager().await);
         let result = tool.execute(json!({"text": "Hello world"})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Failed to initialize TTS provider"));

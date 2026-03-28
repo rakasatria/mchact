@@ -3,7 +3,7 @@ use serde_json::json;
 use tracing::info;
 
 use crate::skills::SkillManager;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -87,7 +87,7 @@ impl Tool for ActivateSkillTool {
                 tool_result
             }
             Err(e) => ToolResult::error(format!(
-                "{}\nHint: Run `/skills` to list available skills, or `microclaw skill available --all` for unavailable-skill diagnostics.",
+                "{}\nHint: Run `/skills` to list available skills, or `mchact skill available --all` for unavailable-skill diagnostics.",
                 e
             )),
         }
@@ -102,7 +102,7 @@ mod tests {
 
     fn test_dir() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "microclaw_activate_skill_test_{}",
+            "mchact_activate_skill_test_{}",
             uuid::Uuid::new_v4()
         ))
     }

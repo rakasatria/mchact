@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use serde_json::json;
 use tracing::info;
 
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_core::text::floor_char_boundary;
-use microclaw_tools::command_runner::agent_browser_program;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_core::text::floor_char_boundary;
+use mchact_tools::command_runner::agent_browser_program;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 
@@ -95,7 +95,7 @@ impl BrowserTool {
         } else {
             chat_id.to_string()
         };
-        format!("microclaw-chat-{normalized}")
+        format!("mchact-chat-{normalized}")
     }
 }
 
@@ -166,7 +166,7 @@ impl Tool for BrowserTool {
         let session_name = auth
             .as_ref()
             .map(|auth| Self::session_name_for_chat(auth.caller_chat_id))
-            .unwrap_or_else(|| "microclaw".to_string());
+            .unwrap_or_else(|| "mchact".to_string());
 
         let mut args = vec!["--session".to_string(), session_name];
         if let Some(auth) = auth.as_ref() {
@@ -286,11 +286,11 @@ mod tests {
     fn test_browser_session_name_for_chat() {
         assert_eq!(
             BrowserTool::session_name_for_chat(12345),
-            "microclaw-chat-12345"
+            "mchact-chat-12345"
         );
         assert_eq!(
             BrowserTool::session_name_for_chat(-100987),
-            "microclaw-chat-neg100987"
+            "mchact-chat-neg100987"
         );
     }
 

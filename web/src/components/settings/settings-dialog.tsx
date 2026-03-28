@@ -87,7 +87,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.ReactElement {
       >
         <Dialog.Title>Settings</Dialog.Title>
         <Dialog.Description size="2" mb="3">
-          Channel-first configuration. Save writes to microclaw.config.yaml.
+          Channel-first configuration. Save writes to mchact.config.yaml.
           Restart is required.
         </Dialog.Description>
         {configSelfCheck ? (

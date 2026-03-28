@@ -1,0 +1,80 @@
+<h2>mchact-memory: Architecture Approaches</h2>
+<p class="subtitle">How should the Honcho-inspired observation engine integrate with microclaw's existing memory + FTS5 + MoA stack?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Layered Crate — PostgreSQL Observation Engine</h3>
+      <p>New <code>crates/mchact-memory/</code> crate backed by PostgreSQL+pgvector. Sits <strong>alongside</strong> existing SQLite storage. The observation engine (deriver/dreamer) writes to PostgreSQL. Existing SQLite flat memories continue for backward compat. <code>MemoryProvider</code> trait implementation queries both stores and merges results.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>Zero risk to existing features (FTS5, compressor, MoA all untouched)</li>
+            <li>PostgreSQL+pgvector for proper vector search from day one</li>
+            <li>Can migrate incrementally — old flat memories still work</li>
+            <li>Clean separation: SQLite for sessions/messages, PostgreSQL for observations</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>Two databases to manage (SQLite + PostgreSQL)</li>
+            <li>Query merging adds complexity</li>
+            <li>Dual-write during migration period</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Full PostgreSQL Migration — Replace SQLite Entirely</h3>
+      <p>Move <strong>everything</strong> to PostgreSQL: messages, sessions, auth, memories, observations. The existing <code>microclaw-storage</code> crate gets a PostgreSQL backend (sqlx). FTS5 replaced by PostgreSQL full-text search + pgvector. Observations are the new memory model.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>Single database — no split-brain</li>
+            <li>PostgreSQL FTS + pgvector hybrid search (like Honcho's RRF)</li>
+            <li>Cleaner long-term architecture</li>
+            <li>Transactions span messages + observations atomically</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>Massive migration — touches every DB operation</li>
+            <li>Breaks zero-config SQLite deployment (now requires PostgreSQL)</li>
+            <li>FTS5 work just completed — would be replaced</li>
+            <li>High risk, long timeline</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Dual-Backend with PostgreSQL Primary Path</h3>
+      <p>New <code>crates/mchact-memory/</code> uses PostgreSQL+pgvector for the observation engine. Existing SQLite stays for sessions/messages/FTS5. But add a <strong>config toggle</strong>: <code>storage_backend: "sqlite" | "postgres"</code>. When postgres, ALL storage migrates. When sqlite, only observations use PostgreSQL. Future: deprecate sqlite path.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>Observations get PostgreSQL+pgvector immediately</li>
+            <li>SQLite still works for lightweight/local deployments</li>
+            <li>Clear migration path: sqlite → postgres toggle</li>
+            <li>Preserves existing FTS5/compressor/MoA work</li>
+            <li>Recommended approach</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>Two code paths to maintain initially</li>
+            <li>Config complexity</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

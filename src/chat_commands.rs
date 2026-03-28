@@ -8,10 +8,11 @@ use crate::config::{
 use crate::http_client::llm_user_agent;
 use crate::run_control;
 use crate::runtime::AppState;
-use microclaw_core::llm_types::Message;
-use microclaw_storage::db::{call_blocking, Database};
-use microclaw_storage::usage::build_usage_report;
-use microclaw_tools::todo_store::clear_todos;
+use mchact_core::llm_types::Message;
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
+use mchact_storage::usage::build_usage_report;
+use mchact_tools::todo_store::clear_todos;
 use serde::Deserialize;
 use tracing::warn;
 
@@ -60,7 +61,7 @@ enum PersistedOverride<'a> {
 fn config_path_for_save() -> Result<PathBuf, String> {
     match Config::resolve_config_path() {
         Ok(Some(path)) => Ok(path),
-        Ok(None) => Ok(PathBuf::from("./microclaw.config.yaml")),
+        Ok(None) => Ok(PathBuf::from("./mchact.config.yaml")),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -103,18 +104,14 @@ pub async fn handle_chat_command(
 
     if trimmed == "/reset memory" {
         let _ = call_blocking(state.db.clone(), move |db| db.clear_chat_memory(chat_id)).await;
-        let groups_dir = std::path::PathBuf::from(&state.config.data_dir).join("groups");
-        let chat_memory_path = groups_dir
-            .join(caller_channel)
-            .join(chat_id.to_string())
-            .join("AGENTS.md");
-        if let Err(e) = std::fs::remove_file(&chat_memory_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        let safe_channel = caller_channel.replace('/', "_");
+        let key = format!("groups/{safe_channel}/{chat_id}/AGENTS.md");
+        let storage = state.media_manager.storage();
+        if let Err(e) = storage.delete(&key).await {
+            if !matches!(e, mchact_storage_backend::StorageError::NotFound(_)) {
                 warn!(
-                    "Failed to remove chat memory file for chat {} at {}: {}",
-                    chat_id,
-                    chat_memory_path.display(),
-                    e
+                    "Failed to remove chat memory for chat {} at key '{}': {}",
+                    chat_id, key, e
                 );
             }
         }
@@ -167,7 +164,13 @@ pub async fn handle_chat_command(
             if messages.is_empty() {
                 return Some("No session to archive.".to_string());
             }
-            archive_conversation(&state.config.data_dir, caller_channel, chat_id, &messages);
+            archive_conversation(
+                state.media_manager.storage().as_ref(),
+                caller_channel,
+                chat_id,
+                &messages,
+            )
+            .await;
             return Some(format!("Archived {} messages.", messages.len()));
         }
         return Some("No session to archive.".to_string());
@@ -197,9 +200,9 @@ pub async fn handle_chat_command(
 
     if trimmed == "/start" {
         if let Some(id) = sender_id.map(str::trim).filter(|v| !v.is_empty()) {
-            return Some(format!("Hello MicroClaw :) Your ID: {id}"));
+            return Some(format!("Hello mchact :) Your ID: {id}"));
         }
-        return Some("Hello MicroClaw :)".to_string());
+        return Some("Hello mchact :)".to_string());
     }
 
     if trimmed == "/providers" {
@@ -266,7 +269,7 @@ pub async fn handle_chat_command(
 }
 
 pub async fn build_status_response(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     config: &Config,
     llm_provider_overrides: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
     llm_model_overrides: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
@@ -1062,14 +1065,14 @@ mod tests {
     async fn provider_command_persists_override_for_default_account_channel() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_provider_persist_{}",
+            "mchact_chat_commands_provider_persist_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1124,7 +1127,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 
@@ -1133,14 +1136,14 @@ channels:
     async fn model_command_persists_override_for_default_account_channel() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_model_persist_{}",
+            "mchact_chat_commands_model_persist_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1181,7 +1184,7 @@ channels:
             "Model switched for this channel to: cloudflare / @cf/zai-org/glm-4.7-flash"
         );
 
-        let saved = fs::read_to_string(temp.join("microclaw.config.yaml")).unwrap();
+        let saved = fs::read_to_string(temp.join("mchact.config.yaml")).unwrap();
         assert!(
             saved.contains("model: '@cf/zai-org/glm-4.7-flash'")
                 || saved.contains("model: \"@cf/zai-org/glm-4.7-flash\"")
@@ -1201,7 +1204,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 
@@ -1210,14 +1213,14 @@ channels:
     async fn model_command_persists_override_only_for_current_bot_account() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_model_bot_scope_{}",
+            "mchact_chat_commands_model_bot_scope_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1283,7 +1286,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 

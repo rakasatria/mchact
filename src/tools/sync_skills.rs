@@ -1,19 +1,25 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::Utc;
+use mchact_storage_backend::ObjectStorage;
 use serde_json::json;
 
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
 pub struct SyncSkillsTool {
+    #[allow(dead_code)]
     skills_dir: std::path::PathBuf,
+    storage: Arc<dyn ObjectStorage>,
 }
 
 impl SyncSkillsTool {
-    pub fn new(skills_dir: &str) -> Self {
+    pub fn new(skills_dir: &str, storage: Arc<dyn ObjectStorage>) -> Self {
         Self {
             skills_dir: std::path::PathBuf::from(skills_dir),
+            storage,
         }
     }
 
@@ -46,7 +52,7 @@ impl SyncSkillsTool {
         for url in candidates {
             match client
                 .get(&url)
-                .header("User-Agent", "MicroClaw/1.0")
+                .header("User-Agent", "mchact/1.0")
                 .send()
                 .await
             {
@@ -136,7 +142,7 @@ impl SyncSkillsTool {
         let description = if !get("description").trim().is_empty() {
             get("description").trim().to_string()
         } else {
-            format!("Synced from {source_repo} skill '{skill_name}' and adapted for MicroClaw.")
+            format!("Synced from {source_repo} skill '{skill_name}' and adapted for mchact.")
         };
 
         let mut platforms = Self::str_seq(fm.get("platforms"));
@@ -255,7 +261,7 @@ impl Tool for SyncSkillsTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "sync_skills".into(),
-            description: "Sync a skill from a GitHub repository into local ~/.microclaw/skills (or configured skills dir). Use ONLY for skills from GitHub repos (owner/repo format or full GitHub URL). For ClawHub skills, use clawhub_install instead. Auto-detects the source repo from the path.".into(),
+            description: "Sync a skill from a GitHub repository into local ~/.mchact/skills (or configured skills dir). Use ONLY for skills from GitHub repos (owner/repo format or full GitHub URL). For ClawHub skills, use clawhub_install instead. Auto-detects the source repo from the path.".into(),
             input_schema: schema_object(
                 json!({
                     "skill_name": {
@@ -341,25 +347,19 @@ impl Tool for SyncSkillsTool {
         let normalized =
             Self::normalize_skill_markdown(&raw, &source_repo, &git_ref, &skill_name, &target_name);
 
-        let out_dir = self.skills_dir.join(&target_name);
-        if let Err(e) = std::fs::create_dir_all(&out_dir) {
-            return ToolResult::error(format!("Failed to create skill directory: {e}"))
-                .with_error_type("sync_write_failed");
-        }
-
-        let out_file = out_dir.join("SKILL.md");
-        if let Err(e) = std::fs::write(&out_file, normalized) {
+        let storage_key = format!("skills/{}/SKILL.md", target_name);
+        if let Err(e) = self
+            .storage
+            .put(&storage_key, normalized.into_bytes())
+            .await
+        {
             return ToolResult::error(format!("Failed to write SKILL.md: {e}"))
                 .with_error_type("sync_write_failed");
         }
 
         ToolResult::success(format!(
             "Skill synced: {} -> {}\nSource: {}@{}\nPath: {}",
-            skill_name,
-            target_name,
-            source_repo,
-            git_ref,
-            out_file.display()
+            skill_name, target_name, source_repo, git_ref, storage_key
         ))
     }
 }
@@ -369,9 +369,15 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn test_storage() -> std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> {
+        std::sync::Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync("/tmp/skills").unwrap(),
+        )
+    }
+
     #[test]
     fn test_sync_skills_definition() {
-        let tool = SyncSkillsTool::new("/tmp/skills");
+        let tool = SyncSkillsTool::new("/tmp/skills", test_storage());
         assert_eq!(tool.name(), "sync_skills");
         let def = tool.definition();
         assert_eq!(def.name, "sync_skills");
@@ -380,7 +386,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_skills_missing_name() {
-        let tool = SyncSkillsTool::new("/tmp/skills");
+        let tool = SyncSkillsTool::new("/tmp/skills", test_storage());
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("skill_name"));

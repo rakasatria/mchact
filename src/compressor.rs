@@ -1,6 +1,6 @@
 // src/compressor.rs
 
-use microclaw_core::llm_types::{ContentBlock, Message, MessageContent};
+use mchact_core::llm_types::{ContentBlock, Message, MessageContent};
 
 const CHARS_PER_TOKEN: usize = 4;
 const MIN_SUMMARY_TOKENS: usize = 2000;
@@ -107,7 +107,7 @@ impl ContextCompressor {
     fn summary_budget(compression_zone_chars: usize) -> usize {
         let zone_tokens = compression_zone_chars / CHARS_PER_TOKEN;
         let budget = (zone_tokens as f64 * SUMMARY_RATIO) as usize;
-        budget.max(MIN_SUMMARY_TOKENS).min(SUMMARY_TOKENS_CEILING)
+        budget.clamp(MIN_SUMMARY_TOKENS, SUMMARY_TOKENS_CEILING)
     }
 
     /// Phase 4/5: Build the summarization prompt.

@@ -1,16 +1,16 @@
 # ACP Stdio Mode
 
-MicroClaw can run as an Agent Client Protocol (ACP) server over stdio:
+mchact can run as an Agent Client Protocol (ACP) server over stdio:
 
 ```sh
-microclaw acp
+mchact acp
 ```
 
 ## When to use it
 
-Use ACP mode when another local tool wants to treat MicroClaw as a sessioned chat runtime over stdio instead of using a chat adapter or the Web API.
+Use ACP mode when another local tool wants to treat mchact as a sessioned chat runtime over stdio instead of using a chat adapter or the Web API.
 
-This document is about MicroClaw acting as an ACP **server**. It is separate from ACP-backed subagent execution via `sessions_spawn(runtime="acp")`, which can now also select named workers with `runtime_target`.
+This document is about mchact acting as an ACP **server**. It is separate from ACP-backed subagent execution via `sessions_spawn(runtime="acp")`, which can now also select named workers with `runtime_target`.
 
 ACP-backed subagents are configured under `subagents.acp`. You can either:
 
@@ -26,16 +26,16 @@ Typical cases:
 
 ## Behavior
 
-- uses the normal `microclaw.config.yaml`
+- uses the normal `mchact.config.yaml`
 - persists ACP conversations through the standard runtime storage
 - supports `/stop` to cancel the active run for the ACP session
 - keeps the normal tool loop and provider stack
 
 ## Verification
 
-1. Run `microclaw doctor`.
+1. Run `mchact doctor`.
 2. If Web is enabled, also inspect `GET /api/config/self_check` for ACP warnings.
-3. Start `microclaw acp`.
+3. Start `mchact acp`.
 4. Connect with an ACP client.
 5. Send one prompt and confirm a normal response.
 6. Send a follow-up prompt in the same session and confirm context is preserved.

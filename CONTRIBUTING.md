@@ -10,7 +10,7 @@
 ## Local Setup
 
 ```sh
-cp microclaw.config.example.yaml microclaw.config.yaml
+cp mchact.config.example.yaml mchact.config.yaml
 cargo build
 npm --prefix web ci
 npm --prefix website ci

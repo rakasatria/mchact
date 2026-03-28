@@ -18,10 +18,10 @@ use crate::chat_commands::maybe_handle_plugin_command;
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::call_blocking;
-use microclaw_storage::db::StoredMessage;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::call_blocking;
+use mchact_storage::db::StoredMessage;
 
 type WsSink = Arc<
     tokio::sync::Mutex<
@@ -33,7 +33,7 @@ type WsSink = Arc<
         >,
     >,
 >;
-use microclaw_core::text::split_text;
+use mchact_core::text::split_text;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "feishu",
@@ -2613,26 +2613,23 @@ async fn handle_feishu_message(
                                 })
                                 .collect();
 
-                            let dir = std::path::Path::new(&app_state.config.working_dir)
-                                .join("uploads")
-                                .join(runtime.channel_name.replace('/', "_"))
-                                .join(external_chat_id);
                             let mut document_saved_path: Option<String> = None;
-                            if let Err(e) = std::fs::create_dir_all(&dir) {
-                                error!("Failed to create upload dir {}: {e}", dir.display());
-                            } else {
-                                let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-                                let path = dir.join(format!("{}-{}", ts, safe_name));
-                                match tokio::fs::write(&path, &bytes).await {
-                                    Ok(()) => {
-                                        document_saved_path = Some(path.display().to_string());
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "Failed to save feishu file {}: {e}",
-                                            path.display()
-                                        );
-                                    }
+                            match app_state
+                                .media_manager
+                                .store_file(
+                                    bytes.clone(),
+                                    &safe_name,
+                                    None,
+                                    chat_id,
+                                    "channel_inbound",
+                                )
+                                .await
+                            {
+                                Ok(media_id) => {
+                                    document_saved_path = Some(format!("media:{media_id}"));
+                                }
+                                Err(e) => {
+                                    error!("Failed to save feishu file {safe_name}: {e}");
                                 }
                             }
 

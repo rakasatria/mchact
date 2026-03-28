@@ -81,7 +81,7 @@ export function IrcTab(): React.ReactElement {
             onChange={(e) =>
               setConfigField("irc_nick", e.target.value)
             }
-            placeholder="microclaw"
+            placeholder="mchact"
           />
         </ConfigFieldCard>
         <ConfigFieldCard
@@ -99,7 +99,7 @@ export function IrcTab(): React.ReactElement {
             onChange={(e) =>
               setConfigField("irc_username", e.target.value)
             }
-            placeholder="microclaw"
+            placeholder="mchact"
           />
         </ConfigFieldCard>
         <ConfigFieldCard
@@ -117,7 +117,7 @@ export function IrcTab(): React.ReactElement {
                 e.target.value,
               )
             }
-            placeholder="MicroClaw"
+            placeholder="mchact"
           />
         </ConfigFieldCard>
         <ConfigFieldCard

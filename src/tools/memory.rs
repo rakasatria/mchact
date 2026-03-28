@@ -1,27 +1,24 @@
 use async_trait::async_trait;
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
 
 use crate::memory_backend::MemoryBackend;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_storage::memory_quality;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
+use mchact_storage::memory_quality;
+use mchact_storage_backend::{ObjectStorage, StorageError};
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
 
 pub struct ReadMemoryTool {
-    groups_dir: PathBuf,
-    db: Arc<Database>,
+    storage: Arc<dyn ObjectStorage>,
+    db: Arc<DynDataStore>,
 }
 
 impl ReadMemoryTool {
-    pub fn new(data_dir: &str, db: Arc<Database>) -> Self {
-        ReadMemoryTool {
-            groups_dir: PathBuf::from(data_dir).join("groups"),
-            db,
-        }
+    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<DynDataStore>) -> Self {
+        ReadMemoryTool { storage, db }
     }
 }
 
@@ -40,7 +37,7 @@ fn chat_id_from_input_or_auth(input: &serde_json::Value) -> Option<i64> {
 }
 
 fn memory_channel_for_chat(
-    db: &Database,
+    db: &DynDataStore,
     input: &serde_json::Value,
     chat_id: i64,
 ) -> Result<String, String> {
@@ -56,7 +53,7 @@ fn memory_channel_for_chat(
     }
 }
 
-fn latest_sender_for_chat(db: &Database, chat_id: i64) -> Option<String> {
+fn latest_sender_for_chat(db: &DynDataStore, chat_id: i64) -> Option<String> {
     db.get_recent_messages(chat_id, 20)
         .ok()?
         .into_iter()
@@ -150,11 +147,12 @@ impl Tool for ReadMemoryTool {
             None => return ToolResult::error("Missing 'scope' parameter".into()),
         };
 
-        let path = match scope {
-            "global" => self.groups_dir.join("AGENTS.md"),
+        let key = match scope {
+            "global" => "groups/AGENTS.md".to_string(),
             "bot" => {
                 let channel = memory_channel_from_auth(&input);
-                self.groups_dir.join(channel).join("AGENTS.md")
+                let safe = channel.replace('/', "_");
+                format!("groups/{safe}/AGENTS.md")
             }
             "chat" => {
                 let chat_id = match chat_id_from_input_or_auth(&input) {
@@ -164,43 +162,49 @@ impl Tool for ReadMemoryTool {
                 if let Err(e) = authorize_chat_access(&input, chat_id) {
                     return ToolResult::error(e);
                 }
-                let channel = match memory_channel_for_chat(&self.db, &input, chat_id) {
+                let channel = match memory_channel_for_chat(&*self.db, &input, chat_id) {
                     Ok(v) => v,
                     Err(e) => return ToolResult::error(e),
                 };
-                self.groups_dir
-                    .join(channel)
-                    .join(chat_id.to_string())
-                    .join("AGENTS.md")
+                let safe = channel.replace('/', "_");
+                format!("groups/{safe}/{chat_id}/AGENTS.md")
             }
             _ => return ToolResult::error("scope must be 'global', 'bot', or 'chat'".into()),
         };
 
-        info!("Reading memory: {}", path.display());
+        info!("Reading memory: {}", key);
 
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
+        match self.storage.get(&key).await {
+            Ok(bytes) => {
+                let content = String::from_utf8_lossy(&bytes).into_owned();
                 if content.trim().is_empty() {
                     ToolResult::success("Memory file is empty.".into())
                 } else {
                     ToolResult::success(content)
                 }
             }
-            Err(_) => ToolResult::success("No memory file found (not yet created).".into()),
+            Err(StorageError::NotFound(_)) => {
+                ToolResult::success("No memory file found (not yet created).".into())
+            }
+            Err(e) => ToolResult::error(format!("Failed to read memory: {e}")),
         }
     }
 }
 
 pub struct WriteMemoryTool {
-    groups_dir: PathBuf,
-    db: Arc<Database>,
+    storage: Arc<dyn ObjectStorage>,
+    db: Arc<DynDataStore>,
     memory_backend: Arc<MemoryBackend>,
 }
 
 impl WriteMemoryTool {
-    pub fn new(data_dir: &str, db: Arc<Database>, memory_backend: Arc<MemoryBackend>) -> Self {
+    pub fn new(
+        storage: Arc<dyn ObjectStorage>,
+        db: Arc<DynDataStore>,
+        memory_backend: Arc<MemoryBackend>,
+    ) -> Self {
         WriteMemoryTool {
-            groups_dir: PathBuf::from(data_dir).join("groups"),
+            storage,
             db,
             memory_backend,
         }
@@ -248,7 +252,7 @@ impl Tool for WriteMemoryTool {
             None => return ToolResult::error("Missing 'content' parameter".into()),
         };
 
-        let (path, memory_chat_id) = match scope {
+        let (key, memory_chat_id) = match scope {
             "global" => {
                 if let Some(auth) = auth_context_from_input(&input) {
                     if !auth.is_control_chat() {
@@ -258,11 +262,12 @@ impl Tool for WriteMemoryTool {
                         ));
                     }
                 }
-                (self.groups_dir.join("AGENTS.md"), None)
+                ("groups/AGENTS.md".to_string(), None)
             }
             "bot" => {
                 let channel = memory_channel_from_auth(&input);
-                (self.groups_dir.join(channel).join("AGENTS.md"), None)
+                let safe = channel.replace('/', "_");
+                (format!("groups/{safe}/AGENTS.md"), None)
             }
             "chat" => {
                 let chat_id = match chat_id_from_input_or_auth(&input) {
@@ -272,33 +277,26 @@ impl Tool for WriteMemoryTool {
                 if let Err(e) = authorize_chat_access(&input, chat_id) {
                     return ToolResult::error(e);
                 }
-                let channel = match memory_channel_for_chat(&self.db, &input, chat_id) {
+                let channel = match memory_channel_for_chat(&*self.db, &input, chat_id) {
                     Ok(v) => v,
                     Err(e) => return ToolResult::error(e),
                 };
-                (
-                    self.groups_dir
-                        .join(channel)
-                        .join(chat_id.to_string())
-                        .join("AGENTS.md"),
-                    Some(chat_id),
-                )
+                let safe = channel.replace('/', "_");
+                (format!("groups/{safe}/{chat_id}/AGENTS.md"), Some(chat_id))
             }
             _ => return ToolResult::error("scope must be 'global', 'bot', or 'chat'".into()),
         };
 
-        info!("Writing memory: {}", path.display());
-
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return ToolResult::error(format!("Failed to create directory: {e}"));
-            }
-        }
+        info!("Writing memory: {}", key);
 
         let write_content = if scope == "chat" {
             let chat_id = memory_chat_id.unwrap_or_default();
-            let sender = latest_sender_for_chat(&self.db, chat_id);
-            let existing = std::fs::read_to_string(&path).unwrap_or_default();
+            let sender = latest_sender_for_chat(&*self.db, chat_id);
+            let existing = match self.storage.get(&key).await {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(StorageError::NotFound(_)) => String::new(),
+                Err(e) => return ToolResult::error(format!("Failed to read existing memory: {e}")),
+            };
             if let Some(sender) = sender {
                 upsert_chat_person_memory(&existing, &sender, content)
             } else {
@@ -308,7 +306,7 @@ impl Tool for WriteMemoryTool {
             content.to_string()
         };
 
-        match std::fs::write(&path, &write_content) {
+        match self.storage.put(&key, write_content.as_bytes().to_vec()).await {
             Ok(()) => {
                 let memory_content = content.trim().to_string();
                 if !memory_content.is_empty() {
@@ -341,13 +339,13 @@ impl Tool for WriteMemoryTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
+    use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
-    use std::sync::Arc;
-
-    use microclaw_storage::db::{Database, StoredMessage};
 
     fn test_dir() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("microclaw_memtool_{}", uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!("mchact_memtool_{}", uuid::Uuid::new_v4()))
     }
 
     fn test_db(dir: &std::path::Path) -> Arc<Database> {
@@ -356,7 +354,12 @@ mod tests {
         Arc::new(Database::new(runtime.to_str().unwrap()).unwrap())
     }
 
-    fn test_backend(db: Arc<Database>) -> Arc<MemoryBackend> {
+    async fn test_storage(dir: &std::path::Path) -> Arc<dyn ObjectStorage> {
+        std::fs::create_dir_all(dir).unwrap();
+        Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap())
+    }
+
+    fn test_backend(db: Arc<DynDataStore>) -> Arc<MemoryBackend> {
         Arc::new(MemoryBackend::local_only(db))
     }
 
@@ -376,7 +379,8 @@ mod tests {
     async fn test_read_memory_global_not_exists() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = ReadMemoryTool::new(dir.to_str().unwrap(), db);
+        let storage = test_storage(&dir).await;
+        let tool = ReadMemoryTool::new(storage, db);
         let result = tool.execute(json!({"scope": "global"})).await;
         assert!(!result.is_error);
         assert!(result.content.contains("No memory file found"));
@@ -387,9 +391,10 @@ mod tests {
     async fn test_write_and_read_memory_global() {
         let dir = test_dir();
         let db = test_db(&dir);
+        let storage = test_storage(&dir).await;
         let write_tool =
-            WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db.clone()));
-        let read_tool = ReadMemoryTool::new(dir.to_str().unwrap(), db.clone());
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
 
         let result = write_tool
             .execute(json!({"scope": "global", "content": "user prefers Rust"}))
@@ -413,9 +418,10 @@ mod tests {
         let db = test_db(&dir);
         db.resolve_or_create_chat_id("web", "42", Some("web-42"), "web")
             .unwrap();
+        let storage = test_storage(&dir).await;
         let write_tool =
-            WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db.clone()));
-        let read_tool = ReadMemoryTool::new(dir.to_str().unwrap(), db.clone());
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
 
         let result = write_tool
             .execute(json!({"scope": "chat", "chat_id": 42, "content": "chat 42 notes"}))
@@ -438,7 +444,8 @@ mod tests {
     async fn test_read_memory_chat_missing_chat_id() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = ReadMemoryTool::new(dir.to_str().unwrap(), db);
+        let storage = test_storage(&dir).await;
+        let tool = ReadMemoryTool::new(storage, db);
         let result = tool.execute(json!({"scope": "chat"})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing 'chat_id'"));
@@ -451,13 +458,14 @@ mod tests {
         let db = test_db(&dir);
         db.resolve_or_create_chat_id("web", "42", Some("web-42"), "web")
             .unwrap();
+        let storage = test_storage(&dir).await;
         let tool =
-            WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db.clone()));
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
         let result = tool
             .execute(json!({
                 "scope": "chat",
                 "content": "from auth chat id",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "web",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -465,10 +473,15 @@ mod tests {
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
-        let content =
-            std::fs::read_to_string(dir.join("groups").join("web").join("42").join("AGENTS.md"))
-                .unwrap();
-        assert_eq!(content, "from auth chat id");
+        // Verify via storage read
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
+        let read = read_tool
+            .execute(json!({
+                "scope": "chat",
+                "chat_id": 42,
+            }))
+            .await;
+        assert_eq!(read.content, "from auth chat id");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -478,8 +491,9 @@ mod tests {
         let db = test_db(&dir);
         db.resolve_or_create_chat_id("web", "42", Some("web-42"), "web")
             .unwrap();
+        let storage = test_storage(&dir).await;
         let tool =
-            WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db.clone()));
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
 
         store_user_message(&db, 42, "alice", "remember profile");
         let r1 = tool
@@ -499,14 +513,16 @@ mod tests {
             .await;
         assert!(!r3.is_error, "{}", r3.content);
 
-        let content =
-            std::fs::read_to_string(dir.join("groups").join("web").join("42").join("AGENTS.md"))
-                .unwrap();
-        assert!(content.contains("## Person: alice"));
-        assert!(content.contains("## Person: bob"));
-        assert!(content.contains("昵称: 大老板"));
-        assert!(content.contains("昵称: Bob哥"));
-        assert!(!content.contains("昵称: 老板"));
+        // Read back via storage to verify upsert
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
+        let read = read_tool
+            .execute(json!({"scope": "chat", "chat_id": 42}))
+            .await;
+        assert!(read.content.contains("## Person: alice"));
+        assert!(read.content.contains("## Person: bob"));
+        assert!(read.content.contains("昵称: 大老板"));
+        assert!(read.content.contains("昵称: Bob哥"));
+        assert!(!read.content.contains("昵称: 老板"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -515,7 +531,8 @@ mod tests {
     async fn test_write_memory_missing_scope() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db));
+        let storage = test_storage(&dir).await;
+        let tool = WriteMemoryTool::new(storage, db.clone(), test_backend(db));
         let result = tool.execute(json!({"content": "data"})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing 'scope'"));
@@ -526,7 +543,8 @@ mod tests {
     async fn test_read_memory_invalid_scope() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = ReadMemoryTool::new(dir.to_str().unwrap(), db);
+        let storage = test_storage(&dir).await;
+        let tool = ReadMemoryTool::new(storage, db);
         let result = tool.execute(json!({"scope": "invalid"})).await;
         assert!(result.is_error);
         assert!(result
@@ -539,15 +557,16 @@ mod tests {
     async fn test_write_and_read_memory_bot_scope() {
         let dir = test_dir();
         let db = test_db(&dir);
+        let storage = test_storage(&dir).await;
         let write_tool =
-            WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db.clone()));
-        let read_tool = ReadMemoryTool::new(dir.to_str().unwrap(), db);
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db);
 
         let write = write_tool
             .execute(json!({
                 "scope": "bot",
                 "content": "bot identity",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "feishu.ops",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -559,7 +578,7 @@ mod tests {
         let read = read_tool
             .execute(json!({
                 "scope": "bot",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "feishu.ops",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -575,9 +594,10 @@ mod tests {
     async fn test_read_memory_empty_file() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let write_tool = WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db));
-        let db2 = test_db(&dir);
-        let read_tool = ReadMemoryTool::new(dir.to_str().unwrap(), db2);
+        let storage = test_storage(&dir).await;
+        let write_tool =
+            WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
 
         write_tool
             .execute(json!({"scope": "global", "content": "   "}))
@@ -594,12 +614,13 @@ mod tests {
     async fn test_write_memory_global_denied_for_non_control_chat() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db));
+        let storage = test_storage(&dir).await;
+        let tool = WriteMemoryTool::new(storage, db.clone(), test_backend(db));
         let result = tool
             .execute(json!({
                 "scope": "global",
                 "content": "secret",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -614,20 +635,22 @@ mod tests {
     async fn test_write_memory_global_allowed_for_control_chat() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db));
-        let result = tool
+        let storage = test_storage(&dir).await;
+        let write_tool = WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
+        let result = write_tool
             .execute(json!({
                 "scope": "global",
                 "content": "global ok",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
-        let content = std::fs::read_to_string(dir.join("groups").join("AGENTS.md")).unwrap();
-        assert_eq!(content, "global ok");
+        let read = read_tool.execute(json!({"scope": "global"})).await;
+        assert_eq!(read.content, "global ok");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -635,12 +658,13 @@ mod tests {
     async fn test_read_memory_chat_permission_denied() {
         let dir = test_dir();
         let db = test_db(&dir);
-        let tool = ReadMemoryTool::new(dir.to_str().unwrap(), db);
+        let storage = test_storage(&dir).await;
+        let tool = ReadMemoryTool::new(storage, db);
         let result = tool
             .execute(json!({
                 "scope": "chat",
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -657,9 +681,9 @@ mod tests {
         let db = test_db(&dir);
         db.resolve_or_create_chat_id("web", "200", Some("web-200"), "web")
             .unwrap();
-        let write_tool = WriteMemoryTool::new(dir.to_str().unwrap(), db.clone(), test_backend(db));
-        let db2 = test_db(&dir);
-        let read_tool = ReadMemoryTool::new(dir.to_str().unwrap(), db2);
+        let storage = test_storage(&dir).await;
+        let write_tool = WriteMemoryTool::new(storage.clone(), db.clone(), test_backend(db.clone()));
+        let read_tool = ReadMemoryTool::new(storage, db.clone());
         write_tool
             .execute(json!({"scope": "chat", "chat_id": 200, "content": "chat200"}))
             .await;
@@ -667,7 +691,7 @@ mod tests {
             .execute(json!({
                 "scope": "chat",
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK_DIR="${MATRIX_SMOKE_DIR:-/tmp/microclaw-matrix-smoke}"
-PROJECT_NAME="${MATRIX_SMOKE_PROJECT:-microclaw-matrix-smoke}"
+WORK_DIR="${MATRIX_SMOKE_DIR:-/tmp/mchact-matrix-smoke}"
+PROJECT_NAME="${MATRIX_SMOKE_PROJECT:-mchact-matrix-smoke}"
 SYNAPSE_PORT="${MATRIX_SMOKE_PORT:-18008}"
 KEEP_ENV="${MATRIX_SMOKE_KEEP:-0}"
 TIMEOUT_SECS="${MATRIX_SMOKE_TIMEOUT_SECS:-45}"
@@ -11,11 +11,11 @@ NO_MENTION_WAIT_SECS="${MATRIX_SMOKE_NO_MENTION_WAIT_SECS:-8}"
 
 COMPOSE_FILE="$WORK_DIR/docker-compose.yaml"
 DATA_DIR="$WORK_DIR/data"
-LOG_FILE="$WORK_DIR/microclaw.log"
-CONFIG_FILE="$WORK_DIR/microclaw.matrix-smoke.yaml"
+LOG_FILE="$WORK_DIR/mchact.log"
+CONFIG_FILE="$WORK_DIR/mchact.matrix-smoke.yaml"
 STATE_FILE="$WORK_DIR/state.env"
-RUNTIME_ROOT="$WORK_DIR/microclaw.data"
-DB_PATH="$RUNTIME_ROOT/runtime/microclaw.db"
+RUNTIME_ROOT="$WORK_DIR/mchact.data"
+DB_PATH="$RUNTIME_ROOT/runtime/mchact.db"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -33,9 +33,9 @@ docker compose version >/dev/null
 mkdir -p "$WORK_DIR"
 
 cleanup() {
-  if [[ -n "${MICROCLAW_PID:-}" ]]; then
-    kill "$MICROCLAW_PID" >/dev/null 2>&1 || true
-    wait "$MICROCLAW_PID" >/dev/null 2>&1 || true
+  if [[ -n "${MCHACT_PID:-}" ]]; then
+    kill "$MCHACT_PID" >/dev/null 2>&1 || true
+    wait "$MCHACT_PID" >/dev/null 2>&1 || true
   fi
 
   if [[ "$KEEP_ENV" != "1" ]]; then
@@ -144,7 +144,7 @@ fi
 ROOM_ID="$(curl -sS -X POST "$BASE_URL/_matrix/client/v3/createRoom" \
   -H "Authorization: Bearer $ALICE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"microclaw-matrix-smoke","preset":"private_chat","invite":["@bot:localhost"]}' | jq -r '.room_id')"
+  -d '{"name":"mchact-matrix-smoke","preset":"private_chat","invite":["@bot:localhost"]}' | jq -r '.room_id')"
 
 if [[ "$ROOM_ID" == "null" || -z "$ROOM_ID" ]]; then
   echo "Failed to create room" >&2
@@ -187,8 +187,8 @@ DB_PATH='${DB_PATH}'
 STATE
 
 pushd "$ROOT_DIR" >/dev/null
-MICROCLAW_CONFIG="$CONFIG_FILE" cargo run --bin microclaw -- start >"$LOG_FILE" 2>&1 &
-MICROCLAW_PID=$!
+MCHACT_CONFIG="$CONFIG_FILE" cargo run --bin mchact -- start >"$LOG_FILE" 2>&1 &
+MCHACT_PID=$!
 popd >/dev/null
 
 sleep 6
@@ -288,7 +288,7 @@ echo "reaction_send_result=$REACTION_SEND_RESULT"
 echo "attachment_send_result=$ATTACH_SEND_RESULT"
 echo "bot_reply=$LAST_BOT_BODY"
 echo "db_path=$DB_PATH"
-echo "microclaw_log=$LOG_FILE"
+echo "mchact_log=$LOG_FILE"
 
 if [[ "$KEEP_ENV" == "1" ]]; then
   echo "Environment kept at $WORK_DIR"

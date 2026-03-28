@@ -82,23 +82,23 @@ channels:
 - `summary.mcp_rejection_ratio`
 
 OTLP export includes corresponding counters:
-- `microclaw_mcp_rate_limited_rejections`
-- `microclaw_mcp_bulkhead_rejections`
-- `microclaw_mcp_circuit_open_rejections`
+- `mchact_mcp_rate_limited_rejections`
+- `mchact_mcp_bulkhead_rejections`
+- `mchact_mcp_circuit_open_rejections`
 
 ## OTLP Exporter (Metrics & Tracing)
 
-MicroClaw supports exporting both Metrics and Traces via OTLP/HTTP protobuf.
+mchact supports exporting both Metrics and Traces via OTLP/HTTP protobuf.
 
 ### Metrics Export
 
-Configure metrics export in `microclaw.config.yaml`:
+Configure metrics export in `mchact.config.yaml`:
 
 ```yaml
 observability:
   otlp_enabled: true
   otlp_endpoint: "http://127.0.0.1:4318/v1/metrics"
-  service_name: "microclaw"
+  service_name: "mchact"
   otlp_export_interval_seconds: 15
   otlp_queue_capacity: 256
   otlp_retry_max_attempts: 3
@@ -107,7 +107,7 @@ observability:
 
 ### Tracing Export (Langfuse)
 
-MicroClaw provides first-class support for [Langfuse](https://langfuse.com) tracing.
+mchact provides first-class support for [Langfuse](https://langfuse.com) tracing.
 
 ```yaml
 observability:
@@ -119,7 +119,7 @@ observability:
 
 When enabled, the following spans are generated:
 - `agent_run`: The root span for a complete agent request/turn.
-  - Attributes: `chat_id`, `model`, `usage.input_tokens`, `usage.output_tokens`, `microclaw.tool_calls`, etc.
+  - Attributes: `chat_id`, `model`, `usage.input_tokens`, `usage.output_tokens`, `mchact.tool_calls`, etc.
 - `llm_generation`: Represents a call to the LLM provider.
   - Attributes: `system_prompt`, `messages` (context), `output` (response), token usage.
 - `tool_execution`: Represents a tool call.

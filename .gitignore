@@ -1,8 +1,8 @@
 /target
-microclaw.config.yaml
-microclaw.config.yaml.*
-microclaw.config.backups/
-microclaw.data/
+mchact.config.yaml
+mchact.config.yaml.*
+mchact.config.backups/
+mchact.data/
 website/
 tmp/
 working_dir/

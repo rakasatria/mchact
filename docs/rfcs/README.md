@@ -1,6 +1,6 @@
 # RFC Index: Feature Completion Program
 
-This directory tracks RFCs for the MicroClaw feature-completion program.
+This directory tracks RFCs for the mchact feature-completion program.
 
 ## Scope
 

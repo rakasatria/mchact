@@ -77,7 +77,7 @@ export function AuthDialogs(props: AuthDialogsProps): React.ReactElement {
               label="Bootstrap Token"
               description={
                 <>
-                  Copy <code>x-bootstrap-token</code> from MicroClaw startup
+                  Copy <code>x-bootstrap-token</code> from mchact startup
                   logs.
                 </>
               }

@@ -20,14 +20,14 @@ use crate::agent_engine::{process_with_agent_with_events, AgentEvent, AgentReque
 use crate::chat_commands::handle_chat_command;
 use crate::config::{Config, WorkingDirIsolation};
 use crate::runtime::AppState;
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel::{
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel::{
     deliver_and_store_bot_message, get_chat_routing, session_source_for_chat,
 };
-use microclaw_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
-use microclaw_observability::metrics::{OtlpMetricExporter, OtlpMetricSnapshot};
-use microclaw_storage::db::{call_blocking, ChatSummary, MetricsHistoryPoint, StoredMessage};
-use microclaw_storage::usage::build_usage_report;
+use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
+use mchact_observability::metrics::{OtlpMetricExporter, OtlpMetricSnapshot};
+use mchact_storage::db::{call_blocking, ChatSummary, MetricsHistoryPoint, StoredMessage};
+use mchact_storage::usage::build_usage_report;
 
 mod a2a;
 mod auth;
@@ -1008,7 +1008,7 @@ fn yaml_to_json_value(value: &serde_yaml::Value) -> serde_json::Value {
 fn config_path_for_save() -> Result<PathBuf, (StatusCode, String)> {
     match Config::resolve_config_path() {
         Ok(Some(path)) => Ok(path),
-        Ok(None) => Ok(PathBuf::from("./microclaw.config.yaml")),
+        Ok(None) => Ok(PathBuf::from("./mchact.config.yaml")),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1273,7 +1273,7 @@ fn hook_token_from_headers(headers: &HeaderMap) -> Option<String> {
     auth_token_from_headers(headers).or_else(|| {
         headers
             .get("x-openclaw-token")
-            .or_else(|| headers.get("x-microclaw-hook-token"))
+            .or_else(|| headers.get("x-mchact-hook-token"))
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -2007,17 +2007,21 @@ async fn api_upload(
         .to_string()
     });
 
-    let media_id = format!("{}.{}", uuid::Uuid::new_v4(), out_ext);
+    let filename_for_storage = original_filename
+        .as_deref()
+        .unwrap_or(&format!("upload.{out_ext}"))
+        .to_string();
 
-    let uploads_dir = state.app_state.config.data_root_dir().join("uploads");
-    tokio::fs::create_dir_all(&uploads_dir)
+    let media_id = state.app_state.media_manager
+        .store_file(
+            file_bytes,
+            &filename_for_storage,
+            Some(mime_type.as_str()),
+            0,
+            "upload",
+        )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to create uploads dir: {e}")))?;
-
-    let dest = uploads_dir.join(&media_id);
-    tokio::fs::write(&dest, &file_bytes)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to write file: {e}")))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to store file: {e}")))?;
 
     info!(
         target: "web",
@@ -2030,6 +2034,7 @@ async fn api_upload(
     Ok(Json(json!({
         "ok": true,
         "media_id": media_id,
+        "url": format!("/api/media/{media_id}"),
         "mime_type": mime_type,
         "size": size,
     })))
@@ -2039,49 +2044,66 @@ async fn api_media(
     State(state): State<WebState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    // If id is an integer, use MediaManager to retrieve by database ID.
+    if let Ok(media_id) = id.parse::<i64>() {
+        return match state.app_state.media_manager.get_file(media_id).await {
+            Ok((bytes, obj)) => {
+                let mime_str = obj
+                    .mime_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let mut headers = HeaderMap::new();
+                if let Ok(val) = axum::http::HeaderValue::from_str(&mime_str) {
+                    headers.insert(axum::http::header::CONTENT_TYPE, val);
+                }
+                (StatusCode::OK, headers, axum::body::Bytes::from(bytes))
+            }
+            Err(e) => {
+                error!(target: "web", media_id, error = %e, "Media object not found");
+                (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new())
+            }
+        };
+    }
+
+    // Legacy: filename-based lookup for backward compatibility.
+
     // Sanitise: reject path traversal
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return (StatusCode::BAD_REQUEST, HeaderMap::new(), axum::body::Bytes::new());
     }
 
-    let data_root = state.app_state.config.data_root_dir();
-    let candidates = [
-        data_root.join("media").join(&id),
-        data_root.join("uploads").join(&id),
+    let storage = state.app_state.media_manager.storage();
+    let candidate_keys = [
+        format!("media/{id}"),
+        format!("uploads/{id}"),
     ];
 
-    let mut found: Option<std::path::PathBuf> = None;
-    for candidate in &candidates {
-        if candidate.exists() {
-            found = Some(candidate.clone());
-            break;
-        }
-    }
-
-    let Some(path) = found else {
-        return (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new());
-    };
-
-    let ext = path
+    let ext = std::path::Path::new(&id)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
     let mime = mime_for_ext(ext);
 
-    match tokio::fs::read(&path).await {
-        Ok(data) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                axum::http::header::CONTENT_TYPE,
-                axum::http::HeaderValue::from_static(mime),
-            );
-            (StatusCode::OK, headers, axum::body::Bytes::from(data))
-        }
-        Err(e) => {
-            error!(target: "web", path = %path.display(), error = %e, "Failed to read media file");
-            (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new())
+    for key in &candidate_keys {
+        match storage.get(key).await {
+            Ok(data) => {
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static(mime),
+                );
+                return (StatusCode::OK, headers, axum::body::Bytes::from(data));
+            }
+            Err(mchact_storage_backend::StorageError::NotFound(_)) => continue,
+            Err(e) => {
+                error!(target: "web", key = %key, error = %e, "Failed to read media file from storage");
+                return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new());
+            }
         }
     }
+
+    (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new())
 }
 
 async fn api_audit_logs(
@@ -2114,6 +2136,261 @@ async fn api_audit_logs(
         })
         .collect::<Vec<_>>();
     Ok(Json(json!({"ok": true, "logs": logs})))
+}
+
+// ── Knowledge API ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeSessionQuery {
+    session_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeCreateBody {
+    name: String,
+    description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeAddDocumentBody {
+    document_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeQueryBody {
+    query: String,
+    max_results: Option<usize>,
+}
+
+/// Spawn a blocking task with an `Arc<DynDataStore>` and map the result's `String`
+/// error to `(StatusCode, String)`. This is the idiomatic pattern for
+/// `KnowledgeManager` calls (which return `Result<T, String>`).
+async fn km_blocking<T, F>(
+    db: Arc<mchact_storage::DynDataStore>,
+    f: F,
+) -> Result<T, (StatusCode, String)>
+where
+    T: Send + 'static,
+    F: FnOnce(&crate::knowledge::KnowledgeManager) -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let km = crate::knowledge::KnowledgeManager::new(db);
+        f(&km)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("task join error: {e}")))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+async fn api_knowledge_list(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let stats = km_blocking(state.app_state.db.clone(), |km| km.list_all()).await?;
+    Ok(Json(json!({ "ok": true, "collections": stats })))
+}
+
+async fn api_knowledge_create(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Query(query): Query<KnowledgeSessionQuery>,
+    Json(body): Json<KnowledgeCreateBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    let name = body.name.trim().to_string();
+    let description = body.description.unwrap_or_default();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".into()));
+    }
+
+    let id = km_blocking(state.app_state.db.clone(), move |km| {
+        km.create(&name, &description, chat_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "id": id })))
+}
+
+async fn api_knowledge_get(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let (stats, doc_ids) = km_blocking(state.app_state.db.clone(), move |km| {
+        let all = km.list_all()?;
+        let collection = all
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| format!("knowledge collection '{name}' not found"))?;
+        let knowledge = km
+            .db()
+            .get_knowledge_by_name(&collection.name)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("knowledge collection '{}' not found", collection.name))?;
+        let docs = km
+            .db()
+            .list_knowledge_documents(knowledge.id)
+            .map_err(|e| e.to_string())?;
+        Ok((collection, docs))
+    })
+    .await?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "collection": stats,
+        "document_ids": doc_ids,
+    })))
+}
+
+async fn api_knowledge_delete(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query): Query<KnowledgeSessionQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| km.delete(&name, chat_id)).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn api_knowledge_add_document(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Json(body): Json<KnowledgeAddDocumentBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let chunks = km_blocking(state.app_state.db.clone(), move |km| {
+        km.add_document(&name, body.document_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "chunks_created": chunks })))
+}
+
+async fn api_knowledge_remove_document(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path((name, doc_id)): Path<(String, i64)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| {
+        km.remove_document(&name, doc_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn api_knowledge_status(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let stats = km_blocking(state.app_state.db.clone(), move |km| {
+        km.list_all()?
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| format!("knowledge collection '{name}' not found"))
+    })
+    .await
+    .map_err(|(_, e)| (StatusCode::NOT_FOUND, e))?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "name": stats.name,
+        "chunk_count": stats.chunk_count,
+        "chunks_embedded": stats.chunks_embedded,
+        "chunks_pending": stats.chunks_pending,
+        "chunks_failed": stats.chunks_failed,
+        "observations_done": stats.observations_done,
+        "observations_pending": stats.observations_pending,
+    })))
+}
+
+async fn api_knowledge_query(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query_params): Query<KnowledgeSessionQuery>,
+    Json(body): Json<KnowledgeQueryBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let session_key = normalize_session_key(query_params.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key_read(&state, &session_key).await?;
+
+    let embedding = state
+        .app_state
+        .embedding
+        .clone()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "embedding provider not configured".into()))?;
+
+    let max_results = body.max_results.unwrap_or(5).clamp(1, 50);
+    let query_text = body.query;
+    if query_text.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "query is required".into()));
+    }
+
+    let km = crate::knowledge::KnowledgeManager::new(state.app_state.db.clone());
+    let result = km
+        .query(
+            Some(&[name]),
+            &query_text,
+            max_results,
+            chat_id,
+            embedding.as_ref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "query": result.query,
+        "results": result.results,
+        "collections_searched": result.collections_searched,
+        "total_chunks_searched": result.total_chunks_searched,
+    })))
+}
+
+async fn api_knowledge_attach(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query): Query<KnowledgeSessionQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| km.attach(&name, chat_id)).await?;
+    Ok(Json(json!({ "ok": true, "chat_id": chat_id })))
 }
 
 pub async fn start_web_server(state: Arc<AppState>) {
@@ -2300,6 +2577,25 @@ fn build_router(web_state: WebState) -> Router {
         )
         .route("/api/upload", post(api_upload))
         .route("/api/media/:id", get(api_media))
+        .route(
+            "/api/knowledge",
+            get(api_knowledge_list).post(api_knowledge_create),
+        )
+        .route(
+            "/api/knowledge/:name",
+            get(api_knowledge_get).delete(api_knowledge_delete),
+        )
+        .route(
+            "/api/knowledge/:name/documents",
+            post(api_knowledge_add_document),
+        )
+        .route(
+            "/api/knowledge/:name/documents/:id",
+            axum::routing::delete(api_knowledge_remove_document),
+        )
+        .route("/api/knowledge/:name/status", get(api_knowledge_status))
+        .route("/api/knowledge/:name/query", post(api_knowledge_query))
+        .route("/api/knowledge/:name/attach", post(api_knowledge_attach))
         .with_state(web_state)
 }
 
@@ -2309,12 +2605,12 @@ mod tests {
     use crate::config::{Config, LlmProviderProfile, WorkingDirIsolation};
     use crate::llm::LlmProvider;
     use crate::{db::Database, memory::MemoryManager, skills::SkillManager, tools::ToolRegistry};
-    use crate::{error::MicroClawError, llm_types::ResponseContentBlock};
+    use crate::{error::MchactError, llm_types::ResponseContentBlock};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use futures_util::{SinkExt, StreamExt};
-    use microclaw_channels::channel_adapter::ChannelRegistry;
-    use microclaw_storage::db::call_blocking;
+    use mchact_channels::channel_adapter::ChannelRegistry;
+    use mchact_storage::db::call_blocking;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;
@@ -2347,14 +2643,14 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
         ) -> Result<
-            microclaw_core::llm_types::MessagesResponse,
-            microclaw_core::error::MicroClawError,
+            mchact_core::llm_types::MessagesResponse,
+            mchact_core::error::MchactError,
         > {
-            Ok(microclaw_core::llm_types::MessagesResponse {
-                content: vec![microclaw_core::llm_types::ResponseContentBlock::Text {
+            Ok(mchact_core::llm_types::MessagesResponse {
+                content: vec![mchact_core::llm_types::ResponseContentBlock::Text {
                     text: "hello from llm".into(),
                 }],
                 stop_reason: Some("end_turn".into()),
@@ -2365,12 +2661,12 @@ mod tests {
         async fn send_message_stream(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
             text_tx: Option<&tokio::sync::mpsc::UnboundedSender<String>>,
         ) -> Result<
-            microclaw_core::llm_types::MessagesResponse,
-            microclaw_core::error::MicroClawError,
+            mchact_core::llm_types::MessagesResponse,
+            mchact_core::error::MchactError,
         > {
             if let Some(tx) = text_tx {
                 let _ = tx.send("hello ".into());
@@ -2389,11 +2685,11 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             tokio::time::sleep(Duration::from_millis(self.sleep_ms)).await;
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "slow".into(),
                 }],
@@ -2410,10 +2706,10 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "<thinking>internal</thinking>Visible".into(),
                 }],
@@ -2432,12 +2728,12 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
-                return Ok(microclaw_core::llm_types::MessagesResponse {
+                return Ok(mchact_core::llm_types::MessagesResponse {
                     content: vec![ResponseContentBlock::ToolUse {
                         id: "tool_1".into(),
                         name: "glob".into(),
@@ -2448,7 +2744,7 @@ mod tests {
                     usage: None,
                 });
             }
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "after tool".into(),
                 }],
@@ -2467,12 +2763,12 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
-                return Ok(microclaw_core::llm_types::MessagesResponse {
+                return Ok(mchact_core::llm_types::MessagesResponse {
                     content: vec![ResponseContentBlock::ToolUse {
                         id: "tool_send_1".into(),
                         name: "send_message".into(),
@@ -2483,7 +2779,7 @@ mod tests {
                     usage: None,
                 });
             }
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "final reply".into(),
                 }],
@@ -2543,7 +2839,7 @@ mod tests {
     }
 
     fn test_state_with_config(llm: Box<dyn LlmProvider>, mut cfg: Config) -> Arc<AppState> {
-        let dir = std::env::temp_dir().join(format!("microclaw_webtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_webtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         cfg.data_dir = dir.to_string_lossy().to_string();
         cfg.working_dir = dir.join("tmp").to_string_lossy().to_string();
@@ -2554,11 +2850,25 @@ mod tests {
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(WebAdapter));
         let channel_registry = Arc::new(registry);
+        let local_storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = cfg.data_dir.clone();
+            let storage =
+                mchact_storage_backend::local::LocalStorage::new_sync(&data_dir)
+                    .unwrap_or_else(|e| {
+                        panic!("Cannot initialize media storage at '{data_dir}': {e}")
+                    });
+            std::sync::Arc::new(storage)
+        };
+        let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
+            local_storage.clone(),
+            db.clone(),
+        ));
         let state = AppState {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
-            memory: MemoryManager::new(&runtime_dir),
+            media_manager: media_manager.clone(),
+            memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::for_tests()),
             llm,
@@ -2570,7 +2880,14 @@ mod tests {
             )),
             embedding: None,
             memory_backend: memory_backend.clone(),
-            tools: ToolRegistry::new(&cfg, channel_registry, db, memory_backend),
+            tools: ToolRegistry::new(
+                &cfg,
+                channel_registry,
+                db,
+                memory_backend,
+                local_storage,
+                media_manager,
+            ),
             observation_store: None,
             metric_exporter: None,
             trace_exporter: None,
@@ -4182,7 +4499,7 @@ mod tests {
                 "0 0 8 * * *",
                 "2099-01-01T08:00:00Z",
             )?;
-            Ok::<(), microclaw_core::error::MicroClawError>(())
+            Ok::<(), mchact_core::error::MchactError>(())
         })
         .await
         .unwrap();
@@ -4210,7 +4527,7 @@ mod tests {
         let (session, messages, tasks_len) = call_blocking(db, move |d| {
             Ok::<
                 (Option<(String, String)>, Vec<StoredMessage>, usize),
-                microclaw_core::error::MicroClawError,
+                mchact_core::error::MchactError,
             >((
                 d.load_session(4242)?,
                 d.get_recent_messages(4242, 10)?,
@@ -4231,7 +4548,7 @@ mod tests {
     async fn test_web_send_plugin_slash_command() {
         let mut cfg = test_config_template();
         let plugin_dir =
-            std::env::temp_dir().join(format!("microclaw_web_plugin_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_web_plugin_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
             plugin_dir.join("webplug.yaml"),
@@ -4606,7 +4923,7 @@ commands:
         cfg.a2a.enabled = true;
         cfg.a2a.agent_name = Some("Planner".into());
         cfg.a2a.agent_description = Some("Plans work".into());
-        cfg.a2a.public_base_url = Some("https://microclaw.example.com".into());
+        cfg.a2a.public_base_url = Some("https://mchact.example.com".into());
         let app = build_router(test_web_state_from_app_state(
             test_state_with_config(Box::new(DummyLlm), cfg),
             WebLimits::default(),
@@ -4629,7 +4946,7 @@ commands:
         );
         assert_eq!(
             v.pointer("/endpoints/message").and_then(|x| x.as_str()),
-            Some("https://microclaw.example.com/api/a2a/message")
+            Some("https://mchact.example.com/api/a2a/message")
         );
     }
 
@@ -5101,7 +5418,7 @@ commands:
             .header("authorization", "Bearer ws-list-secret")
             .header("content-type", "application/json")
             .body(Body::from(
-                r#"{"session_key":"chatclaw:microclaw:456","sender_name":"u","message":"seed"}"#,
+                r#"{"session_key":"chatclaw:mchact:456","sender_name":"u","message":"seed"}"#,
             ))
             .unwrap();
         app.clone().oneshot(req2).await.unwrap();
@@ -5133,7 +5450,7 @@ commands:
                 "id": "list-1",
                 "method": "sessions.list",
                 "params": {
-                    "agentId": "chatclaw:microclaw"
+                    "agentId": "chatclaw:mchact"
                 }
             })
             .to_string(),
@@ -5161,15 +5478,15 @@ commands:
         assert_eq!(sessions.len(), 1);
         assert_eq!(
             sessions[0].get("key").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
         assert_eq!(
             sessions[0].get("sessionKey").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
         assert_eq!(
             sessions[0].get("session_key").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
 
         // Test with search term

@@ -11,13 +11,13 @@ use crate::memory_service::{build_db_memory_context, maybe_handle_explicit_memor
 use crate::run_control;
 use crate::runtime::AppState;
 use crate::tools::ToolAuthContext;
-use microclaw_core::llm_types::{
+use mchact_core::llm_types::{
     ContentBlock, ImageSource, Message, MessageContent, ResponseContentBlock,
 };
-use microclaw_observability::traces::{
+use mchact_observability::traces::{
     kv, kv_int, new_span_id, new_trace_id, now_unix_nano, SpanData,
 };
-use microclaw_storage::db::{call_blocking, SessionSettings, StoredMessage};
+use mchact_storage::db::{call_blocking, SessionSettings, StoredMessage};
 use opentelemetry_proto::tonic::trace::v1::Status;
 use opentelemetry_semantic_conventions::attribute::{
     GEN_AI_OPERATION_NAME, GEN_AI_REQUEST_MODEL, GEN_AI_SYSTEM, GEN_AI_USAGE_INPUT_TOKENS,
@@ -156,14 +156,14 @@ fn with_high_risk_approval_marker(input: &Value) -> Value {
     let mut approved_input = input.clone();
     if let Some(obj) = approved_input.as_object_mut() {
         obj.insert(
-            "__microclaw_high_risk_approved".to_string(),
+            "__mchact_high_risk_approved".to_string(),
             Value::Bool(true),
         );
         return approved_input;
     }
     serde_json::json!({
-        "__microclaw_high_risk_approved": true,
-        "__microclaw_original_input": input,
+        "__mchact_high_risk_approved": true,
+        "__mchact_original_input": input,
     })
 }
 
@@ -534,7 +534,7 @@ pub(crate) async fn process_with_agent_impl(
     if let Some(exp) = &state.trace_exporter {
         let mut attrs = vec![
             kv(GEN_AI_OPERATION_NAME, "agent_run"),
-            kv(GEN_AI_SYSTEM, "microclaw"),
+            kv(GEN_AI_SYSTEM, "mchact"),
             kv_int("chat_id", context.chat_id),
             kv("channel", context.caller_channel),
             kv(USER_ID, &format!("{}", context.chat_id)),
@@ -546,8 +546,8 @@ pub(crate) async fn process_with_agent_impl(
                 "gen_ai.usage.total_tokens",
                 metrics.input_tokens + metrics.output_tokens,
             ),
-            kv_int("microclaw.tool_calls", metrics.tool_calls),
-            kv_int("microclaw.tool_errors", metrics.tool_errors),
+            kv_int("mchact.tool_calls", metrics.tool_calls),
+            kv_int("mchact.tool_errors", metrics.tool_errors),
         ];
 
         let (status, error_msg) = match &result {
@@ -721,7 +721,8 @@ async fn process_with_agent_logic(
     // Build system prompt
     let file_memory = state
         .memory
-        .build_memory_context(context.caller_channel, chat_id);
+        .build_memory_context(context.caller_channel, chat_id)
+        .await;
     let db_memory = build_db_memory_context(
         &state.memory_backend,
         &state.db,
@@ -733,7 +734,13 @@ async fn process_with_agent_logic(
     .await;
     let memory_context = format!("{}{}", file_memory, db_memory);
     let skills_catalog = state.skills.build_skills_catalog();
-    let soul_content = load_soul_content(&state.config, context.caller_channel, chat_id);
+    let soul_content = load_soul_content(
+        &state.config,
+        state.media_manager.storage().as_ref(),
+        context.caller_channel,
+        chat_id,
+    )
+    .await;
     let bot_username = state
         .config
         .bot_username_for_channel(context.caller_channel);
@@ -796,11 +803,12 @@ async fn process_with_agent_logic(
     if messages.len() > state.config.max_session_messages {
         let msg_count_before = messages.len();
         archive_conversation(
-            &state.config.data_dir,
+            state.media_manager.storage().as_ref(),
             context.caller_channel,
             chat_id,
             &messages,
-        );
+        )
+        .await;
         messages = compact_messages(
             state,
             context.caller_channel,
@@ -1791,99 +1799,76 @@ pub(crate) async fn load_messages_from_db(
 /// Load the SOUL.md content for personality customization.
 /// Checks in order: per-channel soul_path, explicit soul_path from config, data_dir/SOUL.md, ./SOUL.md.
 /// Also supports per-chat soul files at data_dir/groups/{chat_id}/SOUL.md.
-fn configured_soul_candidate_paths(
-    path: &str,
-    data_root_dir: &str,
-    souls_dir: &str,
-) -> Vec<std::path::PathBuf> {
-    let configured = std::path::PathBuf::from(path);
-    let mut candidates = vec![configured.clone()];
-    if !configured.is_absolute() && configured.parent().is_none() {
-        let souls_candidate = std::path::PathBuf::from(souls_dir).join(&configured);
-        if souls_candidate != configured {
-            candidates.push(souls_candidate);
+/// Build candidate storage keys for a configured soul path.
+///
+/// If the path is a bare filename (e.g. `"ops.md"`), the primary key is
+/// `souls/<filename>`.  An absolute filesystem path is stripped to its
+/// filename and also resolved under `souls/`.  A relative path with
+/// directory components (e.g. `"souls/ops.md"`) is tried as-is first,
+/// then under the `souls/` prefix if different.
+fn configured_soul_storage_keys(path: &str) -> Vec<String> {
+    let p = std::path::Path::new(path);
+    let filename = p
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(path);
+
+    let mut keys = Vec::new();
+
+    if p.is_absolute() || p.parent().is_none() || p.parent() == Some(std::path::Path::new("")) {
+        // Bare filename or absolute path -> souls/<filename>
+        keys.push(format!("souls/{filename}"));
+    } else {
+        // Relative path with directory components: try as-is, then souls/<filename>
+        let as_is = path.replace('\\', "/");
+        keys.push(as_is.clone());
+        let souls_key = format!("souls/{filename}");
+        if souls_key != as_is {
+            keys.push(souls_key);
         }
     }
-    if configured.is_relative() {
-        let data_root_candidate = std::path::PathBuf::from(data_root_dir).join(&configured);
-        if data_root_candidate != configured {
-            candidates.push(data_root_candidate);
-        }
-    }
-    candidates
+    keys
 }
 
-fn read_configured_soul_with_fallback(
+async fn read_configured_soul_with_fallback(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
     configured_path: &str,
-    data_root_dir: &str,
-    souls_dir: &str,
 ) -> Result<(String, String), String> {
     let mut errors = Vec::new();
-    for candidate in configured_soul_candidate_paths(configured_path, data_root_dir, souls_dir) {
-        let rendered = candidate.display().to_string();
-        match std::fs::read_to_string(&candidate) {
-            Ok(content) => {
+    for key in configured_soul_storage_keys(configured_path) {
+        match storage.get(&key).await {
+            Ok(bytes) => {
+                let content = String::from_utf8_lossy(&bytes).to_string();
                 if content.trim().is_empty() {
-                    errors.push(format!("{rendered}: empty file"));
+                    errors.push(format!("{key}: empty file"));
                     continue;
                 }
-                return Ok((content, rendered));
+                return Ok((content, key));
             }
-            Err(e) => errors.push(format!("{rendered}: {e}")),
+            Err(mchact_storage_backend::StorageError::NotFound(_)) => {
+                errors.push(format!("{key}: not found"));
+            }
+            Err(e) => errors.push(format!("{key}: {e}")),
         }
     }
     Err(errors.join("; "))
 }
 
-fn effective_data_root_dir(config: &crate::config::Config) -> std::path::PathBuf {
-    let data_dir = std::path::PathBuf::from(&config.data_dir);
-    let is_runtime_dir = data_dir
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v == "runtime")
-        .unwrap_or(false);
-    if is_runtime_dir {
-        data_dir.parent().unwrap_or(&data_dir).to_path_buf()
-    } else {
-        data_dir
-    }
-}
-
-fn effective_runtime_data_dir(config: &crate::config::Config) -> std::path::PathBuf {
-    let data_dir = std::path::PathBuf::from(&config.data_dir);
-    let is_runtime_dir = data_dir
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v == "runtime")
-        .unwrap_or(false);
-    if is_runtime_dir {
-        data_dir
-    } else {
-        data_dir.join("runtime")
-    }
-}
-
-pub(crate) fn load_soul_content(
+pub(crate) async fn load_soul_content(
     config: &crate::config::Config,
+    storage: &dyn mchact_storage_backend::ObjectStorage,
     caller_channel: &str,
     chat_id: i64,
 ) -> Option<String> {
-    let data_root_dir = effective_data_root_dir(config);
-    let runtime_data_dir = effective_runtime_data_dir(config);
-    let souls_dir = config.souls_data_dir();
     let mut global_soul: Option<String> = None;
 
     // 1. Per-channel/account path from config (channels.<name>.soul_path or accounts.<id>.soul_path)
     if let Some(path) = config.soul_path_for_channel(caller_channel) {
-        match read_configured_soul_with_fallback(
-            &path,
-            &data_root_dir.to_string_lossy(),
-            &souls_dir,
-        ) {
-            Ok((content, resolved_path)) => {
+        match read_configured_soul_with_fallback(storage, &path).await {
+            Ok((content, resolved_key)) => {
                 info!(
-                    "SOUL loaded from configured channel/account path; caller_channel={}, chat_id={}, configured_path={}, resolved_path={}",
-                    caller_channel, chat_id, path, resolved_path
+                    "SOUL loaded from configured channel/account path; caller_channel={}, chat_id={}, configured_path={}, resolved_key={}",
+                    caller_channel, chat_id, path, resolved_key
                 );
                 global_soul = Some(content);
             }
@@ -1899,15 +1884,11 @@ pub(crate) fn load_soul_content(
     // 2. Explicit global path from config
     if let Some(ref path) = config.soul_path {
         if global_soul.is_none() {
-            match read_configured_soul_with_fallback(
-                path,
-                &data_root_dir.to_string_lossy(),
-                &souls_dir,
-            ) {
-                Ok((content, resolved_path)) => {
+            match read_configured_soul_with_fallback(storage, path).await {
+                Ok((content, resolved_key)) => {
                     info!(
-                        "SOUL loaded from configured global path; caller_channel={}, chat_id={}, configured_path={}, resolved_path={}",
-                        caller_channel, chat_id, path, resolved_path
+                        "SOUL loaded from configured global path; caller_channel={}, chat_id={}, configured_path={}, resolved_key={}",
+                        caller_channel, chat_id, path, resolved_key
                     );
                     global_soul = Some(content);
                 }
@@ -1921,17 +1902,17 @@ pub(crate) fn load_soul_content(
         }
     }
 
-    // 3. data_dir/SOUL.md
+    // 3. SOUL.md from storage root
     if global_soul.is_none() {
-        let data_soul = data_root_dir.join("SOUL.md");
-        if let Ok(content) = std::fs::read_to_string(&data_soul) {
+        if let Ok(bytes) = storage.get("SOUL.md").await {
+            let content = String::from_utf8_lossy(&bytes).to_string();
             if !content.trim().is_empty() {
                 global_soul = Some(content);
             }
         }
     }
 
-    // 4. ./SOUL.md in current directory
+    // 4. ./SOUL.md in current directory (developer convenience, not user data)
     if global_soul.is_none() {
         if let Ok(content) = std::fs::read_to_string("SOUL.md") {
             if !content.trim().is_empty() {
@@ -1940,12 +1921,9 @@ pub(crate) fn load_soul_content(
         }
     }
 
-    // 5. Per-chat override: data_dir/runtime/groups/{chat_id}/SOUL.md
-    let chat_soul_path = runtime_data_dir
-        .join("groups")
-        .join(chat_id.to_string())
-        .join("SOUL.md");
-    if let Ok(chat_soul) = std::fs::read_to_string(&chat_soul_path) {
+    // 5. Per-chat override: groups/{chat_id}/SOUL.md in storage
+    if let Ok(bytes) = storage.get(&format!("groups/{chat_id}/SOUL.md")).await {
+        let chat_soul = String::from_utf8_lossy(&bytes).to_string();
         if !chat_soul.trim().is_empty() {
             // Per-chat soul overrides global soul entirely
             return Some(chat_soul);
@@ -2014,7 +1992,7 @@ You have access to the following capabilities:
 - Spawn and manage asynchronous sub-agent runs (`sessions_spawn`, `subagents_list`, `subagents_info`, `subagents_kill`)
 - Run depth-2 orchestration template with structured merge (`subagents_orchestrate`)
 - Activate agent skills (`activate_skill`) for specialized tasks
-- Install skills from repos (`sync_skills`, `clawhub_install`, `clawhub_search`) — use these instead of manually writing SKILL.md files. Skills go in ~/.microclaw/skills/ (or configured skills dir).
+- Install skills from repos (`sync_skills`, `clawhub_install`, `clawhub_search`) — use these instead of manually writing SKILL.md files. Skills go in ~/.mchact/skills/ (or configured skills dir).
 - Plan and track tasks with a todo list (`todo_read`, `todo_write`) — use this to break down complex tasks into steps, track progress, and stay organized
 
 IMPORTANT: When you need to run a shell command, execute it using the `bash` tool. Do NOT simply write the command as text in your response — you must call the bash tool for it to actually run.
@@ -2292,25 +2270,20 @@ pub(crate) fn strip_images_for_session(messages: &mut [Message]) {
 
 /// Archive the full conversation to a markdown file before compaction.
 /// Saved to `<data_dir>/groups/<channel>/<chat_id>/conversations/<timestamp>.md`.
-pub fn archive_conversation(data_dir: &str, channel: &str, chat_id: i64, messages: &[Message]) {
+pub async fn archive_conversation(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    channel: &str,
+    chat_id: i64,
+    messages: &[Message],
+) {
     let now = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    let channel_dir = if channel.trim().is_empty() {
-        "unknown"
+    let safe_channel = if channel.trim().is_empty() {
+        "unknown".to_string()
     } else {
-        channel.trim()
+        channel.trim().replace('/', "_")
     };
-    let dir = std::path::PathBuf::from(data_dir)
-        .join("groups")
-        .join(channel_dir)
-        .join(chat_id.to_string())
-        .join("conversations");
+    let key = format!("groups/{safe_channel}/{chat_id}/conversations/{now}.md");
 
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("Failed to create conversations dir: {e}");
-        return;
-    }
-
-    let path = dir.join(format!("{now}.md"));
     let mut content = String::new();
     for msg in messages {
         let role = &msg.role;
@@ -2318,13 +2291,12 @@ pub fn archive_conversation(data_dir: &str, channel: &str, chat_id: i64, message
         content.push_str(&format!("## {role}\n\n{text}\n\n---\n\n"));
     }
 
-    if let Err(e) = std::fs::write(&path, &content) {
-        tracing::warn!("Failed to archive conversation to {}: {e}", path.display());
+    if let Err(e) = storage.put(&key, content.into_bytes()).await {
+        tracing::warn!("Failed to archive conversation to {key}: {e}");
     } else {
         info!(
-            "Archived conversation ({} messages) to {}",
+            "Archived conversation ({} messages) to {key}",
             messages.len(),
-            path.display()
         );
     }
 }
@@ -2438,11 +2410,54 @@ async fn compact_messages(
     compressor.compress(messages, summarize_fn).await
 }
 
+/// Check if last conversation exceeded skill nudge thresholds and write pending nudge.
+#[cfg(test)]
+pub(crate) async fn maybe_write_skill_nudge(
+    config: &crate::config::Config,
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    tool_call_count: u32,
+    turn_count: u32,
+    duration_secs: u64,
+) {
+    if !config.skill_nudge_enabled {
+        return;
+    }
+    let exceeds = tool_call_count >= config.skill_nudge_threshold_tool_calls
+        || turn_count >= config.skill_nudge_threshold_turns
+        || duration_secs >= config.skill_nudge_threshold_duration_secs;
+    if !exceeds {
+        return;
+    }
+    let nudge = format!(
+        "\n\n[SKILL SUGGESTION] Your previous conversation was complex ({} tool calls, {} turns, {}s). \
+         If the approach you used would be valuable for future tasks, consider using create_skill to save it as a reusable skill.",
+        tool_call_count, turn_count, duration_secs
+    );
+    let _ = storage
+        .put("state/skill_nudge_pending.txt", nudge.into_bytes())
+        .await;
+}
+
+/// Read and consume pending skill nudge (returns None if no nudge pending).
+#[cfg(test)]
+pub(crate) async fn consume_skill_nudge(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+) -> Option<String> {
+    let bytes = storage.get("state/skill_nudge_pending.txt").await.ok()?;
+    let _ = storage.delete("state/skill_nudge_pending.txt").await;
+    let content = String::from_utf8(bytes).ok()?;
+    if content.trim().is_empty() {
+        None
+    } else {
+        Some(content)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_db_memory_context, history_to_claude_messages, process_with_agent, strip_thinking,
-        AgentRequestContext,
+        build_db_memory_context, consume_skill_nudge, history_to_claude_messages,
+        maybe_write_skill_nudge, process_with_agent, strip_thinking, AgentRequestContext,
     };
     use crate::config::{Config, WorkingDirIsolation};
     use crate::llm::LlmProvider;
@@ -2451,14 +2466,16 @@ mod tests {
     use crate::skills::SkillManager;
     use crate::tools::ToolRegistry;
     use crate::web::WebAdapter;
-    use microclaw_channels::channel::ConversationKind;
-    use microclaw_channels::channel_adapter::ChannelAdapter;
-    use microclaw_channels::channel_adapter::ChannelRegistry;
-    use microclaw_core::error::MicroClawError;
-    use microclaw_core::llm_types::{
+    use mchact_channels::channel::ConversationKind;
+    use mchact_channels::channel_adapter::ChannelAdapter;
+    use mchact_channels::channel_adapter::ChannelRegistry;
+    use mchact_core::error::MchactError;
+    use mchact_core::llm_types::{
         Message, MessagesResponse, ResponseContentBlock, ToolDefinition,
     };
-    use microclaw_storage::db::{Database, StoredMessage};
+    use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
+    use mchact_storage_backend::ObjectStorage;
     use serde_json::json;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -2473,7 +2490,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             Ok(MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "ok".to_string(),
@@ -2495,7 +2512,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -2507,7 +2524,7 @@ mod tests {
                 });
             }
             let saw_guard = messages.iter().any(|m| match &m.content {
-                microclaw_core::llm_types::MessageContent::Text(t) => {
+                mchact_core::llm_types::MessageContent::Text(t) => {
                     t.contains("[runtime_guard]: Your previous reply had no user-visible text.")
                 }
                 _ => false,
@@ -2537,7 +2554,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -2558,9 +2575,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -2643,11 +2660,25 @@ mod tests {
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(WebAdapter));
         let channel_registry = Arc::new(registry);
+        let local_storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = cfg.data_dir.clone();
+            let storage =
+                mchact_storage_backend::local::LocalStorage::new_sync(&data_dir)
+                    .unwrap_or_else(|e| {
+                        panic!("Cannot initialize media storage at '{data_dir}': {e}")
+                    });
+            std::sync::Arc::new(storage)
+        };
+        let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
+            local_storage.clone(),
+            db.clone(),
+        ));
         Arc::new(AppState {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
-            memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
+            media_manager: media_manager.clone(),
+            memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
             llm,
@@ -2659,7 +2690,14 @@ mod tests {
             )),
             embedding: None,
             memory_backend: memory_backend.clone(),
-            tools: ToolRegistry::new(&cfg, channel_registry, db, memory_backend),
+            tools: ToolRegistry::new(
+                &cfg,
+                channel_registry,
+                db,
+                memory_backend,
+                local_storage,
+                media_manager,
+            ),
             observation_store: None,
             metric_exporter: None,
             trace_exporter: None,
@@ -2685,11 +2723,25 @@ mod tests {
         cfg.web_port = 3900;
         let db = Arc::new(Database::new(runtime_dir.to_str().unwrap()).unwrap());
         let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let local_storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = cfg.data_dir.clone();
+            let storage =
+                mchact_storage_backend::local::LocalStorage::new_sync(&data_dir)
+                    .unwrap_or_else(|e| {
+                        panic!("Cannot initialize media storage at '{data_dir}': {e}")
+                    });
+            std::sync::Arc::new(storage)
+        };
+        let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
+            local_storage.clone(),
+            db.clone(),
+        ));
         Arc::new(AppState {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
-            memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
+            media_manager: media_manager.clone(),
+            memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
             llm,
@@ -2701,7 +2753,14 @@ mod tests {
             )),
             embedding: None,
             memory_backend: memory_backend.clone(),
-            tools: ToolRegistry::new(&cfg, channel_registry, db, memory_backend),
+            tools: ToolRegistry::new(
+                &cfg,
+                channel_registry,
+                db,
+                memory_backend,
+                local_storage,
+                media_manager,
+            ),
             observation_store: None,
             metric_exporter: None,
             trace_exporter: None,
@@ -2709,7 +2768,7 @@ mod tests {
         })
     }
 
-    fn store_user_message(db: &Database, chat_id: i64, text: &str) {
+    fn store_user_message(db: &dyn mchact_storage::DataStore, chat_id: i64, text: &str) {
         let msg = StoredMessage {
             id: format!("msg-{}", uuid::Uuid::new_v4()),
             chat_id,
@@ -2731,8 +2790,9 @@ mod tests {
         db.insert_memory(Some(100), "short memory three", "EVENT")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
-        let context = build_db_memory_context(&memory_backend, &db, None, 100, "short", 20).await;
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
+        let context = build_db_memory_context(&memory_backend, &dyn_db, None, 100, "short", 20).await;
         assert!(context.contains("<structured_memories>"));
         assert!(context.contains("(+"));
         assert!(context.contains("memories omitted"));
@@ -2749,9 +2809,10 @@ mod tests {
         db.insert_memory(Some(100), "user likes coffee", "PROFILE")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
         let context =
-            build_db_memory_context(&memory_backend, &db, None, 100, "likes", 10_000).await;
+            build_db_memory_context(&memory_backend, &dyn_db, None, 100, "likes", 10_000).await;
         assert!(context.contains("user likes rust"));
         assert!(context.contains("user likes coffee"));
         assert!(!context.contains("memories omitted"));
@@ -2767,9 +2828,10 @@ mod tests {
         db.insert_memory(Some(100), "User prefers Rust and tea", "PROFILE")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
         let context =
-            build_db_memory_context(&memory_backend, &db, None, 100, "喜欢 咖啡", 10_000).await;
+            build_db_memory_context(&memory_backend, &dyn_db, None, 100, "喜欢 咖啡", 10_000).await;
         let first_line = context
             .lines()
             .find(|line| line.starts_with('['))
@@ -2817,7 +2879,7 @@ mod tests {
                 )
                 .unwrap();
 
-            store_user_message(&state.db, chat_id, message);
+            store_user_message(&*state.db, chat_id, message);
             let reply = process_with_agent(
                 &state,
                 AgentRequestContext {
@@ -2872,7 +2934,7 @@ mod tests {
             .unwrap();
 
         store_user_message(
-            &state.db,
+            &*state.db,
             chat_id,
             "Remember that production database port is 5433",
         );
@@ -2894,7 +2956,7 @@ mod tests {
         );
 
         store_user_message(
-            &state.db,
+            &*state.db,
             chat_id,
             "Remember that db port for primary cluster is 6432",
         );
@@ -2946,7 +3008,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "empty-retry-chat", Some("empty"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "hello");
+        store_user_message(&*state.db, chat_id, "hello");
 
         let reply = process_with_agent(
             &state,
@@ -2996,7 +3058,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "approval-retry-chat", Some("approval"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "run bash");
+        store_user_message(&*state.db, chat_id, "run bash");
 
         let reply = process_with_agent(
             &state,
@@ -3077,7 +3139,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3100,9 +3162,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3140,7 +3202,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3160,9 +3222,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3199,7 +3261,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3230,7 +3292,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3250,9 +3312,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3287,7 +3349,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
@@ -3313,7 +3375,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "approval-confirm-chat", Some("approval"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "run bash");
+        store_user_message(&*state.db, chat_id, "run bash");
 
         let reply = process_with_agent(
             &state,
@@ -3351,7 +3413,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "failed-tool-note-chat", Some("failed"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "build this repo");
+        store_user_message(&*state.db, chat_id, "build this repo");
 
         let reply = process_with_agent(
             &state,
@@ -3399,7 +3461,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("feishu", "chat-feishu-1", Some("feishu"), "feishu_dm")
             .unwrap();
-        store_user_message(&state.db, chat_id, "send the archive");
+        store_user_message(&*state.db, chat_id, "send the archive");
 
         let reply = process_with_agent(
             &state,
@@ -3442,7 +3504,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "empty-tool-name-chat", Some("empty-tool"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "search latest news");
+        store_user_message(&*state.db, chat_id, "search latest news");
 
         let reply = process_with_agent(
             &state,
@@ -3481,7 +3543,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "tool-use-without-calls-chat", Some("tool"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "weather?");
+        store_user_message(&*state.db, chat_id, "weather?");
 
         let reply = process_with_agent(
             &state,
@@ -3593,7 +3655,7 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].role, "user");
         match &out[0].content {
-            microclaw_core::llm_types::MessageContent::Text(t) => {
+            mchact_core::llm_types::MessageContent::Text(t) => {
                 assert!(t.contains("你好"));
                 assert!(!t.contains("/skills"));
             }
@@ -3627,106 +3689,113 @@ mod tests {
         assert!(prompt.contains("API spec v1"));
     }
 
-    #[test]
-    fn test_load_soul_content_from_data_dir() {
+    #[tokio::test]
+    async fn test_load_soul_content_from_storage_root() {
         let base_dir = std::env::temp_dir().join(format!("mc_soul_test_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let soul_path = base_dir.join("SOUL.md");
-        std::fs::write(&soul_path, "I am a wise owl assistant.").unwrap();
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put("SOUL.md", b"I am a wise owl assistant.".to_vec())
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
         config.soul_path = None;
-        config.model = "test".into();
-        config.working_dir = "./tmp".into();
-        config.working_dir_isolation = WorkingDirIsolation::Shared;
-        config.web_enabled = false;
-        config.web_port = 0;
 
-        let soul = super::load_soul_content(&config, "web", 999);
+        let soul = super::load_soul_content(&config, &storage, "web", 999).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("wise owl"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_explicit_path() {
+    #[tokio::test]
+    async fn test_load_soul_content_explicit_path() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_explicit_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let soul_file = base_dir.join("custom_soul.md");
-        std::fs::write(&soul_file, "I am a custom personality.").unwrap();
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put(
+                "souls/custom_soul.md",
+                b"I am a custom personality.".to_vec(),
+            )
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
-        config.soul_path = Some(soul_file.to_string_lossy().to_string());
-        config.model = "test".into();
-        config.working_dir = "./tmp".into();
-        config.working_dir_isolation = WorkingDirIsolation::Shared;
-        config.web_enabled = false;
-        config.web_port = 0;
+        config.soul_path = Some("custom_soul.md".to_string());
 
-        let soul = super::load_soul_content(&config, "web", 999);
+        let soul = super::load_soul_content(&config, &storage, "web", 999).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("custom personality"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_channel_account_path() {
+    #[tokio::test]
+    async fn test_load_soul_content_channel_account_path() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_channel_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let global_soul_file = base_dir.join("global_soul.md");
-        let ops_soul_file = base_dir.join("ops_soul.md");
-        let default_soul_file = base_dir.join("default_soul.md");
-        std::fs::write(&global_soul_file, "global soul").unwrap();
-        std::fs::write(&ops_soul_file, "ops soul").unwrap();
-        std::fs::write(&default_soul_file, "default account soul").unwrap();
-
-        fn yaml_single_quote(s: &str) -> String {
-            s.replace('\'', "''")
-        }
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put("souls/global_soul.md", b"global soul".to_vec())
+            .await
+            .unwrap();
+        storage
+            .put("souls/ops_soul.md", b"ops soul".to_vec())
+            .await
+            .unwrap();
+        storage
+            .put(
+                "souls/default_soul.md",
+                b"default account soul".to_vec(),
+            )
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
-        config.soul_path = Some(global_soul_file.to_string_lossy().to_string());
-        config.channels = serde_yaml::from_str(&format!(
+        config.soul_path = Some("global_soul.md".to_string());
+        config.channels = serde_yaml::from_str(
             r#"telegram:
   default_account: default
   accounts:
     default:
-      soul_path: '{}'
+      soul_path: 'default_soul.md'
     ops:
-      soul_path: '{}'
+      soul_path: 'ops_soul.md'
 "#,
-            yaml_single_quote(&default_soul_file.to_string_lossy()),
-            yaml_single_quote(&ops_soul_file.to_string_lossy())
-        ))
+        )
         .unwrap();
 
-        let ops_soul = super::load_soul_content(&config, "telegram.ops", 42);
+        let ops_soul = super::load_soul_content(&config, &storage, "telegram.ops", 42).await;
         assert_eq!(ops_soul.as_deref(), Some("ops soul"));
 
-        let default_soul = super::load_soul_content(&config, "telegram", 43);
+        let default_soul = super::load_soul_content(&config, &storage, "telegram", 43).await;
         assert_eq!(default_soul.as_deref(), Some("default account soul"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_channel_account_relative_path_under_data_dir() {
+    #[tokio::test]
+    async fn test_load_soul_content_channel_account_relative_path_under_souls() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_channel_relative_{}", uuid::Uuid::new_v4()));
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
         let rel_name = format!("__mc_soul_{}.md", uuid::Uuid::new_v4());
         let rel_path = format!("souls/{rel_name}");
-        std::fs::create_dir_all(base_dir.join("souls")).unwrap();
-        std::fs::write(base_dir.join(&rel_path), "relative account soul").unwrap();
+        storage
+            .put(&rel_path, b"relative account soul".to_vec())
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
         config.channels = serde_yaml::from_str(&format!(
             r#"feishu:
   default_account: main
@@ -3738,7 +3807,7 @@ mod tests {
         ))
         .unwrap();
 
-        let soul = super::load_soul_content(&config, "feishu", 99);
+        let soul = super::load_soul_content(&config, &storage, "feishu", 99).await;
         assert_eq!(soul.as_deref(), Some("relative account soul"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
@@ -3782,7 +3851,7 @@ timeout_ms: 1000
 
         let state = test_state_with_base_dir(&base_dir);
         let chat_id = 90001_i64;
-        store_user_message(&state.db, chat_id, "hello");
+        store_user_message(&*state.db, chat_id, "hello");
 
         let reply = process_with_agent(
             &state,
@@ -3804,5 +3873,68 @@ timeout_ms: 1000
         );
 
         let _ = std::fs::remove_dir_all(&base_dir);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_write_skill_nudge_writes_when_threshold_exceeded() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_test_{}", uuid::Uuid::new_v4()));
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
+        let config = Config::test_defaults();
+        // Default threshold is 10 tool calls
+        maybe_write_skill_nudge(&config, storage.as_ref(), 15, 5, 60).await;
+        let bytes = storage.get("state/skill_nudge_pending.txt").await.unwrap();
+        let content = String::from_utf8(bytes).unwrap();
+        assert!(content.contains("[SKILL SUGGESTION]"));
+        assert!(content.contains("15 tool calls"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_write_skill_nudge_skips_when_below_threshold() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_skip_{}", uuid::Uuid::new_v4()));
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
+        let config = Config::test_defaults();
+        maybe_write_skill_nudge(&config, storage.as_ref(), 3, 5, 60).await;
+        let exists = storage
+            .exists("state/skill_nudge_pending.txt")
+            .await
+            .unwrap_or(false);
+        assert!(!exists);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_consume_skill_nudge() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_consume_{}", uuid::Uuid::new_v4()));
+        let storage: Arc<dyn ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(dir.clone()).unwrap(),
+        );
+        storage
+            .put(
+                "state/skill_nudge_pending.txt",
+                b"test nudge".to_vec(),
+            )
+            .await
+            .unwrap();
+
+        let result = consume_skill_nudge(storage.as_ref()).await;
+        assert_eq!(result, Some("test nudge".to_string()));
+        let exists = storage
+            .exists("state/skill_nudge_pending.txt")
+            .await
+            .unwrap_or(false);
+        assert!(!exists); // consumed = deleted
+
+        let result2 = consume_skill_nudge(storage.as_ref()).await;
+        assert!(result2.is_none()); // already consumed
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -18,8 +18,8 @@
   - `auto`: Docker only (preserves existing behavior)
   - `docker`: Docker only
   - `podman`: Podman only
-- Enable quickly: `microclaw setup --enable-sandbox`.
-- Verify readiness: `microclaw doctor sandbox`.
+- Enable quickly: `mchact setup --enable-sandbox`.
+- Verify readiness: `mchact doctor sandbox`.
 - Security profile (`sandbox.security_profile`) controls capability posture:
   - `hardened` (default): `--cap-drop ALL --security-opt no-new-privileges`
   - `standard`: Docker default capabilities
@@ -43,11 +43,11 @@ Policy metadata is enforced before tool execution and surfaced in web config sel
 - Sandbox mount validation:
   - sensitive component blocklist (`.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker`, `.env`, keys, etc.)
   - symlink component rejection
-  - optional external mount allowlist (`~/.microclaw/sandbox-mount-allowlist.txt`)
+  - optional external mount allowlist (`~/.mchact/sandbox-mount-allowlist.txt`)
 - File path guard:
   - sensitive path deny list
   - symlink validation on existing path prefix
-  - optional external path allowlist (`~/.microclaw/sandbox-path-allowlist.txt`)
+  - optional external path allowlist (`~/.mchact/sandbox-path-allowlist.txt`)
 
 ## Web Fetch Controls
 

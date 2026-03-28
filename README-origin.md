@@ -1,16 +1,16 @@
-# MicroClaw
-<img src="icon.png" alt="MicroClaw logo" width="56" align="right" />
+# mchact
+<img src="icon.png" alt="mchact logo" width="56" align="right" />
 
 [English](README.md) | [中文](README_CN.md)
 
-[![Website](https://img.shields.io/badge/Website-microclaw.ai-blue)](https://microclaw.ai)
+[![Website](https://img.shields.io/badge/Website-mchact.ai-blue)](https://mchact.ai)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/pvmezwkAk5)
-[![Reddit](https://img.shields.io/badge/Reddit-r%2Fmicroclaw-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/r/microclaw/)
+[![Reddit](https://img.shields.io/badge/Reddit-r%2Fmchact-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/r/mchact/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 
 <p align="center">
-  <img src="screenshots/headline.png" alt="MicroClaw headline logo" width="92%" />
+  <img src="screenshots/headline.png" alt="mchact headline logo" width="92%" />
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> |
   <a href="#install">Install</a> |
-  <a href="#why-microclaw">Why MicroClaw</a> |
+  <a href="#why-mchact">Why mchact</a> |
   <a href="#how-it-works">Architecture</a> |
   <a href="#documentation">Docs</a>
 </p>
@@ -36,7 +36,7 @@
   <a href="docs/clawhub/overview.md">ClawHub</a>
 </p>
 
-MicroClaw is an agent runtime for chat surfaces. It gives you one channel-agnostic agent loop, one provider-agnostic LLM layer, and one persistent runtime that can move across Telegram, Discord, Slack, Feishu/Lark, IRC, Web, and additional adapters over time.
+mchact is an agent runtime for chat surfaces. It gives you one channel-agnostic agent loop, one provider-agnostic LLM layer, and one persistent runtime that can move across Telegram, Discord, Slack, Feishu/Lark, IRC, Web, and additional adapters over time.
 
 It works with Anthropic and OpenAI-compatible providers, supports multi-step tool execution, keeps session state across turns, stores durable memory, runs scheduled tasks, and can expose the same runtime through both chat channels and a local web UI.
 
@@ -46,7 +46,7 @@ It works with Anthropic and OpenAI-compatible providers, supports multi-step too
   <img src="screenshots/screenshot2.png" width="45%" />
 </p>
 
-## Why MicroClaw
+## Why mchact
 
 - **One runtime, many channels**: keep the same agent loop, tools, memory, and policies across chat platforms.
 - **Built for agentic execution**: tool calls, tool-result reflection, sub-agents, planning, and mid-run updates are first-class.
@@ -59,25 +59,25 @@ It works with Anthropic and OpenAI-compatible providers, supports multi-step too
 Install:
 
 ```sh
-curl -fsSL https://microclaw.ai/install.sh | bash
+curl -fsSL https://mchact.ai/install.sh | bash
 ```
 
 Run diagnostics:
 
 ```sh
-microclaw doctor
+mchact doctor
 ```
 
 Create config with the interactive wizard:
 
 ```sh
-microclaw setup
+mchact setup
 ```
 
 Start the runtime:
 
 ```sh
-microclaw start
+mchact start
 ```
 
 Default local web UI:
@@ -93,13 +93,13 @@ If you want a source build instead, jump to [Install](#install). If you want ope
 ### One-line installer (recommended)
 
 ```sh
-curl -fsSL https://microclaw.ai/install.sh | bash
+curl -fsSL https://mchact.ai/install.sh | bash
 ```
 
 ### Windows PowerShell installer
 
 ```powershell
-iwr https://microclaw.ai/install.ps1 -UseBasicParsing | iex
+iwr https://mchact.ai/install.ps1 -UseBasicParsing | iex
 ```
 
 This installer only does one thing:
@@ -109,7 +109,7 @@ This installer only does one thing:
 Upgrade in place later:
 
 ```sh
-microclaw upgrade
+mchact upgrade
 ```
 
 ### Preflight diagnostics
@@ -117,13 +117,13 @@ microclaw upgrade
 Run cross-platform diagnostics before first start (or when troubleshooting):
 
 ```sh
-microclaw doctor
+mchact doctor
 ```
 
 Machine-readable output for support tickets:
 
 ```sh
-microclaw doctor --json
+mchact doctor --json
 ```
 
 Checks include PATH, shell runtime, `agent-browser`, PowerShell policy (Windows), and MCP command dependencies from `<data_dir>/mcp.json` plus `<data_dir>/mcp.d/*.json`.
@@ -131,7 +131,7 @@ Checks include PATH, shell runtime, `agent-browser`, PowerShell policy (Windows)
 Sandbox-only diagnostics:
 
 ```sh
-microclaw doctor sandbox
+mchact doctor sandbox
 ```
 
 ### Uninstall (script)
@@ -139,29 +139,29 @@ microclaw doctor sandbox
 macOS/Linux:
 
 ```sh
-curl -fsSL https://microclaw.ai/uninstall.sh | bash
+curl -fsSL https://mchact.ai/uninstall.sh | bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-iwr https://microclaw.ai/uninstall.ps1 -UseBasicParsing | iex
+iwr https://mchact.ai/uninstall.ps1 -UseBasicParsing | iex
 ```
 
 ### Homebrew (macOS)
 
 ```sh
-brew tap microclaw/tap
-brew install microclaw
+brew tap mchact/tap
+brew install mchact
 ```
 
 ### Docker image
 
 Release tags publish an official container image to:
 
-- `ghcr.io/microclaw/microclaw:latest`
-- `ghcr.io/microclaw/microclaw:<version>`
-- `docker.io/microclaw/microclaw:latest` when Docker Hub publishing credentials are configured for the repository
+- `ghcr.io/mchact/mchact:latest`
+- `ghcr.io/mchact/mchact:<version>`
+- `docker.io/mchact/mchact:latest` when Docker Hub publishing credentials are configured for the repository
 
 For first-time pulls from GHCR, you may need:
 
@@ -174,38 +174,38 @@ Use your GitHub username and a Personal Access Token with `read:packages`.
 Quickest way to try the image:
 
 ```sh
-docker pull ghcr.io/microclaw/microclaw:latest
+docker pull ghcr.io/mchact/mchact:latest
 docker run --rm -it \
   -p 127.0.0.1:10961:10961 \
-  ghcr.io/microclaw/microclaw:latest
+  ghcr.io/mchact/mchact:latest
 ```
 
 Recommended for real use: keep config and runtime data on the host:
 
 ```sh
 mkdir -p data tmp
-chmod a+r microclaw.config.yaml
+chmod a+r mchact.config.yaml
 chmod -R a+rwX data tmp
 
 docker run --rm -it \
   -p 127.0.0.1:10961:10961 \
-  -v "$(pwd)/microclaw.config.yaml:/app/microclaw.config.yaml:ro" \
-  -v "$(pwd)/data:/home/microclaw/.microclaw" \
+  -v "$(pwd)/mchact.config.yaml:/app/mchact.config.yaml:ro" \
+  -v "$(pwd)/data:/home/mchact/.mchact" \
   -v "$(pwd)/tmp:/app/tmp" \
-  ghcr.io/microclaw/microclaw:latest
+  ghcr.io/mchact/mchact:latest
 ```
 
 Why mount them:
 
-- `microclaw.config.yaml`: keep configuration outside the container
+- `mchact.config.yaml`: keep configuration outside the container
 - `data/`: persist sessions, memory, skills, database, and runtime state
 - `tmp/`: provide a writable temp directory for container-side work
 
-The image entrypoint is `microclaw`, so you can override the command directly:
+The image entrypoint is `mchact`, so you can override the command directly:
 
 ```sh
-docker run --rm ghcr.io/microclaw/microclaw:latest doctor
-docker run --rm ghcr.io/microclaw/microclaw:latest version
+docker run --rm ghcr.io/mchact/mchact:latest doctor
+docker run --rm ghcr.io/mchact/mchact:latest version
 ```
 
 If startup fails with `Permission denied (os error 13)`, re-check the `chmod` commands above and verify the mounted paths exist.
@@ -213,24 +213,26 @@ If startup fails with `Permission denied (os error 13)`, re-check the `chmod` co
 ### From source
 
 ```sh
-git clone https://github.com/microclaw/microclaw.git
-cd microclaw
+git clone https://github.com/mchact/mchact.git
+cd mchact
 cargo build --release
-cp target/release/microclaw /usr/local/bin/
+cp target/release/mchact /usr/local/bin/
 ```
 
-Optional semantic-memory build (sqlite-vec disabled by default):
+Optional semantic-memory build (vector-search disabled by default):
 
 ```sh
-cargo build --release --features sqlite-vec
+cargo build --release --features vector-search          # SQLite + sqlite-vec
+cargo build --release --features postgres               # PostgreSQL backend
+cargo build --release --features postgres-vector        # PostgreSQL + pgvector
 ```
 
-First-time sqlite-vec quickstart (3 commands):
+First-time vector-search quickstart (3 commands):
 
 ```sh
-cargo run --features sqlite-vec -- setup
-cargo run --features sqlite-vec -- start
-sqlite3 <data_dir>/runtime/microclaw.db "SELECT id, chat_id, chat_channel, external_chat_id, category, embedding_model FROM memories ORDER BY id DESC LIMIT 20;"
+cargo run --features vector-search -- setup
+cargo run --features vector-search -- start
+sqlite3 <data_dir>/runtime/mchact.db "SELECT id, chat_id, chat_channel, external_chat_id, category, embedding_model FROM memories ORDER BY id DESC LIMIT 20;"
 ```
 
 In `setup`, set:
@@ -249,12 +251,12 @@ Every message goes through a shared **agent loop**:
 This keeps behavior consistent across channels and lets one runtime power interactive chat, scheduled work, web-triggered automation, and sub-agent execution.
 
 <p align="center">
-  <img src="docs/assets/readme/microclaw-architecture.svg" alt="MicroClaw architecture overview" width="96%" />
+  <img src="docs/assets/readme/mchact-architecture.svg" alt="mchact architecture overview" width="96%" />
 </p>
 
 ## Blog post
 
-For a deeper dive into the architecture and design decisions, read: **[Building MicroClaw: An Agentic AI Assistant in Rust That Lives in Your Chats](https://microclaw.ai/blog/building-microclaw)**
+For a deeper dive into the architecture and design decisions, read: **[Building mchact: An Agentic AI Assistant in Rust That Lives in Your Chats](https://mchact.ai/blog/building-mchact)**
 
 ## Features
 
@@ -323,10 +325,10 @@ node scripts/generate_docs_artifacts.mjs
 ## Memory
 
 <p align="center">
-  <img src="docs/assets/readme/memory-architecture.svg" alt="MicroClaw memory architecture diagram" width="92%" />
+  <img src="docs/assets/readme/memory-architecture.svg" alt="mchact memory architecture diagram" width="92%" />
 </p>
 
-MicroClaw maintains persistent memory via `AGENTS.md` files:
+mchact maintains persistent memory via `AGENTS.md` files:
 
 ```
 <data_dir>/runtime/groups/
@@ -339,7 +341,7 @@ MicroClaw maintains persistent memory via `AGENTS.md` files:
 
 Memory is loaded into the system prompt on every request. The model can read and update memory through tools -- tell it to "remember that I prefer Python" and it will persist across sessions.
 
-MicroClaw also keeps structured memory rows in SQLite (`memories` table):
+mchact also keeps structured memory rows in the configured database backend (`memories` table; SQLite or PostgreSQL):
 - `write_memory` persists to file memory and structured memory
 - Background reflector extracts durable facts incrementally and deduplicates
 - Explicit "remember ..." commands use a deterministic fast path (direct structured-memory upsert)
@@ -348,12 +350,12 @@ MicroClaw also keeps structured memory rows in SQLite (`memories` table):
 
 Optional memory MCP backend:
 - If MCP config includes a server exposing both `memory_query` and `memory_upsert`, structured-memory operations prefer that MCP server.
-- If MCP is not configured, unavailable, or returns invalid payloads, MicroClaw automatically falls back to built-in SQLite memory behavior.
+- If MCP is not configured, unavailable, or returns invalid payloads, mchact automatically falls back to built-in DataStore memory behavior.
 - Fallback is per operation. External-provider failures are classified as `timeout`, `transport`, `invalid_payload`, or `unsupported_operation` in health/self-check output.
-- Startup runs a lightweight probe against the external provider. If it fails, foreground memory operations can still continue through SQLite fallback.
-- This mode favors availability over strict cross-store consistency: SQLite fallback writes are not automatically backfilled into the external provider after recovery, and reflector background writes pause while the external provider is unhealthy to limit divergence.
+- Startup runs a lightweight probe against the external provider. If it fails, foreground memory operations can still continue through DataStore fallback.
+- This mode favors availability over strict cross-store consistency: DataStore fallback writes are not automatically backfilled into the external provider after recovery, and reflector background writes pause while the external provider is unhealthy to limit divergence.
 
-When built with `--features sqlite-vec` and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
+When built with `--features vector-search` (SQLite + sqlite-vec) or `--features postgres-vector` (PostgreSQL + pgvector) and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
 
 `/usage` now includes a **Memory Observability** section (and Web UI panel) showing:
 - memory pool health (active/archived/low-confidence)
@@ -362,7 +364,7 @@ When built with `--features sqlite-vec` and embedding config is set, structured-
 
 ### Chat Identity Mapping
 
-MicroClaw now stores a channel-scoped identity for chats:
+mchact now stores a channel-scoped identity for chats:
 
 - `internal chat_id`: SQLite primary key used by sessions/messages/tasks
 - `channel + external_chat_id`: source chat identity from Telegram/Discord/Slack/Feishu/Weixin/IRC/Web
@@ -386,10 +388,10 @@ LIMIT 50;
 ## Skills
 
 <p align="center">
-  <img src="docs/assets/readme/skills-lifecycle.svg" alt="MicroClaw skill lifecycle diagram" width="92%" />
+  <img src="docs/assets/readme/skills-lifecycle.svg" alt="mchact skill lifecycle diagram" width="92%" />
 </p>
 
-MicroClaw supports the [Anthropic Agent Skills](https://github.com/anthropics/skills) standard. Skills are modular packages that give the bot specialized capabilities for specific tasks.
+mchact supports the [Anthropic Agent Skills](https://github.com/anthropics/skills) standard. Skills are modular packages that give the bot specialized capabilities for specific tasks.
 
 ```
 <data_dir>/skills/
@@ -424,7 +426,7 @@ Unavailable skills are filtered automatically by platform/dependencies, so unsup
 
 ## Plugins
 
-MicroClaw supports manifest-based plugins for:
+mchact supports manifest-based plugins for:
 
 - Slash commands (for example `/uptime`, `/announce hello`)
 - Dynamic tools exposed to the agent loop
@@ -439,7 +441,7 @@ Optional override:
 ```yaml
 plugins:
   enabled: true
-  dir: "./microclaw.data/plugins"
+  dir: "./mchact.data/plugins"
 ```
 
 Plugin admin commands (control chats):
@@ -474,7 +476,7 @@ Command handling rules:
 
 ## MCP
 
-MicroClaw supports MCP servers configured in `<data_dir>/mcp.json` and optional fragments in `<data_dir>/mcp.d/*.json` with protocol negotiation and configurable transport.
+mchact supports MCP servers configured in `<data_dir>/mcp.json` and optional fragments in `<data_dir>/mcp.d/*.json` with protocol negotiation and configurable transport.
 
 - Default protocol version: `2025-11-05` (overridable globally or per server)
 - Supported transports: `stdio`, `streamable_http`
@@ -561,7 +563,7 @@ Look for log lines like `MCP server '...' connected (...)`.
 
 ### macOS Desktop Automation with Peekaboo MCP
 
-[Peekaboo](https://github.com/steipete/Peekaboo) is a macOS desktop automation MCP server. MicroClaw can use it directly via `stdio` transport (no runtime code changes needed).
+[Peekaboo](https://github.com/steipete/Peekaboo) is a macOS desktop automation MCP server. mchact can use it directly via `stdio` transport (no runtime code changes needed).
 
 ```sh
 mkdir -p <data_dir>/mcp.d
@@ -584,7 +586,7 @@ cp mcp.peekaboo.example.json <data_dir>/mcp.d/peekaboo.json
 
 ### Windows Desktop Automation Options
 
-MicroClaw can also consume Windows desktop automation MCP servers via `stdio`.
+mchact can also consume Windows desktop automation MCP servers via `stdio`.
 
 ```sh
 mkdir -p <data_dir>/mcp.d
@@ -595,12 +597,12 @@ cp mcp.windows.desktop.example.json <data_dir>/mcp.d/windows-desktop.json
 - `pywinauto` (native Windows desktop UI automation, stdio MCP)
 - optional `playwright` MCP for browser automation on Windows
 
-Note: some Windows MCP projects expose only `sse` transport. MicroClaw runtime currently supports `stdio` and `streamable_http` transports only, so SSE-only servers need a protocol bridge before use.
+Note: some Windows MCP projects expose only `sse` transport. mchact runtime currently supports `stdio` and `streamable_http` transports only, so SSE-only servers need a protocol bridge before use.
 
 ## Plan & Execute
 
 <p align="center">
-  <img src="docs/assets/readme/plan-execute.svg" alt="MicroClaw plan and execute diagram" width="92%" />
+  <img src="docs/assets/readme/plan-execute.svg" alt="mchact plan and execute diagram" width="92%" />
 </p>
 
 For complex, multi-step tasks, the bot can create a plan and track progress:
@@ -620,7 +622,7 @@ Todo lists are stored at `<data_dir>/runtime/groups/{chat_id}/TODO.json` and per
 ## Scheduling
 
 <p align="center">
-  <img src="docs/assets/readme/task-scheduler.svg" alt="MicroClaw scheduling flow diagram" width="92%" />
+  <img src="docs/assets/readme/task-scheduler.svg" alt="mchact scheduling flow diagram" width="92%" />
 </p>
 
 The bot supports scheduled tasks via natural language:
@@ -640,19 +642,19 @@ Manage tasks with natural language:
 
 ## Local Web UI (cross-channel history)
 
-When `web_enabled: true`, MicroClaw serves a local Web UI (default `http://127.0.0.1:10961`).
+When `web_enabled: true`, mchact serves a local Web UI (default `http://127.0.0.1:10961`).
 
-- Session list includes chats from all channels stored in SQLite (`telegram`, `discord`, `slack`, `feishu`, `irc`, `web`)
+- Session list includes chats from all channels stored in the DB (`telegram`, `discord`, `slack`, `feishu`, `irc`, `web`)
 - You can review and manage history (refresh / clear context / delete)
 - Non-web channels are read-only in Web UI by default (send from source channel)
 - If there are no sessions yet, Web UI auto-generates a new key like `session-YYYYMMDDHHmmss`
-- The first message in that session automatically persists it in SQLite
-- If no Web operator password exists, MicroClaw initializes a temporary default password `helloworld` and prompts you to change it after sign-in (you can skip temporarily)
+- The first message in that session automatically persists it in the configured DB backend
+- If no Web operator password exists, mchact initializes a temporary default password `helloworld` and prompts you to change it after sign-in (you can skip temporarily)
 - Password reset helpers:
-  - `microclaw web` (show usage)
-  - `microclaw web password <value>`
-  - `microclaw web password-generate`
-  - `microclaw web password-clear`
+  - `mchact web` (show usage)
+  - `mchact web password <value>`
+  - `mchact web password-generate`
+  - `mchact web password-clear`
 
 ### HTTP Request Trigger (headless automation)
 
@@ -717,7 +719,7 @@ Async streaming response (`/api/send_stream` or `/api/chat_stream`):
 Consume SSE events:
 ```sh
 curl -N "http://127.0.0.1:10961/api/stream?run_id=<RUN_ID>" \
-  -H "Authorization: Bearer $MICROCLAW_API_KEY"
+  -H "Authorization: Bearer $MCHACT_API_KEY"
 ```
 
 Mission Control / OpenClaw-style WebSocket bridge:
@@ -817,25 +819,25 @@ Behavior notes:
 Local gateway smoke tests:
 
 ```sh
-MICROCLAW_GATEWAY_TOKEN=mc_... microclaw gateway call health
-MICROCLAW_GATEWAY_TOKEN=mc_... microclaw gateway call status
-MICROCLAW_GATEWAY_TOKEN=mc_... microclaw gateway call sessions.setLabel \
+MCHACT_GATEWAY_TOKEN=mc_... mchact gateway call health
+MCHACT_GATEWAY_TOKEN=mc_... mchact gateway call status
+MCHACT_GATEWAY_TOKEN=mc_... mchact gateway call sessions.setLabel \
   --params '{"sessionKey":"ops-bot","label":"Ops"}'
-MICROCLAW_GATEWAY_TOKEN=mc_... microclaw gateway call sessions.send \
+MCHACT_GATEWAY_TOKEN=mc_... mchact gateway call sessions.send \
   --params '{"sessionKey":"ops-bot","message":"status summary"}'
 ```
 
-`microclaw gateway call` resolves connection settings from:
+`mchact gateway call` resolves connection settings from:
 
-- `MICROCLAW_GATEWAY_URL`, `OPENCLAW_GATEWAY_URL`, `GATEWAY_URL`
-- `MICROCLAW_GATEWAY_HOST`, `OPENCLAW_GATEWAY_HOST`, `GATEWAY_HOST`
-- `MICROCLAW_GATEWAY_PORT`, `OPENCLAW_GATEWAY_PORT`, `GATEWAY_PORT`
-- `MICROCLAW_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `MICROCLAW_API_KEY`
+- `MCHACT_GATEWAY_URL`, `OPENCLAW_GATEWAY_URL`, `GATEWAY_URL`
+- `MCHACT_GATEWAY_HOST`, `OPENCLAW_GATEWAY_HOST`, `GATEWAY_HOST`
+- `MCHACT_GATEWAY_PORT`, `OPENCLAW_GATEWAY_PORT`, `GATEWAY_PORT`
+- `MCHACT_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, `MCHACT_API_KEY`
 
 Example:
 ```sh
 curl -sS http://127.0.0.1:10961/api/chat \
-  -H "Authorization: Bearer $MICROCLAW_API_KEY" \
+  -H "Authorization: Bearer $MCHACT_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"session_key":"ops-bot","sender_name":"automation","message":"status summary"}'
 ```
@@ -843,7 +845,7 @@ curl -sS http://127.0.0.1:10961/api/chat \
 OpenClaw-compatible webhook shape:
 ```sh
 curl -sS http://127.0.0.1:10961/hooks/agent \
-  -H "Authorization: Bearer $MICROCLAW_HOOKS_TOKEN" \
+  -H "Authorization: Bearer $MCHACT_HOOKS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize inbox","name":"Email","sessionKey":"hook:email:msg-123"}'
 ```
@@ -851,7 +853,7 @@ curl -sS http://127.0.0.1:10961/hooks/agent \
 Wake example:
 ```sh
 curl -sS http://127.0.0.1:10961/hooks/wake \
-  -H "Authorization: Bearer $MICROCLAW_HOOKS_TOKEN" \
+  -H "Authorization: Bearer $MCHACT_HOOKS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"New email received","mode":"now"}'
 ```
@@ -869,7 +871,7 @@ Nixpkgs upstream/update playbook:
 
 ## Setup
 
-> **New:** MicroClaw now includes an interactive setup wizard (`microclaw setup`) and will auto-launch it on first `start` when required config is missing.
+> **New:** mchact now includes an interactive setup wizard (`mchact setup`) and will auto-launch it on first `start` when required config is missing.
 
 ### 1. Create channel bot credentials
 
@@ -878,8 +880,8 @@ Enable at least one channel, or use Web UI (enabled by default).
 Telegram (optional):
 1. Open Telegram and search for [@BotFather](https://t.me/BotFather)
 2. Send `/newbot`
-3. Enter a display name for your bot (e.g. `My MicroClaw`)
-4. Enter a username (must end in `bot`, e.g. `my_microclaw_bot`)
+3. Enter a display name for your bot (e.g. `My mchact`)
+4. Enter a username (must end in `bot`, e.g. `my_mchact_bot`)
 5. BotFather will reply with a token like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz` -- save this as `telegram_bot_token` (legacy single-account) or `channels.telegram.accounts.<id>.bot_token` (recommended multi-account)
 
 Recommended BotFather settings (optional but useful):
@@ -932,7 +934,7 @@ Choose a provider and create an API key:
 ### 3. Configure (recommended: interactive Q&A)
 
 ```sh
-microclaw setup
+mchact setup
 ```
 
 <!-- Setup wizard screenshot placeholder -->
@@ -945,13 +947,13 @@ The `config` flow provides:
 - Better Ollama UX: local model auto-detection + sensible local defaults
 - Channel credentials are written in multi-account form by default (`channels.<channel>.default_account` + `channels.<channel>.accounts.main`)
 - Per-bot `soul_path` picker for Telegram/dynamic channels (auto-discovers `souls/*.md`, also supports manual filename/path input)
-- Safe `microclaw.config.yaml` save with automatic backup in `microclaw.config.backups/` (keeps latest 50)
+- Safe `mchact.config.yaml` save with automatic backup in `mchact.config.backups/` (keeps latest 50)
 - Auto-created directories for `data_dir` and `working_dir`
 
 If you prefer the full-screen TUI, you can still run:
 
 ```sh
-microclaw setup
+mchact setup
 ```
 
 Provider presets available in the wizard:
@@ -978,9 +980,9 @@ Provider presets available in the wizard:
 
 For Ollama, `llm_base_url` defaults to `http://127.0.0.1:11434/v1`, `api_key` is optional, and the interactive setup wizard can auto-detect locally installed models.
 
-For `openai-codex`, you can run `codex login` first and MicroClaw will read OAuth from `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`). You can also provide `api_key` when using an OpenAI-compatible proxy endpoint. The default base URL is `https://chatgpt.com/backend-api`.
+For `openai-codex`, you can run `codex login` first and mchact will read OAuth from `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`). You can also provide `api_key` when using an OpenAI-compatible proxy endpoint. The default base URL is `https://chatgpt.com/backend-api`.
 
-You can still configure manually with `microclaw.config.yaml`:
+You can still configure manually with `mchact.config.yaml`:
 
 ```
 telegram_bot_token: "123456:ABC-DEF1234..."
@@ -1048,7 +1050,7 @@ bot_username: "my_bot"
 #   irc:
 #     server: "irc.example.com"
 #     port: "6697"
-#     nick: "microclaw"
+#     nick: "mchact"
 #     channels: "#general,#ops"
 #     tls: "true"
 #     mention_required: "true"
@@ -1057,15 +1059,15 @@ api_key: "sk-ant-..."
 model: "claude-sonnet-4-20250514"
 # optional
 # llm_base_url: "https://..."
-data_dir: "~/.microclaw"
-working_dir: "~/.microclaw/working_dir"
+data_dir: "~/.mchact"
+working_dir: "~/.mchact/working_dir"
 working_dir_isolation: "chat" # optional; defaults to "chat" if omitted
 sandbox:
   mode: "off" # optional; default off. set "all" to run bash in a container sandbox
 max_document_size_mb: 100
 memory_token_budget: 1500
 timezone: "UTC"
-# optional semantic memory runtime config (requires --features sqlite-vec build)
+# optional semantic memory runtime config (requires --features vector-search build)
 # embedding_provider: "openai"   # openai | ollama
 # embedding_api_key: "sk-..."
 # embedding_base_url: "https://api.openai.com/v1"
@@ -1076,49 +1078,64 @@ timezone: "UTC"
 ### 4. Run
 
 ```sh
-microclaw start
+mchact start
 ```
 
 ### 5. Run as persistent gateway service (optional)
 
 ```sh
-microclaw gateway install
-microclaw gateway status
-microclaw gateway status --json
+mchact gateway install
+mchact gateway status
+mchact gateway status --json
 ```
 
 Manage service lifecycle:
 
 ```sh
-microclaw gateway install --force
-microclaw gateway start
-microclaw gateway stop
-microclaw gateway restart
-microclaw gateway logs 200
-microclaw gateway uninstall
+mchact gateway install --force
+mchact gateway start
+mchact gateway stop
+mchact gateway restart
+mchact gateway logs 200
+mchact gateway uninstall
 ```
 
 Notes:
 - macOS uses `launchd` user agents.
 - Linux uses `systemd --user`.
-- Windows uses a native Windows Service hosted directly by `microclaw.exe`. Run gateway service commands from an elevated terminal, and make sure `microclaw.config.yaml` already exists before `microclaw gateway install`.
+- Windows uses a native Windows Service hosted directly by `mchact.exe`. Run gateway service commands from an elevated terminal, and make sure `mchact.config.yaml` already exists before `mchact gateway install`.
 - Runtime logs are written to `<data_dir>/runtime/logs/`.
-- macOS launchd stdout/stderr files are `microclaw-gateway.log` and `microclaw-gateway.error.log`.
+- macOS launchd stdout/stderr files are `mchact-gateway.log` and `mchact-gateway.error.log`.
 - Logs older than 30 days are deleted automatically.
 
 ### 6. Run as an ACP stdio server (optional)
 
-MicroClaw can also expose an Agent Client Protocol server over stdio:
+mchact can also expose an Agent Client Protocol server over stdio:
 
 ```sh
-microclaw acp
+mchact acp
 ```
 
-Use this mode when another local tool wants to talk to MicroClaw as a sessioned chat runtime over stdio instead of through Telegram, Discord, or the Web UI.
+Use this mode when another local tool wants to talk to mchact as a sessioned chat runtime over stdio instead of through Telegram, Discord, or the Web UI.
+
+## Database Backend
+
+mchact supports two storage backends, selected via `db_backend` in config:
+
+| Backend | Feature flag | When to use |
+|---------|-------------|-------------|
+| `sqlite` (default) | built-in | Single-node deployments; zero external dependencies; WAL mode for concurrent access |
+| `postgres` | `--features postgres` | Multi-node or production deployments; set `db_database_url` to a Postgres connection string |
+
+Vector search:
+- SQLite: build with `--features vector-search` (uses sqlite-vec)
+- PostgreSQL: build with `--features postgres-vector` (uses pgvector)
+
+Both backends share the same `DataStore` trait interface. The backend is selected at startup by `create_data_store()` in `main.rs`; all tools and the scheduler hold an `Arc<DynDataStore>` trait object.
 
 ## Configuration
 
-All configuration is via `microclaw.config.yaml`:
+All configuration is via `mchact.config.yaml`:
 
 | Key | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -1154,8 +1171,8 @@ All configuration is via `microclaw.config.yaml`:
 | `openai_compat_body_overrides` | No | `{}` | Global request-body overrides for OpenAI-compatible providers (`openai`, `openrouter`, `deepseek`, `ollama`, etc.) |
 | `openai_compat_body_overrides_by_provider` | No | `{}` | Provider-specific OpenAI-compatible request-body overrides (keyed by provider name, case-insensitive) |
 | `openai_compat_body_overrides_by_model` | No | `{}` | Model-specific OpenAI-compatible request-body overrides (keyed by exact model name) |
-| `data_dir` | No | `~/.microclaw` | Data root (`runtime` data in `data_dir/runtime`, skills in `data_dir/skills`) |
-| `working_dir` | No | `~/.microclaw/working_dir` | Default working directory for tool operations; relative paths in `bash/read_file/write_file/edit_file/glob/grep` resolve from here |
+| `data_dir` | No | `~/.mchact` | Data root (`runtime` data in `data_dir/runtime`, skills in `data_dir/skills`) |
+| `working_dir` | No | `~/.mchact/working_dir` | Default working directory for tool operations; relative paths in `bash/read_file/write_file/edit_file/glob/grep` resolve from here |
 | `working_dir_isolation` | No | `chat` | Working directory isolation mode for `bash/read_file/write_file/edit_file/glob/grep`: `shared` uses `working_dir/shared`, `chat` isolates each chat under `working_dir/chat/<channel>/<chat_id>` |
 | `high_risk_tool_user_confirmation_required` | No | `true` | Require explicit user confirmation before high-risk tool execution (for example `bash`) |
 | `sandbox.mode` | No | `off` | Container sandbox mode for bash tool execution: `off` runs on host; `all` routes bash commands into docker containers |
@@ -1179,11 +1196,11 @@ All configuration is via `microclaw.config.yaml`:
 | `control_chat_ids` | No | `[]` | Chat IDs that can perform cross-chat actions (send_message/schedule/export/memory global/todo) |
 | `max_session_messages` | No | `40` | Message count threshold that triggers context compaction |
 | `compact_keep_recent` | No | `20` | Number of recent messages to keep verbatim during compaction |
-| `embedding_provider` | No | unset | Runtime embedding provider (`openai` or `ollama`) for semantic memory retrieval; requires `--features sqlite-vec` build |
+| `embedding_provider` | No | unset | Runtime embedding provider (`openai` or `ollama`) for semantic memory retrieval; requires `--features vector-search` build |
 | `embedding_api_key` | No | unset | API key for embedding provider (optional for `ollama`) |
 | `embedding_base_url` | No | provider default | Optional base URL override for embedding provider |
 | `embedding_model` | No | provider default | Embedding model ID |
-| `embedding_dim` | No | provider default | Embedding vector dimension for sqlite-vec index initialization |
+| `embedding_dim` | No | provider default | Embedding vector dimension for vector-search index initialization |
 | `channels.slack.default_account` | No | unset | Default Slack account ID in multi-account mode |
 | `channels.slack.accounts.<id>.bot_token` | No* | unset | Slack bot token for a specific account |
 | `channels.slack.accounts.<id>.app_token` | No* | unset | Slack app token (Socket Mode) for a specific account |
@@ -1204,7 +1221,7 @@ All configuration is via `microclaw.config.yaml`:
 | `channels.irc.port` | No | `"6667"` | IRC server port |
 | `channels.irc.nick` | No* | unset | IRC bot nick |
 | `channels.irc.username` | No | unset | IRC username (defaults to nick) |
-| `channels.irc.real_name` | No | `"MicroClaw"` | IRC real name (sent in USER command) |
+| `channels.irc.real_name` | No | `"mchact"` | IRC real name (sent in USER command) |
 | `channels.irc.channels` | No* | unset | Comma-separated channel list (for example `#general,#ops`) |
 | `channels.irc.password` | No | unset | Optional IRC server password |
 | `channels.irc.model` | No | unset | Optional model override for IRC bot |
@@ -1214,8 +1231,8 @@ All configuration is via `microclaw.config.yaml`:
 | `channels.irc.tls_danger_accept_invalid_certs` | No | `"false"` | Accept invalid TLS certs (testing only) |
 
 Path compatibility policy:
-- If `data_dir` / `skills_dir` / `working_dir` are already configured, MicroClaw keeps using those configured paths.
-- If these fields are not configured, defaults are `data_dir=~/.microclaw`, `skills_dir=<data_dir>/skills`, `working_dir=~/.microclaw/working_dir`.
+- If `data_dir` / `skills_dir` / `working_dir` are already configured, mchact keeps using those configured paths.
+- If these fields are not configured, defaults are `data_dir=~/.mchact`, `skills_dir=<data_dir>/skills`, `working_dir=~/.mchact/working_dir`.
 
 `*` At least one channel configuration must be enabled; `web_enabled` is on by default.
 
@@ -1250,7 +1267,7 @@ openai_compat_body_overrides_by_model:
 Notes:
 - `provider` keys are normalized to lowercase (`OPENAI` and `openai` are equivalent).
 - `model` keys are exact-match after trimming.
-- Runtime-controlled fields like stream mode and tool payload may still be set by MicroClaw for the active request path.
+- Runtime-controlled fields like stream mode and tool payload may still be set by mchact for the active request path.
 
 ## Docker Sandbox
 
@@ -1259,8 +1276,8 @@ Use this when you want `bash` tool calls to run in Docker containers instead of 
 Quick config:
 
 ```sh
-microclaw setup --enable-sandbox
-microclaw doctor sandbox
+mchact setup --enable-sandbox
+mchact doctor sandbox
 ```
 
 Or configure manually:
@@ -1273,11 +1290,11 @@ sandbox:
   # optional capability overrides (applies to hardened/standard)
   # cap_add: ["SETUID", "SETGID", "CHOWN"]
   image: "ubuntu:25.10"
-  container_prefix: "microclaw-sandbox"
+  container_prefix: "mchact-sandbox"
   no_network: true
   require_runtime: true
   # optional external allowlist file
-  # mount_allowlist_path: "~/.microclaw/sandbox-mount-allowlist.txt"
+  # mount_allowlist_path: "~/.mchact/sandbox-mount-allowlist.txt"
 ```
 
 How to test:
@@ -1285,7 +1302,7 @@ How to test:
 ```sh
 docker info
 docker run --rm ubuntu:25.10 echo ok
-microclaw start
+mchact start
 ```
 
 Then ask the agent to run:
@@ -1304,8 +1321,8 @@ Notes:
   - `require_runtime: false` -> fallback to host with warning.
   - `require_runtime: true` -> command fails fast.
 - Optional hardening:
-  - `~/.microclaw/sandbox-mount-allowlist.txt` for sandbox mount roots.
-  - `~/.microclaw/sandbox-path-allowlist.txt` for file tool path roots.
+  - `~/.mchact/sandbox-mount-allowlist.txt` for sandbox mount roots.
+  - `~/.mchact/sandbox-path-allowlist.txt` for file tool path roots.
 
 Working directory guidance:
 - `bash` runs inside the current chat working directory under its `tmp/` subdirectory.
@@ -1393,11 +1410,11 @@ Bot: Port 5433.
 
 ```
 crates/
-    microclaw-core/      # Shared error/types/text modules
-    microclaw-storage/   # SQLite DB + memory domain + usage reporting
-    microclaw-tools/     # Tool runtime primitives + sandbox + helper engines
-    microclaw-channels/  # Channel abstractions and routing boundary
-    microclaw-app/       # App-level support modules (logging, builtin skills, transcribe)
+    mchact-core/      # Shared error/types/text modules
+    mchact-storage/   # DataStore trait (SQLite + PostgreSQL drivers) + memory domain + usage reporting
+    mchact-tools/     # Tool runtime primitives + sandbox + helper engines
+    mchact-channels/  # Channel abstractions and routing boundary
+    mchact-app/       # App-level support modules (logging, builtin skills, transcribe)
 
 src/
     main.rs              # CLI entry point
@@ -1411,17 +1428,18 @@ src/
 ```
 
 Key design decisions:
-- **Session resume** persists full message history (including tool blocks) in SQLite; context compaction summarizes old messages to stay within limits
+- **Session resume** persists full message history (including tool blocks) in the configured DB backend; context compaction summarizes old messages to stay within limits
 - **Provider abstraction** with native Anthropic + OpenAI-compatible endpoints
-- **SQLite with WAL mode** for concurrent read/write from async context
+- **Dual DB backends**: SQLite (WAL mode, bundled, zero-ops) or PostgreSQL (via `db_backend: "postgres"` and `db_database_url`)
+- **`Arc<DynDataStore>`** trait object shared across tools and scheduler for backend-agnostic, thread-safe DB access; backend selected at startup by `create_data_store()` factory
+- **ObjectStorage trait** routes all file data (SOUL.md, archives, TODO, skills, hooks, media) through a single shared instance (local, S3, Azure Blob, or GCS); channel inbound files deduped and tracked via `MediaManager.store_file()`
 - **Exponential backoff** on 429 rate limits (3 retries)
 - **Message splitting** for long channel responses
-- **`Arc<Database>`** shared across tools and scheduler for thread-safe DB access
 - **Continuous typing indicator** via a spawned task that sends typing action every 4 seconds
 
 ## Adding a New Platform Adapter
 
-MicroClaw's core loop is channel-agnostic. A new platform integration should mainly be an adapter layer:
+mchact's core loop is channel-agnostic. A new platform integration should mainly be an adapter layer:
 
 1. Implement inbound mapping from platform events into canonical chat inputs (`chat_id`, sender, chat type, content blocks).
 2. Reuse the shared `process_with_agent` flow instead of creating a platform-specific agent loop.
@@ -1433,7 +1451,7 @@ MicroClaw's core loop is channel-agnostic. A new platform integration should mai
 
 ## Observability (Langfuse)
 
-MicroClaw supports OpenTelemetry (OTLP)-based observability and provides first-class integration with [Langfuse](https://langfuse.com/). You can trace complete agent runs (`agent_run`), inspect `llm_generation` and `tool_execution` spans, and monitor token usage.
+mchact supports OpenTelemetry (OTLP)-based observability and provides first-class integration with [Langfuse](https://langfuse.com/). You can trace complete agent runs (`agent_run`), inspect `llm_generation` and `tool_execution` spans, and monitor token usage.
 
 ### 5-minute quick start (first-time users)
 
@@ -1443,15 +1461,15 @@ MicroClaw supports OpenTelemetry (OTLP)-based observability and provides first-c
 2. **Create a Langfuse project** and copy:
    - `langfuse_public_key` (`pk-lf-...`)
    - `langfuse_secret_key` (`sk-lf-...`)
-3. **Configure MicroClaw** in `microclaw.config.yaml`
-4. **Restart MicroClaw**
+3. **Configure mchact** in `mchact.config.yaml`
+4. **Restart mchact**
 5. **Send one test message** in Web/Telegram/Discord and open Langfuse Traces
 
 ### Recommended config
 
 ```yaml
 observability:
-  service_name: "microclaw-agent"
+  service_name: "mchact-agent"
   otlp_tracing_enabled: true
   langfuse_host: "https://cloud.langfuse.com" # or "http://127.0.0.1:3000" for self-hosted
   langfuse_public_key: "pk-lf-..."
@@ -1463,10 +1481,10 @@ observability:
 
 ### Verify it is working
 
-- Start MicroClaw with debug logs:
+- Start mchact with debug logs:
 
 ```sh
-RUST_LOG=info,microclaw_observability=debug,opentelemetry_sdk=info microclaw start
+RUST_LOG=info,mchact_observability=debug,opentelemetry_sdk=info mchact start
 ```
 
 - Look for:
@@ -1492,10 +1510,10 @@ export no_proxy=127.0.0.1,localhost,<your-langfuse-host>
 ```
 
 - **Docker networking confusion**
-  - If MicroClaw runs in container, `127.0.0.1` points to that container, not your host
+  - If mchact runs in container, `127.0.0.1` points to that container, not your host
   - Use a container-reachable hostname (for example `http://langfuse-web:3000`)
 - **No traces after config change**
-  - Restart MicroClaw after editing config
+  - Restart mchact after editing config
   - Send a fresh test request
 - **Too noisy OpenTelemetry timer debug logs**
   - Raise SDK log level: `opentelemetry_sdk=info`
@@ -1521,13 +1539,13 @@ export no_proxy=127.0.0.1,localhost,<your-langfuse-host>
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=microclaw/microclaw&type=Date)](https://star-history.com/#microclaw/microclaw&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=mchact/mchact&type=Date)](https://star-history.com/#mchact/mchact&Date)
 
 ## Contributors
 
 Thanks to everyone who has contributed to this project.
 
-[![Contributors](https://contrib.rocks/image?repo=microclaw/microclaw)](https://github.com/microclaw/microclaw/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=mchact/mchact)](https://github.com/mchact/mchact/graphs/contributors)
 
 ## License
 

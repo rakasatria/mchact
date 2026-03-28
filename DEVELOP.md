@@ -1,12 +1,12 @@
-# MicroClaw Developer Guide
+# mchact Developer Guide
 
 ## Quick start
 
 ```sh
 git clone <repo-url>
-cd microclaw
-cp microclaw.config.example.yaml microclaw.config.yaml
-# Edit microclaw.config.yaml with your credentials
+cd mchact
+cp mchact.config.example.yaml mchact.config.yaml
+# Edit mchact.config.yaml with your credentials
 cargo run -- start
 ```
 
@@ -16,17 +16,17 @@ cargo run -- start
 - At least one enabled channel adapter (Telegram bot token from @BotFather, Discord bot token from Discord Developer Portal, Slack app/bot tokens, Feishu/Lark app credentials, or Web UI)
 - A model provider API key (Anthropic or OpenAI-compatible)
 
-No other external dependencies. SQLite is bundled via `rusqlite`.
+No other external dependencies. SQLite is bundled via `rusqlite`; PostgreSQL is optional and enabled via the `postgres` feature and `db_backend: "postgres"` in config.
 
 ## Project structure
 
 ```
 crates/
-    microclaw-core/      # Shared error/types/text modules
-    microclaw-storage/   # SQLite + memory + usage reporting
-    microclaw-tools/     # Tool runtime primitives + sandbox
-    microclaw-channels/  # Channel abstraction boundary
-    microclaw-app/       # App support modules (logging/skills/transcribe)
+    mchact-core/      # Shared error/types/text modules
+    mchact-storage/   # DataStore trait (SQLite + PostgreSQL drivers) + memory + usage reporting
+    mchact-tools/     # Tool runtime primitives + sandbox
+    mchact-channels/  # Channel abstraction boundary
+    mchact-app/       # App support modules (logging/skills/transcribe)
 
 src/
     main.rs              # CLI entrypoint
@@ -47,7 +47,7 @@ src/
 Platform message (via adapter)
        |
        v
-    Store in SQLite (message + chat metadata)
+    Store in DB via DataStore (message + chat metadata; SQLite or PostgreSQL)
        |
        v
     Determine response: private=always, group=@mention only
@@ -78,7 +78,7 @@ Platform message (via adapter)
        3. If stop_reason == "end_turn" -> extract text -> return
        |
        v
-    Strip image base64 data, save session to SQLite
+    Strip image base64 data, save session to DB (via DataStore)
        |
        v
     Abort typing indicator
@@ -87,7 +87,7 @@ Platform message (via adapter)
     Send response (split at channel limits: Telegram 4096 / Discord 2000 / Slack 4000 / Feishu 4000)
        |
        v
-    Store bot response in SQLite
+    Store bot response in DB (via DataStore)
 ```
 
 The same core loop is reused across adapters. Adding a new platform should primarily require a new ingress/egress adapter that maps platform events into the shared `process_with_agent` flow.
@@ -97,9 +97,9 @@ The same core loop is reused across adapters. Adding a new platform should prima
 | Type | Location | Description |
 |------|----------|-------------|
 | `AppState` | `runtime.rs` | Shared runtime state for all adapters |
-| `Database` | `microclaw_storage::db` | SQLite wrapper with `Mutex<Connection>` |
+| `DynDataStore` | `mchact_storage` | `DataStore` trait object (SQLite or PostgreSQL backend) |
 | `ToolRegistry` | `tools/mod.rs` | Holds all `Box<dyn Tool>`, dispatches by name |
-| `Tool` trait | `microclaw_tools::runtime` | `name()`, `definition()`, `execute()` |
+| `Tool` trait | `mchact_tools::runtime` | `name()`, `definition()`, `execute()` |
 | `LlmProvider` | `llm.rs` | Provider abstraction for Anthropic and OpenAI-compatible APIs |
 | `MemoryManager` | `memory.rs` | AGENTS.md file memory reader/writer |
 
@@ -109,11 +109,11 @@ The same core loop is reused across adapters. Adding a new platform should prima
 - Telegram handler has `Arc<AppState>` via dptree dependencies
 - Discord handler has `Arc<AppState>` via serenity event handler state
 - Scheduler gets `Arc<AppState>` at spawn time
-- Tools that need `Bot` or `Database` hold their own clones/arcs (passed at construction)
+- Tools that need `Bot` or `Arc<DynDataStore>` hold their own clones/arcs (passed at construction)
 
 ### Multi-chat permission model
 
-- `control_chat_ids` in `microclaw.config.yaml` defines privileged chats.
+- `control_chat_ids` in `mchact.config.yaml` defines privileged chats.
 - Tool execution receives trusted caller context from `process_with_agent` (not from model-provided args).
 - Non-control chats can only operate on their own `chat_id`.
 - Control chats can perform cross-chat actions.
@@ -180,7 +180,7 @@ The same core loop is reused across adapters. Adding a new platform should prima
 use async_trait::async_trait;
 use serde_json::json;
 use crate::tools::{schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 pub struct MyTool;
 
@@ -224,14 +224,14 @@ impl Tool for MyTool {
 Box::new(my_tool::MyTool),
 ```
 
-If your tool needs shared state (like `Bot` or `Arc<Database>`), add a constructor:
+If your tool needs shared state (like `Bot` or `Arc<DynDataStore>`), add a constructor:
 ```rust
 pub struct MyTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl MyTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         MyTool { db }
     }
 }
@@ -279,11 +279,11 @@ Cron expressions use the `cron` crate's 6-field format: `sec min hour dom month 
 # Verbose logging
 RUST_LOG=debug cargo run -- start
 
-# Just microclaw logs
-RUST_LOG=microclaw=debug cargo run -- start
+# Just mchact logs
+RUST_LOG=mchact=debug cargo run -- start
 
 # Check database directly
-sqlite3 microclaw.data/runtime/microclaw.db
+sqlite3 mchact.data/runtime/mchact.db
 sqlite> SELECT * FROM messages ORDER BY timestamp DESC LIMIT 10;
 sqlite> SELECT * FROM scheduled_tasks;
 sqlite> SELECT * FROM chats;
@@ -293,15 +293,15 @@ sqlite> SELECT * FROM chats;
 
 | Task | How |
 |------|-----|
-| Change the model | Set `model` in `microclaw.config.yaml` based on `llm_provider` |
-| Increase context window | Set `max_history_messages: 100` in `microclaw.config.yaml` (uses more tokens) |
-| Increase tool iterations | Set `max_tool_iterations: 200` in `microclaw.config.yaml` |
-| Reset memory | Delete files under `microclaw.data/runtime/groups/` |
-| Reset all data | Delete the `microclaw.data/` directory |
-| Tune compaction threshold | Set `max_session_messages: 60` in `microclaw.config.yaml` (higher = more context before compaction) |
-| Keep more recent messages | Set `compact_keep_recent: 30` in `microclaw.config.yaml` (more recent messages kept verbatim) |
-| Reset a chat session | Send `/reset` in the chat, or: `sqlite3 microclaw.data/runtime/microclaw.db "DELETE FROM sessions WHERE chat_id=XXXX;"` |
-| Cancel all scheduled tasks | `sqlite3 microclaw.data/runtime/microclaw.db "UPDATE scheduled_tasks SET status='cancelled' WHERE status='active';"` |
+| Change the model | Set `model` in `mchact.config.yaml` based on `llm_provider` |
+| Increase context window | Set `max_history_messages: 100` in `mchact.config.yaml` (uses more tokens) |
+| Increase tool iterations | Set `max_tool_iterations: 200` in `mchact.config.yaml` |
+| Reset memory | Delete files under `mchact.data/runtime/groups/` |
+| Reset all data | Delete the `mchact.data/` directory |
+| Tune compaction threshold | Set `max_session_messages: 60` in `mchact.config.yaml` (higher = more context before compaction) |
+| Keep more recent messages | Set `compact_keep_recent: 30` in `mchact.config.yaml` (more recent messages kept verbatim) |
+| Reset a chat session | Send `/reset` in the chat, or: `sqlite3 mchact.data/runtime/mchact.db "DELETE FROM sessions WHERE chat_id=XXXX;"` |
+| Cancel all scheduled tasks | `sqlite3 mchact.data/runtime/mchact.db "UPDATE scheduled_tasks SET status='cancelled' WHERE status='active';"` |
 
 ## Build
 
@@ -312,7 +312,7 @@ cargo run -- start       # Run dev build
 cargo run -- help        # Show CLI help
 ```
 
-The release binary is fully self-contained -- no runtime dependencies, no database server, no config files beyond `microclaw.config.yaml`.
+The SQLite release binary is fully self-contained — no runtime dependencies, no database server, no config files beyond `mchact.config.yaml`. PostgreSQL builds require an external Postgres instance configured via `db_database_url`.
 
 ## Dependencies
 
@@ -322,7 +322,7 @@ The release binary is fully self-contained -- no runtime dependencies, no databa
 | serenity | 0.12 | Discord Gateway/API |
 | tokio | 1 | Async runtime |
 | reqwest | 0.12 | HTTP client (Anthropic API, web fetch/search) |
-| rusqlite | 0.32 | SQLite (bundled) |
+| rusqlite | 0.32 | SQLite (bundled; default backend) |
 | serde / serde_json | 1 | Serialization |
 | async-trait | 0.1 | Async trait support |
 | chrono | 0.4 | Date/time handling |

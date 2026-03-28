@@ -1,0 +1,7 @@
+transformers>=4.40.0
+httpx>=0.27.0
+wandb>=0.15.0
+# RL training (install separately):
+# pip install atroposlib tinker
+# See: https://github.com/NousResearch/atropos
+# See: https://github.com/thinking-machines-lab/tinker

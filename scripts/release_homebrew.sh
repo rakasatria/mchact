@@ -16,9 +16,9 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 REPO_DIR="$ROOT_DIR"
 TAP_DIR="$ROOT_DIR/tmp/homebrew-tap"
-TAP_REPO="microclaw/homebrew-tap"
-FORMULA_PATH="Formula/microclaw.rb"
-GITHUB_REPO="microclaw/microclaw"
+TAP_REPO="mchact/homebrew-tap"
+FORMULA_PATH="Formula/mchact.rb"
+GITHUB_REPO="mchact/mchact"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -157,7 +157,7 @@ cargo clean
 echo "Building release binary..."
 cargo build --release
 
-BINARY="target/release/microclaw"
+BINARY="target/release/mchact"
 if [ ! -f "$BINARY" ]; then
   echo "Binary not found: $BINARY" >&2
   exit 1
@@ -165,10 +165,10 @@ fi
 
 # --- Create tarball ---
 ARCH="$(detect_arch)"
-TARBALL_NAME="microclaw-$NEW_VERSION-${ARCH}-apple-darwin.tar.gz"
+TARBALL_NAME="mchact-$NEW_VERSION-${ARCH}-apple-darwin.tar.gz"
 TARBALL_PATH="target/release/$TARBALL_NAME"
 
-tar -czf "$TARBALL_PATH" -C target/release microclaw
+tar -czf "$TARBALL_PATH" -C target/release mchact
 echo "Created tarball: $TARBALL_PATH"
 
 SHA256=$(shasum -a 256 "$TARBALL_PATH" | awk '{print $1}')

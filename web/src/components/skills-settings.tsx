@@ -69,7 +69,7 @@ export function SkillsSettings() {
 
       <ConfigFieldCard
         label="Installed Skills"
-        description="Manage skills installed in your MicroClaw runtime. Toggling a skill applies changes immediately."
+        description="Manage skills installed in your mchact runtime. Toggling a skill applies changes immediately."
       >
 
         <div className="flex flex-col gap-2 mt-2">

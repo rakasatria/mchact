@@ -8,7 +8,7 @@ use crate::a2a::{
 };
 use crate::config::Config;
 use crate::http_client::default_llm_user_agent;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 pub struct A2AListPeersTool {
     config: Config,
@@ -99,7 +99,7 @@ impl Tool for A2ASendTool {
         ToolDefinition {
             name: self.name().into(),
             description:
-                "Send a task or question to a configured remote MicroClaw peer via the A2A HTTP protocol."
+                "Send a task or question to a configured remote mchact peer via the A2A HTTP protocol."
                     .into(),
             input_schema: schema_object(
                 json!({
@@ -176,7 +176,7 @@ impl Tool for A2ASendTool {
             .client
             .post(format!("{base_url}{A2A_MESSAGE_PATH}"))
             .timeout(std::time::Duration::from_secs(timeout_secs))
-            .header("x-microclaw-a2a-version", A2A_PROTOCOL_VERSION)
+            .header("x-mchact-a2a-version", A2A_PROTOCOL_VERSION)
             .json(&body);
         if let Some(token) = peer.bearer_token.as_deref() {
             request = request.bearer_auth(token);

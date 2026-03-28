@@ -1,6 +1,9 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use mchact_storage_backend::ObjectStorage;
 
 #[derive(Debug, Clone)]
 pub struct SkillMetadata {
@@ -86,6 +89,7 @@ struct SkillCompatibility {
 pub struct SkillManager {
     skills_dir: PathBuf,
     state_file: Option<PathBuf>,
+    storage: Option<Arc<dyn ObjectStorage>>,
 }
 
 const MAX_SKILLS_CATALOG_ITEMS: usize = 40;
@@ -98,6 +102,7 @@ impl SkillManager {
         SkillManager {
             skills_dir: PathBuf::from(skills_dir),
             state_file: None,
+            storage: None,
         }
     }
 
@@ -105,7 +110,13 @@ impl SkillManager {
         SkillManager {
             skills_dir: PathBuf::from(skills_dir),
             state_file: Some(PathBuf::from(runtime_dir).join(SKILLS_STATE_FILENAME)),
+            storage: None,
         }
+    }
+
+    pub fn with_storage(mut self, storage: Arc<dyn ObjectStorage>) -> Self {
+        self.storage = Some(storage);
+        self
     }
 
     #[allow(dead_code)]
@@ -114,6 +125,7 @@ impl SkillManager {
         SkillManager {
             skills_dir,
             state_file: None,
+            storage: None,
         }
     }
 
@@ -227,7 +239,7 @@ impl SkillManager {
                     .reason
                     .unwrap_or_else(|| "unknown availability failure".to_string());
                 return Err(format!(
-                    "Skill '{name}' is currently unavailable: {reason}\nRun `microclaw skill available --all` for full diagnostics."
+                    "Skill '{name}' is currently unavailable: {reason}\nRun `mchact skill available --all` for full diagnostics."
                 ));
             }
             let skill_md = skill.meta.dir_path.join("SKILL.md");
@@ -374,6 +386,18 @@ impl SkillManager {
     }
 
     fn read_state_file(&self) -> HashMap<String, bool> {
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let result = tokio::runtime::Handle::current()
+                .block_on(async move { storage.get("state/skills_state.json").await });
+            return match result {
+                Ok(bytes) => {
+                    let raw = String::from_utf8_lossy(&bytes);
+                    serde_json::from_str::<HashMap<String, bool>>(&raw).unwrap_or_default()
+                }
+                Err(_) => HashMap::new(),
+            };
+        }
         let Some(path) = self.state_file.as_ref() else {
             return HashMap::new();
         };
@@ -387,13 +411,20 @@ impl SkillManager {
     }
 
     fn write_state_file(&self, state: &HashMap<String, bool>) -> Result<(), String> {
+        let body = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+        if let Some(storage) = self.storage.as_ref() {
+            let storage = storage.clone();
+            let data = body.into_bytes();
+            return tokio::runtime::Handle::current()
+                .block_on(async move { storage.put("state/skills_state.json", data).await })
+                .map_err(|e| e.to_string());
+        }
         let Some(path) = self.state_file.as_ref() else {
             return Err("Skill state is not configured for this runtime.".to_string());
         };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let body = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
         std::fs::write(path, body).map_err(|e| e.to_string())
     }
 }
@@ -708,7 +739,7 @@ Instructions.
     #[test]
     fn test_build_skills_catalog_empty() {
         let dir =
-            std::env::temp_dir().join(format!("microclaw_skills_test_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_skills_test_{}", uuid::Uuid::new_v4()));
         let sm = SkillManager::new(dir.to_str().unwrap());
         let catalog = sm.build_skills_catalog();
         assert!(catalog.is_empty());
@@ -718,7 +749,7 @@ Instructions.
     #[test]
     fn test_build_skills_catalog_sorted_and_truncated() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_sorted_{}",
+            "mchact_skills_catalog_sorted_{}",
             uuid::Uuid::new_v4()
         ));
         let long_desc = "z".repeat(MAX_SKILL_DESCRIPTION_CHARS + 32);
@@ -754,7 +785,7 @@ ok
     #[test]
     fn test_build_skills_catalog_applies_item_cap() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_cap_{}",
+            "mchact_skills_catalog_cap_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -782,7 +813,7 @@ ok
     #[test]
     fn test_build_skills_catalog_enters_compact_mode_when_many_skills() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_compact_mode_{}",
+            "mchact_skills_catalog_compact_mode_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -809,7 +840,7 @@ ok
     #[test]
     fn test_list_skills_formatted_all_includes_unavailable_reasons() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_all_test_{}",
+            "mchact_skills_all_test_{}",
             uuid::Uuid::new_v4()
         ));
         let available = dir.join("available");
@@ -851,7 +882,7 @@ nope
     #[test]
     fn test_load_skill_checked_unavailable_has_diagnostic_hint() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_unavailable_test_{}",
+            "mchact_skills_unavailable_test_{}",
             uuid::Uuid::new_v4()
         ));
         let unavailable = dir.join("bad");
@@ -893,7 +924,7 @@ Use this skill to interact with Outline.
     #[test]
     fn test_disable_skill_is_runtime_scoped() {
         let base_dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_runtime_scoped_{}",
+            "mchact_skills_runtime_scoped_{}",
             uuid::Uuid::new_v4()
         ));
         let runtime_a = base_dir.join("runtime-a");
@@ -940,7 +971,7 @@ Use this skill.
     #[test]
     fn test_set_enabled_missing_skill_returns_error() {
         let base_dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_enable_missing_{}",
+            "mchact_skills_enable_missing_{}",
             uuid::Uuid::new_v4()
         ));
         let runtime = base_dir.join("runtime");

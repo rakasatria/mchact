@@ -50,7 +50,7 @@ export function ThreadPane({ adapter, initialMessages, runtimeKey }: ThreadPaneP
           }}
           strings={{
             composer: {
-              input: { placeholder: "Message MicroClaw..." },
+              input: { placeholder: "Message mchact..." },
             },
           }}
           assistantAvatar={{ fallback: "M" }}

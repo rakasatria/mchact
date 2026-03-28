@@ -1,7 +1,7 @@
 # Feature Completion PR Plan (Phase 0-5)
 
 Last Updated: 2026-02-19
-Owner: microclaw core team
+Owner: mchact core team
 
 ## Program Rules
 

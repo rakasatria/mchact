@@ -195,6 +195,6 @@ pub async fn api_put_mcp_config(
 
     Ok(Json(json!({
         "ok": true,
-        "message": "MCP config saved. Restart microclaw to apply changes."
+        "message": "MCP config saved. Restart mchact to apply changes."
     })))
 }

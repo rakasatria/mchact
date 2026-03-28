@@ -9,12 +9,12 @@ use crate::agent_engine::process_with_agent;
 use crate::agent_engine::AgentRequestContext;
 use crate::memory_service::apply_reflector_extractions;
 use crate::runtime::AppState;
-use microclaw_channels::channel::{
+use mchact_channels::channel::{
     deliver_and_store_bot_message, get_chat_routing, ChatRouting, ConversationKind,
 };
-use microclaw_core::llm_types::{Message, MessageContent, ResponseContentBlock};
-use microclaw_core::text::floor_char_boundary;
-use microclaw_storage::db::call_blocking;
+use mchact_core::llm_types::{Message, MessageContent, ResponseContentBlock};
+use mchact_core::text::floor_char_boundary;
+use mchact_storage::db::call_blocking;
 
 pub fn spawn_scheduler(state: Arc<AppState>) {
     tokio::spawn(async move {
@@ -308,7 +308,7 @@ CRITICAL — how to memorize bugs and problems:
   GOOD: "TODO: strictly follow TOOLS.md rules for every tool call"
 - The memory should tell the agent HOW TO BEHAVE CORRECTLY, never describe the broken behavior."#;
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 async fn backfill_embeddings(state: &Arc<AppState>) {
     if state.embedding.is_none() {
         return;
@@ -342,6 +342,12 @@ pub fn spawn_reflector(state: Arc<AppState>) {
             run_reflector(&state).await;
         }
     });
+}
+
+/// Spawn the knowledge processing background tasks (embed, observe, autogroup,
+/// retry sweep).  Delegates to [`crate::knowledge_scheduler::spawn_knowledge_processor`].
+pub fn spawn_knowledge_processor(state: Arc<AppState>) {
+    crate::knowledge_scheduler::spawn_knowledge_processor(state);
 }
 
 fn strip_reflector_thinking_tags(input: &str) -> String {
@@ -402,7 +408,7 @@ fn parse_reflector_json_array(text: &str) -> Result<Vec<serde_json::Value>, serd
 }
 
 async fn run_reflector(state: &Arc<AppState>) {
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     backfill_embeddings(state).await;
 
     let _ = call_blocking(state.db.clone(), move |db| db.archive_stale_memories(30)).await;

@@ -1,6 +1,6 @@
 //! Integration tests for configuration loading and validation.
 
-use microclaw::config::{Config, WorkingDirIsolation};
+use mchact::config::{Config, WorkingDirIsolation};
 
 /// Helper to create a minimal valid config for testing.
 fn minimal_config() -> Config {
@@ -13,18 +13,18 @@ fn minimal_config() -> Config {
         provider_presets: std::collections::HashMap::new(),
         llm_providers: std::collections::HashMap::new(),
         llm_base_url: None,
-        llm_user_agent: microclaw::http_client::default_llm_user_agent(),
+        llm_user_agent: mchact::http_client::default_llm_user_agent(),
         max_tokens: 8192,
         max_tool_iterations: 25,
         max_history_messages: 50,
         max_document_size_mb: 100,
         memory_token_budget: 1500,
-        data_dir: "./microclaw.data".into(),
+        data_dir: "./mchact.data".into(),
         skills_dir: None,
         working_dir: "./tmp".into(),
         working_dir_isolation: WorkingDirIsolation::Chat,
         high_risk_tool_user_confirmation_required: true,
-        sandbox: microclaw::config::SandboxConfig::default(),
+        sandbox: mchact::config::SandboxConfig::default(),
         openai_api_key: None,
         override_timezone: None,
         timezone: "UTC".into(),
@@ -41,8 +41,8 @@ fn minimal_config() -> Config {
         discord_no_mention: false,
         allow_group_slash_without_mention: false,
         show_thinking: false,
-        subagents: microclaw::config::SubagentConfig::default(),
-        a2a: microclaw::config::A2AConfig::default(),
+        subagents: mchact::config::SubagentConfig::default(),
+        a2a: mchact::config::A2AConfig::default(),
         openai_compat_body_overrides: std::collections::HashMap::new(),
         openai_compat_body_overrides_by_provider: std::collections::HashMap::new(),
         openai_compat_body_overrides_by_model: std::collections::HashMap::new(),
@@ -55,8 +55,8 @@ fn minimal_config() -> Config {
         web_run_history_limit: 512,
         web_session_idle_ttl_seconds: 300,
         web_fetch_validation:
-            microclaw_tools::web_content_validation::WebContentValidationConfig::default(),
-        web_fetch_url_validation: microclaw_tools::web_fetch::WebFetchUrlValidationConfig::default(
+            mchact_tools::web_content_validation::WebContentValidationConfig::default(),
+        web_fetch_url_validation: mchact_tools::web_fetch::WebFetchUrlValidationConfig::default(
         ),
         model_prices: vec![],
         embedding_provider: None,
@@ -68,8 +68,8 @@ fn minimal_config() -> Config {
         reflector_interval_mins: 15,
         soul_path: None,
         souls_dir: None,
-        clawhub: microclaw::config::ClawHubConfig::default(),
-        plugins: microclaw::plugins::PluginsConfig::default(),
+        clawhub: mchact::config::ClawHubConfig::default(),
+        plugins: mchact::plugins::PluginsConfig::default(),
         voice_provider: "openai".into(),
         voice_transcription_command: None,
         observability: None,
@@ -103,6 +103,44 @@ fn minimal_config() -> Config {
         vision_fallback_api_key: None,
         vision_fallback_base_url: "https://openrouter.ai/api/v1".into(),
         document_extraction_enabled: true,
+        // Training configuration
+        training_default_workers: 4,
+        training_default_batch_size: 10,
+        training_default_max_iterations: 10,
+        training_default_distribution: "default".into(),
+        training_output_dir: "./training-runs".into(),
+        training_compress_target_tokens: 15250,
+        training_compress_model: "google/gemini-3-flash-preview".into(),
+        training_compress_tokenizer: "moonshotai/Kimi-K2-Thinking".into(),
+        training_environments_dir: "./training/environments".into(),
+        training_distributions_file: "./training/distributions.yaml".into(),
+        skill_nudge_enabled: true,
+        skill_nudge_threshold_tool_calls: 10,
+        skill_nudge_threshold_turns: 15,
+        skill_nudge_threshold_duration_secs: 300,
+        storage_backend: "local".into(),
+        storage_cache_max_size_mb: 1024,
+        storage_s3_bucket: None,
+        storage_s3_region: None,
+        storage_s3_endpoint: None,
+        storage_s3_access_key_id: None,
+        storage_s3_secret_access_key: None,
+        storage_azure_container: None,
+        storage_azure_connection_string: None,
+        storage_azure_account_name: None,
+        storage_azure_account_key: None,
+        storage_gcs_bucket: None,
+        storage_gcs_credentials_path: None,
+        knowledge_embed_interval_mins: 5,
+        knowledge_embed_batch_size: 50,
+        knowledge_observe_interval_mins: 15,
+        knowledge_observe_batch_size: 20,
+        knowledge_autogroup_interval_mins: 60,
+        knowledge_autogroup_min_docs: 5,
+        knowledge_retry_delay_mins: 30,
+        knowledge_max_embedding_tokens: 8192,
+        db_backend: "sqlite".into(),
+        db_database_url: None,
     }
 }
 
@@ -147,8 +185,8 @@ llm_base_url: https://custom.api.com/v1
 max_tokens: 4096
 max_tool_iterations: 10
 max_history_messages: 100
-data_dir: /data/microclaw
-working_dir: /data/microclaw/tmp
+data_dir: /data/mchact
+working_dir: /data/mchact/tmp
 openai_api_key: sk-whisper
 timezone: Asia/Shanghai
 allowed_groups:
@@ -174,8 +212,8 @@ discord_allowed_channels:
     assert_eq!(config.max_tokens, 4096);
     assert_eq!(config.max_tool_iterations, 10);
     assert_eq!(config.max_history_messages, 100);
-    assert_eq!(config.data_dir, "/data/microclaw");
-    assert_eq!(config.working_dir, "/data/microclaw/tmp");
+    assert_eq!(config.data_dir, "/data/mchact");
+    assert_eq!(config.working_dir, "/data/mchact/tmp");
     assert_eq!(config.openai_api_key.as_deref(), Some("sk-whisper"));
     assert_eq!(config.timezone, "Asia/Shanghai");
     assert_eq!(config.allowed_groups, vec![111, 222]);
@@ -199,13 +237,13 @@ fn test_yaml_roundtrip() {
 #[test]
 fn test_data_dir_paths() {
     let mut config = minimal_config();
-    config.data_dir = "/opt/microclaw.data".into();
+    config.data_dir = "/opt/mchact.data".into();
 
     let runtime = std::path::PathBuf::from(config.runtime_data_dir());
     let skills = std::path::PathBuf::from(config.skills_data_dir());
 
-    assert!(runtime.ends_with(std::path::Path::new("microclaw.data").join("runtime")));
-    assert!(skills.ends_with(std::path::Path::new("microclaw.data").join("skills")));
+    assert!(runtime.ends_with(std::path::Path::new("mchact.data").join("runtime")));
+    assert!(skills.ends_with(std::path::Path::new("mchact.data").join("skills")));
 }
 
 #[test]

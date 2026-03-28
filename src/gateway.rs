@@ -14,23 +14,23 @@ use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-const LINUX_SERVICE_NAME: &str = "microclaw-gateway.service";
+const LINUX_SERVICE_NAME: &str = "mchact-gateway.service";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const MAC_LABEL: &str = "ai.microclaw.gateway";
+const MAC_LABEL: &str = "ai.mchact.gateway";
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-const WINDOWS_SERVICE_NAME: &str = "MicroClawGateway";
+const WINDOWS_SERVICE_NAME: &str = "mchactGateway";
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-const WINDOWS_SERVICE_DISPLAY_NAME: &str = "MicroClaw Gateway";
+const WINDOWS_SERVICE_DISPLAY_NAME: &str = "mchact Gateway";
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-const WINDOWS_SERVICE_DESCRIPTION: &str = "MicroClaw Gateway Service";
+const WINDOWS_SERVICE_DESCRIPTION: &str = "mchact Gateway Service";
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const WINDOWS_SERVICE_STATE_STOPPED: i64 = 1;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 const WINDOWS_SERVICE_STATE_RUNNING: i64 = 4;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const LOG_STDOUT_FILE: &str = "microclaw-gateway.log";
+const LOG_STDOUT_FILE: &str = "mchact-gateway.log";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-const LOG_STDERR_FILE: &str = "microclaw-gateway.error.log";
+const LOG_STDERR_FILE: &str = "mchact-gateway.error.log";
 const DEFAULT_LOG_LINES: usize = 200;
 
 #[derive(Debug, Clone)]
@@ -209,7 +209,7 @@ pub fn print_gateway_help() {
         r#"Gateway service management
 
 USAGE:
-    microclaw gateway <ACTION>
+    mchact gateway <ACTION>
 
 ACTIONS:
     install [--force]           Install and enable persistent gateway service
@@ -226,7 +226,7 @@ ACTIONS:
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "microclaw gateway",
+    name = "mchact gateway",
     about = "Gateway service management",
     disable_help_subcommand = true
 )]
@@ -400,7 +400,7 @@ async fn recv_gateway_frame(
 
 fn resolve_gateway_call_ws_url() -> Result<String> {
     if let Some(raw) = env_string(&[
-        "MICROCLAW_GATEWAY_URL",
+        "MCHACT_GATEWAY_URL",
         "OPENCLAW_GATEWAY_URL",
         "GATEWAY_URL",
     ]) {
@@ -409,13 +409,13 @@ fn resolve_gateway_call_ws_url() -> Result<String> {
 
     let cfg = Config::load().ok();
     let host = env_string(&[
-        "MICROCLAW_GATEWAY_HOST",
+        "MCHACT_GATEWAY_HOST",
         "OPENCLAW_GATEWAY_HOST",
         "GATEWAY_HOST",
     ])
     .unwrap_or_else(|| "127.0.0.1".to_string());
     let port = env_string(&[
-        "MICROCLAW_GATEWAY_PORT",
+        "MCHACT_GATEWAY_PORT",
         "OPENCLAW_GATEWAY_PORT",
         "GATEWAY_PORT",
     ])
@@ -427,14 +427,14 @@ fn resolve_gateway_call_ws_url() -> Result<String> {
 
 fn resolve_gateway_call_token() -> Result<String> {
     env_string(&[
-        "MICROCLAW_GATEWAY_TOKEN",
+        "MCHACT_GATEWAY_TOKEN",
         "OPENCLAW_GATEWAY_TOKEN",
         "GATEWAY_TOKEN",
-        "MICROCLAW_API_KEY",
+        "MCHACT_API_KEY",
     ])
     .ok_or_else(|| {
         anyhow!(
-            "missing gateway token; set MICROCLAW_GATEWAY_TOKEN, OPENCLAW_GATEWAY_TOKEN, or GATEWAY_TOKEN"
+            "missing gateway token; set MCHACT_GATEWAY_TOKEN, OPENCLAW_GATEWAY_TOKEN, or GATEWAY_TOKEN"
         )
     })
 }
@@ -659,7 +659,7 @@ fn build_context() -> Result<ServiceContext> {
 }
 
 fn resolve_config_path(cwd: &Path) -> Option<PathBuf> {
-    if let Ok(from_env) = std::env::var("MICROCLAW_CONFIG") {
+    if let Ok(from_env) = std::env::var("MCHACT_CONFIG") {
         let path = PathBuf::from(from_env);
         return Some(if path.is_absolute() {
             path
@@ -668,7 +668,7 @@ fn resolve_config_path(cwd: &Path) -> Option<PathBuf> {
         });
     }
 
-    for candidate in ["microclaw.config.yaml", "microclaw.config.yml"] {
+    for candidate in ["mchact.config.yaml", "mchact.config.yml"] {
         let path = cwd.join(candidate);
         if path.exists() {
             return Some(path);
@@ -705,11 +705,11 @@ fn resolve_runtime_logs_dir(cwd: &Path, config_path: Option<&Path>) -> PathBuf {
 #[cfg_attr(target_os = "windows", allow(dead_code))]
 fn build_service_env(config_path: Option<&PathBuf>) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
-    env.insert("MICROCLAW_GATEWAY".to_string(), "1".to_string());
+    env.insert("MCHACT_GATEWAY".to_string(), "1".to_string());
 
     if let Some(path) = config_path {
         env.insert(
-            "MICROCLAW_CONFIG".to_string(),
+            "MCHACT_CONFIG".to_string(),
             path.to_string_lossy().to_string(),
         );
     }
@@ -900,7 +900,7 @@ fn systemd_escape_arg(value: &str) -> Result<String> {
 fn render_linux_unit(ctx: &ServiceContext) -> Result<String> {
     let mut unit = String::new();
     unit.push_str("[Unit]\n");
-    unit.push_str("Description=MicroClaw Gateway Service\n");
+    unit.push_str("Description=mchact Gateway Service\n");
     unit.push_str("After=network-online.target\n");
     unit.push_str("Wants=network-online.target\n\n");
     unit.push_str("[Service]\n");
@@ -1131,13 +1131,13 @@ fn audit_linux_unit(ctx: &ServiceContext, runtime: &LinuxRuntimeStatus) -> Vec<S
         systemd_escape_arg(&ctx.exe_path.to_string_lossy()).unwrap_or_default()
     );
     if !content.contains(&expected_exec) {
-        issues.push("Service ExecStart does not match current microclaw binary".to_string());
+        issues.push("Service ExecStart does not match current mchact binary".to_string());
     }
 
     if let Some(config_path) = &ctx.config_path {
-        let config_kv = format!("MICROCLAW_CONFIG={}", config_path.display());
+        let config_kv = format!("MCHACT_CONFIG={}", config_path.display());
         if !content.contains(&config_kv) {
-            issues.push("Service MICROCLAW_CONFIG differs from current config path".to_string());
+            issues.push("Service MCHACT_CONFIG differs from current config path".to_string());
         }
     }
 
@@ -1274,7 +1274,7 @@ fn legacy_windows_service_root() -> PathBuf {
         .or_else(|_| std::env::var("PROGRAMDATA"))
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(r"C:\ProgramData"))
-        .join("MicroClaw")
+        .join("mchact")
         .join("gateway")
 }
 
@@ -1578,7 +1578,7 @@ fn audit_windows_service(
     }
 
     if launch.executable_path.as_deref() != Some(ctx.exe_path.as_path()) {
-        issues.push("Service executable does not match current microclaw binary".to_string());
+        issues.push("Service executable does not match current mchact binary".to_string());
     }
 
     if launch.working_dir.as_deref() != Some(ctx.working_dir.as_path()) {
@@ -1765,7 +1765,7 @@ mod windows_native_service {
 
         let Some(config_path) = ctx.config_path.as_ref() else {
             return Err(anyhow!(
-                "Windows gateway service requires an explicit config file. Run `microclaw setup` first, then run `microclaw gateway install` from that directory or set MICROCLAW_CONFIG."
+                "Windows gateway service requires an explicit config file. Run `mchact setup` first, then run `mchact gateway install` from that directory or set MCHACT_CONFIG."
             ));
         };
 
@@ -2009,14 +2009,14 @@ mod windows_native_service {
     fn spawn_runtime_child() -> std::io::Result<Child> {
         let exe = std::env::current_exe()?;
         let mut cmd = Command::new(exe);
-        if let Some(config_path) = std::env::var_os("MICROCLAW_CONFIG") {
+        if let Some(config_path) = std::env::var_os("MCHACT_CONFIG") {
             cmd.arg("--config").arg(config_path.clone());
-            cmd.env("MICROCLAW_CONFIG", config_path);
+            cmd.env("MCHACT_CONFIG", config_path);
         }
         if let Some(working_dir) = current_service_working_dir() {
             cmd.current_dir(working_dir);
         }
-        cmd.env("MICROCLAW_GATEWAY", "1");
+        cmd.env("MCHACT_GATEWAY", "1");
         cmd.arg("start");
         cmd.spawn()
     }
@@ -2238,7 +2238,7 @@ fn start_macos() -> Result<()> {
     let plist_path = mac_plist_path()?;
     if !plist_path.exists() {
         return Err(anyhow!(
-            "Service not installed. Run: microclaw gateway install"
+            "Service not installed. Run: mchact gateway install"
         ));
     }
     let gui_target = format!("gui/{}", current_uid()?);
@@ -2472,17 +2472,17 @@ mod tests {
 
     fn test_ctx() -> ServiceContext {
         let mut service_env = BTreeMap::new();
-        service_env.insert("MICROCLAW_GATEWAY".to_string(), "1".to_string());
+        service_env.insert("MCHACT_GATEWAY".to_string(), "1".to_string());
         service_env.insert(
-            "MICROCLAW_CONFIG".to_string(),
-            "/tmp/microclaw/microclaw.config.yaml".to_string(),
+            "MCHACT_CONFIG".to_string(),
+            "/tmp/mchact/mchact.config.yaml".to_string(),
         );
 
         ServiceContext {
-            exe_path: PathBuf::from("/usr/local/bin/microclaw"),
-            working_dir: PathBuf::from("/tmp/microclaw"),
-            config_path: Some(PathBuf::from("/tmp/microclaw/microclaw.config.yaml")),
-            runtime_logs_dir: PathBuf::from("/tmp/microclaw/runtime/logs"),
+            exe_path: PathBuf::from("/usr/local/bin/mchact"),
+            working_dir: PathBuf::from("/tmp/mchact"),
+            config_path: Some(PathBuf::from("/tmp/mchact/mchact.config.yaml")),
+            runtime_logs_dir: PathBuf::from("/tmp/mchact/runtime/logs"),
             service_env,
         }
     }
@@ -2512,9 +2512,9 @@ mod tests {
         assert!(unit.contains("Restart=always"));
         assert!(unit.contains("RestartSec=5"));
         assert!(unit.contains("KillMode=process"));
-        assert!(unit.contains("ExecStart=/usr/local/bin/microclaw start"));
-        assert!(unit.contains("Environment=MICROCLAW_GATEWAY=1"));
-        assert!(unit.contains("MICROCLAW_CONFIG=/tmp/microclaw/microclaw.config.yaml"));
+        assert!(unit.contains("ExecStart=/usr/local/bin/mchact start"));
+        assert!(unit.contains("Environment=MCHACT_GATEWAY=1"));
+        assert!(unit.contains("MCHACT_CONFIG=/tmp/mchact/mchact.config.yaml"));
     }
 
     #[test]
@@ -2525,10 +2525,10 @@ mod tests {
         assert!(plist.contains("<key>Label</key>"));
         assert!(plist.contains(MAC_LABEL));
         assert!(plist.contains("<string>start</string>"));
-        assert!(plist.contains("MICROCLAW_GATEWAY"));
-        assert!(plist.contains("MICROCLAW_CONFIG"));
-        assert!(normalized.contains("/tmp/microclaw/runtime/logs/microclaw-gateway.log"));
-        assert!(normalized.contains("/tmp/microclaw/runtime/logs/microclaw-gateway.error.log"));
+        assert!(plist.contains("MCHACT_GATEWAY"));
+        assert!(plist.contains("MCHACT_CONFIG"));
+        assert!(normalized.contains("/tmp/mchact/runtime/logs/mchact-gateway.log"));
+        assert!(normalized.contains("/tmp/mchact/runtime/logs/mchact-gateway.error.log"));
     }
 
     #[test]
@@ -2592,12 +2592,12 @@ mod tests {
             "gateway",
             "service-run",
             "--working-dir",
-            r#"C:\microclaw-runtime"#,
+            r#"C:\mchact-runtime"#,
         ])
         .expect("parse hidden service-run");
         match service_run.action {
             Some(GatewayAction::ServiceRun { working_dir }) => {
-                assert_eq!(working_dir, Some(PathBuf::from(r#"C:\microclaw-runtime"#)));
+                assert_eq!(working_dir, Some(PathBuf::from(r#"C:\mchact-runtime"#)));
             }
             _ => panic!("expected service-run action"),
         }
@@ -2661,18 +2661,18 @@ mod tests {
 
     #[test]
     fn test_format_macos_launchagents_permission_hint_contains_target_path() {
-        let p = Path::new("/Users/u/Library/LaunchAgents/ai.microclaw.gateway.plist");
+        let p = Path::new("/Users/u/Library/LaunchAgents/ai.mchact.gateway.plist");
         let msg = format_macos_launchagents_permission_hint(p);
         assert!(msg.contains("Permission denied"));
         assert!(msg.contains("LaunchAgents"));
-        assert!(msg.contains("ai.microclaw.gateway.plist"));
+        assert!(msg.contains("ai.mchact.gateway.plist"));
     }
 
     #[test]
     fn test_resolve_runtime_logs_dir_fallback() {
-        let dir = resolve_runtime_logs_dir(Path::new("/tmp/microclaw"), None);
+        let dir = resolve_runtime_logs_dir(Path::new("/tmp/mchact"), None);
         assert!(
-            dir.ends_with("runtime/logs") || dir.ends_with("microclaw.data/runtime/logs"),
+            dir.ends_with("runtime/logs") || dir.ends_with("mchact.data/runtime/logs"),
             "unexpected logs dir: {}",
             dir.display()
         );
@@ -2681,15 +2681,15 @@ mod tests {
     #[test]
     fn test_parse_windows_service_launch_info() {
         let launch = parse_windows_service_launch_info(
-            r#""C:\Program Files\MicroClaw\microclaw.exe" --config "D:\runtime\microclaw.config.yaml" gateway service-run --working-dir "D:\runtime""#,
+            r#""C:\Program Files\mchact\mchact.exe" --config "D:\runtime\mchact.config.yaml" gateway service-run --working-dir "D:\runtime""#,
         );
         assert_eq!(
             launch.executable_path,
-            Some(PathBuf::from(r#"C:\Program Files\MicroClaw\microclaw.exe"#))
+            Some(PathBuf::from(r#"C:\Program Files\mchact\mchact.exe"#))
         );
         assert_eq!(
             launch.config_path,
-            Some(PathBuf::from(r#"D:\runtime\microclaw.config.yaml"#))
+            Some(PathBuf::from(r#"D:\runtime\mchact.config.yaml"#))
         );
         assert_eq!(launch.working_dir, Some(PathBuf::from(r#"D:\runtime"#)));
         assert!(launch.is_service_run);
@@ -2698,8 +2698,8 @@ mod tests {
     #[test]
     fn test_parse_windows_runtime_status() {
         let runtime = parse_windows_runtime_status(
-            "SERVICE_NAME: MicroClawGateway\n        STATE              : 4  RUNNING\n        PID                : 4242\n",
-            "SERVICE_NAME: MicroClawGateway\n        DISPLAY_NAME       : MicroClaw Gateway\n        START_TYPE         : 2   AUTO_START\n        BINARY_PATH_NAME   : \"C:\\Program Files\\MicroClaw\\microclaw.exe\" --config \"D:\\runtime\\microclaw.config.yaml\" gateway service-run --working-dir \"D:\\runtime\"\n        SERVICE_START_NAME : LocalSystem\n",
+            "SERVICE_NAME: mchactGateway\n        STATE              : 4  RUNNING\n        PID                : 4242\n",
+            "SERVICE_NAME: mchactGateway\n        DISPLAY_NAME       : mchact Gateway\n        START_TYPE         : 2   AUTO_START\n        BINARY_PATH_NAME   : \"C:\\Program Files\\mchact\\mchact.exe\" --config \"D:\\runtime\\mchact.config.yaml\" gateway service-run --working-dir \"D:\\runtime\"\n        SERVICE_START_NAME : LocalSystem\n",
         );
         assert!(runtime.installed);
         assert_eq!(runtime.state_code, Some(4));
@@ -2719,7 +2719,7 @@ mod tests {
             ..WindowsRuntimeStatus::default()
         };
         let launch = parse_windows_service_launch_info(
-            r#""/usr/local/bin/microclaw" --config "/tmp/microclaw/microclaw.config.yaml" gateway service-run --working-dir "/tmp/microclaw""#,
+            r#""/usr/local/bin/mchact" --config "/tmp/mchact/mchact.config.yaml" gateway service-run --working-dir "/tmp/mchact""#,
         );
         let issues = audit_windows_service(&ctx, &runtime, Some(&launch));
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
@@ -2728,12 +2728,12 @@ mod tests {
     #[test]
     fn test_parse_windows_command_line_preserves_escaped_trailing_backslash() {
         let args = parse_windows_command_line(
-            r#""C:\Program Files\MicroClaw\microclaw.exe" --working-dir "C:\runtime\\""#,
+            r#""C:\Program Files\mchact\mchact.exe" --working-dir "C:\runtime\\""#,
         );
         assert_eq!(
             args,
             vec![
-                r#"C:\Program Files\MicroClaw\microclaw.exe"#.to_string(),
+                r#"C:\Program Files\mchact\mchact.exe"#.to_string(),
                 "--working-dir".to_string(),
                 r#"C:\runtime\"#.to_string(),
             ]

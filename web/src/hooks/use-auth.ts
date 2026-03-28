@@ -140,7 +140,7 @@ export function useAuth(deps: UseAuthDeps) {
       if (e instanceof ApiError) {
         if (e.status === 401) {
           setAuthMessage(
-            "Password is incorrect. Please try again or reset with `microclaw web password-generate`.",
+            "Password is incorrect. Please try again or reset with `mchact web password-generate`.",
           );
           return;
         }

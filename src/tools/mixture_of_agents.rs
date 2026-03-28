@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
 use serde_json::json;
 
 use super::{Tool, ToolResult};
@@ -23,14 +23,14 @@ const AGGREGATOR_SYSTEM_PROMPT: &str = "You have been provided with a set of res
 
 pub struct MixtureOfAgentsTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl MixtureOfAgentsTool {
     pub fn new(
         config: &Config,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         channel_registry: Arc<ChannelRegistry>,
     ) -> Self {
         Self {

@@ -4,7 +4,7 @@ Date: 2026-02-11
 
 ## Current State
 
-MicroClaw currently implements MCP client logic directly in `src/mcp.rs` and supports:
+mchact currently implements MCP client logic directly in `src/mcp.rs` and supports:
 - `stdio` transport
 - `streamable_http` transport (JSON-RPC over HTTP endpoint)
 - Protocol negotiation at initialize time (default `2024-11-05`, configurable)

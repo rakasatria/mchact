@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a Honcho-inspired observation engine as a Rust crate with dual SQLite/PostgreSQL drivers, replacing microclaw's flat memory system.
+**Goal:** Build a Honcho-inspired observation engine as a Rust crate with dual SQLite/PostgreSQL drivers, replacing mchact's flat memory system.
 
-**Architecture:** New `crates/mchact-memory/` crate exposes an `ObservationStore` async trait. Two feature-gated drivers (`sqlite`, `postgres`) implement the full model: 4-level observations, peers, peer cards, hybrid RRF search, DAG traversal, background task queue, and MoA findings. The crate integrates into microclaw's runtime by replacing `MemoryBackend` / `MemoryProvider`.
+**Architecture:** New `crates/mchact-memory/` crate exposes an `ObservationStore` async trait. Two feature-gated drivers (`sqlite`, `postgres`) implement the full model: 4-level observations, peers, peer cards, hybrid RRF search, DAG traversal, background task queue, and MoA findings. The crate integrates into mchact's runtime by replacing `MemoryBackend` / `MemoryProvider`.
 
 **Tech Stack:** Rust 2021, async-trait, serde/serde_json, rusqlite (bundled + sqlite-vec + FTS5), sqlx (PostgreSQL + pgvector), chrono, tokio, thiserror, anyhow.
 
@@ -430,13 +430,13 @@ In the workspace root `Cargo.toml`, add to the `[workspace] members` list:
 ```toml
 members = [
     ".",
-    "crates/microclaw-core",
-    "crates/microclaw-clawhub",
-    "crates/microclaw-storage",
-    "crates/microclaw-tools",
-    "crates/microclaw-channels",
-    "crates/microclaw-app",
-    "crates/microclaw-observability",
+    "crates/mchact-core",
+    "crates/mchact-clawhub",
+    "crates/mchact-storage",
+    "crates/mchact-tools",
+    "crates/mchact-channels",
+    "crates/mchact-app",
+    "crates/mchact-observability",
     "crates/mchact-memory",
 ]
 ```
@@ -2456,7 +2456,7 @@ git commit -m "feat(mchact-memory): memory injection formatter for system prompt
 **Files:**
 - Create: `crates/mchact-memory/src/deriver.rs`
 
-This task creates the deriver module with the extraction logic. The actual LLM call is abstracted behind a trait so it can be mocked in tests and wired to microclaw's provider at integration time.
+This task creates the deriver module with the extraction logic. The actual LLM call is abstracted behind a trait so it can be mocked in tests and wired to mchact's provider at integration time.
 
 - [ ] **Step 1: Define LLM abstraction and deriver types**
 
@@ -2469,7 +2469,7 @@ use crate::{MemoryError, ObservationStore, Result};
 use serde::{Deserialize, Serialize};
 
 /// Abstraction for LLM calls used by deriver/dreamer.
-/// Implemented by microclaw's LLM provider at integration time.
+/// Implemented by mchact's LLM provider at integration time.
 #[async_trait::async_trait]
 pub trait LlmClient: Send + Sync {
     async fn complete(&self, system: &str, user: &str) -> std::result::Result<String, String>;
@@ -2932,7 +2932,7 @@ use crate::types::*;
 use crate::{ObservationStore, Result};
 use tracing::info;
 
-/// Represents a legacy flat memory record from microclaw-storage.
+/// Represents a legacy flat memory record from mchact-storage.
 #[derive(Debug, Clone)]
 pub struct LegacyMemory {
     pub id: i64,
@@ -3698,7 +3698,7 @@ git commit -m "feat: wire ObservationStore into AppState alongside existing Memo
 
 **Task 12**: Build the PostgreSQL driver (mirrors SQLite driver with sqlx/pgvector/tsvector).
 
-**Tasks 13-14**: Wire everything into microclaw's config and runtime.
+**Tasks 13-14**: Wire everything into mchact's config and runtime.
 
 **Not covered in this plan (future tasks):**
 - Replace `MemoryProvider` usage in `agent_engine.rs`, `memory_service.rs`, `structured_memory.rs`, `findings.rs` with `ObservationStore`

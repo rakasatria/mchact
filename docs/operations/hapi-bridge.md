@@ -1,18 +1,18 @@
 # HAPI Bridge Sidecar Integration
 
-This guide describes an indirect integration pattern: run a HAPI bridge as an external MCP sidecar and let MicroClaw consume it through MCP tools.
+This guide describes an indirect integration pattern: run a HAPI bridge as an external MCP sidecar and let mchact consume it through MCP tools.
 
 ## Why this pattern
 
 - No deep embedding into `agent_engine`.
-- Bridge lifecycle and failure domain stay outside MicroClaw core.
+- Bridge lifecycle and failure domain stay outside mchact core.
 - Easy replacement: switch to another sidecar without changing core runtime logic.
 
 ## Prerequisites
 
 1. HAPI bridge service exposes a streamable HTTP MCP endpoint, for example:
    - `http://127.0.0.1:3010/mcp`
-2. MicroClaw can reach the endpoint.
+2. mchact can reach the endpoint.
 
 ## Setup
 
@@ -30,10 +30,10 @@ cp mcp.hapi-bridge.example.json <data_dir>/mcp.d/hapi-bridge.json
 
 3. Adjust endpoint/limits in `<data_dir>/mcp.d/hapi-bridge.json`.
 
-4. Start bridge first, then start MicroClaw:
+4. Start bridge first, then start mchact:
 
 ```sh
-microclaw start
+mchact start
 ```
 
 ## Verify
@@ -41,7 +41,7 @@ microclaw start
 1. Run doctor:
 
 ```sh
-microclaw doctor
+mchact doctor
 ```
 
 2. Check startup logs include MCP connected lines for `hapi_bridge`.

@@ -865,7 +865,7 @@ mod tests {
     #[test]
     fn test_merge_config_sources_later_overrides_earlier() {
         let dir =
-            std::env::temp_dir().join(format!("microclaw_mcp_merge_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_mcp_merge_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let base = dir.join("00-base.json");
         let override_cfg = dir.join("10-override.json");

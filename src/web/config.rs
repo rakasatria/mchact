@@ -1,62 +1,33 @@
 use super::*;
-use microclaw_tools::runtime::{tool_execution_policy, tool_risk};
-use microclaw_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
+use mchact_tools::runtime::{tool_execution_policy, tool_risk};
+use mchact_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
 
-fn effective_data_root_dir(config: &crate::config::Config) -> std::path::PathBuf {
-    let data_dir = std::path::PathBuf::from(&config.data_dir);
-    let is_runtime_dir = data_dir
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v == "runtime")
-        .unwrap_or(false);
-    if is_runtime_dir {
-        data_dir.parent().unwrap_or(&data_dir).to_path_buf()
-    } else {
-        data_dir
-    }
-}
+async fn list_available_soul_files(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+) -> Vec<String> {
+    let keys = match storage.list_keys("souls/").await {
+        Ok(k) => k,
+        Err(_) => return Vec::new(),
+    };
 
-fn list_available_soul_files(config: &crate::config::Config) -> Vec<String> {
-    let mut out = Vec::new();
-    let data_root_dir = effective_data_root_dir(config);
-
-    let configured = std::path::PathBuf::from(config.souls_data_dir());
-    let mut roots = vec![
-        configured.clone(),
-        std::path::PathBuf::from("souls"),
-        data_root_dir.join("souls"),
-    ];
-    if configured.is_relative() {
-        roots.push(data_root_dir.join(configured));
-    }
-
-    for root in roots {
-        let Ok(entries) = std::fs::read_dir(&root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let is_md = path
-                .extension()
-                .and_then(|v| v.to_str())
+    let mut out: Vec<String> = keys
+        .into_iter()
+        .filter_map(|key| {
+            let filename = key.rsplit('/').next().unwrap_or(&key);
+            if filename
+                .rsplit('.')
+                .next()
                 .map(|ext| ext.eq_ignore_ascii_case("md"))
-                .unwrap_or(false);
-            if !is_md {
-                continue;
+                .unwrap_or(false)
+            {
+                Some(filename.to_string())
+            } else {
+                None
             }
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
-                continue;
-            };
-            if !out.iter().any(|v| v == name) {
-                out.push(name.to_string());
-            }
-        }
-    }
-
+        })
+        .collect();
     out.sort();
+    out.dedup();
     out
 }
 
@@ -160,7 +131,7 @@ pub(super) async fn api_get_config(
         "ok": true,
         "path": path,
         "config": redact_config(&config_for_display),
-        "soul_files": list_available_soul_files(&config_for_display),
+        "soul_files": list_available_soul_files(state.app_state.media_manager.storage().as_ref()).await,
         "requires_restart": true
     })))
 }
@@ -683,7 +654,7 @@ fn default_mount_allowlist_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))?;
-    Some(home.join(".microclaw/sandbox-mount-allowlist.txt"))
+    Some(home.join(".mchact/sandbox-mount-allowlist.txt"))
 }
 
 pub(super) async fn api_update_config(

@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::config::WorkingDirIsolation;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_core::text::floor_char_boundary;
-use microclaw_tools::sandbox::{SandboxExecOptions, SandboxMode, SandboxRouter};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_core::text::floor_char_boundary;
+use mchact_tools::sandbox::{SandboxExecOptions, SandboxMode, SandboxRouter};
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -58,7 +58,7 @@ fn redact_env_secrets(output: &str, env_files: &[PathBuf]) -> String {
     let mut secrets: Vec<(String, String)> = Vec::new();
     for env_file in env_files {
         if let Ok(content) = std::fs::read_to_string(env_file) {
-            for (key, value) in microclaw_tools::env_file::parse_dotenv(&content) {
+            for (key, value) in mchact_tools::env_file::parse_dotenv(&content) {
                 if value.len() >= REDACT_MIN_VALUE_LEN {
                     secrets.push((key, value));
                 }
@@ -231,7 +231,7 @@ impl Tool for BashTool {
         let result = if let Some(router) = &self.sandbox_router {
             router.exec(&session_key, command, &exec_opts).await
         } else {
-            microclaw_tools::sandbox::exec_host_command(command, &exec_opts).await
+            mchact_tools::sandbox::exec_host_command(command, &exec_opts).await
         };
 
         match result {
@@ -428,7 +428,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bash_uses_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_bash_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_bash_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         std::fs::create_dir_all(&work).unwrap();
 
@@ -447,7 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bash_chat_isolation_uses_chat_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_bash_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_bash_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         std::fs::create_dir_all(&work).unwrap();
 
@@ -456,7 +456,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "command": write_marker_command(marker),
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": -100123,
                     "control_chat_ids": []
@@ -480,13 +480,13 @@ mod tests {
     fn test_extract_env_files_from_input() {
         let input = json!({
             "command": "echo hi",
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "telegram",
                 "caller_chat_id": 1,
                 "control_chat_ids": [],
                 "env_files": [
-                    "/home/user/.microclaw/skills/outline/.env",
-                    "/home/user/.microclaw/skills/weather/.env"
+                    "/home/user/.mchact/skills/outline/.env",
+                    "/home/user/.mchact/skills/weather/.env"
                 ]
             }
         });
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert_eq!(
             files[0],
-            PathBuf::from("/home/user/.microclaw/skills/outline/.env")
+            PathBuf::from("/home/user/.mchact/skills/outline/.env")
         );
     }
 
@@ -508,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn test_bash_injects_env_files_into_execution() {
         let root =
-            std::env::temp_dir().join(format!("microclaw_bash_env_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_bash_env_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         std::fs::create_dir_all(&work).unwrap();
 
@@ -521,7 +521,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "command": echo_env_command("TEST_SKILL_VAR"),
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 1,
                     "control_chat_ids": [],
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn test_redact_env_secrets_replaces_values() {
-        let dir = std::env::temp_dir().join(format!("microclaw_redact_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_redact_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let env_file = dir.join(".env");
         std::fs::write(&env_file, "API_KEY=supersecretkey123\nSHORT=ab\n").unwrap();
@@ -578,7 +578,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "command": "cat .env",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 1,
                     "control_chat_ids": [],

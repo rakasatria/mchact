@@ -200,7 +200,7 @@ export function ModelTab(): React.ReactElement {
                   e.target.value,
                 )
               }
-              placeholder="microclaw/1.0"
+              placeholder="mchact/1.0"
             />
           </ConfigFieldCard>
 
@@ -502,7 +502,7 @@ export function ModelTab(): React.ReactElement {
                                     e.target.value,
                                 })
                               }
-                              placeholder="microclaw/1.0"
+                              placeholder="mchact/1.0"
                             />
                           </ConfigFieldCard>
                           <ConfigFieldCard
@@ -566,7 +566,7 @@ export function ModelTab(): React.ReactElement {
         </Text>
         <Text size="1" color="gray" className="mt-1 block">
           Optional embedding runtime settings for semantic
-          memory (requires sqlite-vec build).
+          memory (requires vector-search build).
         </Text>
         <div className="mt-4 space-y-3">
           <ConfigFieldCard

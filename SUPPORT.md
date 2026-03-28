@@ -2,7 +2,7 @@
 
 ## Release Channels
 
-MicroClaw uses three practical support states:
+mchact uses three practical support states:
 
 - `main`: active development, expected to stay releasable
 - latest tagged release: primary supported release line
@@ -21,7 +21,7 @@ Older versions are upgrade-only unless a maintainer explicitly announces an exce
 - Bug reports: GitHub Issues
 - Feature requests: GitHub Discussions or Issues
 - Security reports: `SECURITY.md`
-- Operational regressions after release: open an issue and include `microclaw doctor --json` output when possible
+- Operational regressions after release: open an issue and include `mchact doctor --json` output when possible
 
 ## Maintainer Response Expectations
 
@@ -31,7 +31,7 @@ Older versions are upgrade-only unless a maintainer explicitly announces an exce
 
 ## What To Include In Support Requests
 
-- MicroClaw version or commit SHA
+- mchact version or commit SHA
 - OS and install method
 - provider/channel configuration involved
 - exact command or API route used

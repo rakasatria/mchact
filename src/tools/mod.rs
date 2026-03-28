@@ -1,11 +1,14 @@
 pub mod a2a;
 pub mod activate_skill;
+pub mod create_skill;
 pub mod bash;
 pub mod browser;
+pub mod browser_vision;
 pub mod edit_file;
 pub mod export_chat;
 pub mod findings;
 pub mod glob;
+pub mod knowledge;
 pub mod grep;
 pub mod image_generate;
 pub mod mcp;
@@ -22,6 +25,8 @@ pub mod sync_skills;
 pub mod text_to_speech;
 pub mod time_math;
 pub mod todo;
+pub mod rl_training;
+pub mod training;
 pub mod video_generate;
 pub mod web_fetch;
 pub mod web_search;
@@ -32,16 +37,16 @@ use std::{path::PathBuf, time::Instant};
 
 use crate::config::Config;
 use crate::memory_backend::MemoryBackend;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-pub use microclaw_tools::runtime::{
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
+pub use mchact_tools::runtime::{
     auth_context_from_input, authorize_chat_access, resolve_tool_path, resolve_tool_working_dir,
     schema_object, tool_execution_policy, tool_risk, validate_execution_policy, Tool,
     ToolAuthContext, ToolResult, ToolRisk,
 };
-use microclaw_tools::runtime::{inject_auth_context, require_high_risk_approval};
-use microclaw_tools::sandbox::{ExtraMount, SandboxMode, SandboxRouter};
+use mchact_tools::runtime::{inject_auth_context, require_high_risk_approval};
+use mchact_tools::sandbox::{ExtraMount, SandboxMode, SandboxRouter};
 
 pub struct ToolRegistry {
     config: Config,
@@ -97,8 +102,10 @@ impl ToolRegistry {
     pub fn new(
         config: &Config,
         channel_registry: Arc<ChannelRegistry>,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         memory_backend: Arc<MemoryBackend>,
+        storage: Arc<dyn mchact_storage_backend::ObjectStorage>,
+        media_manager: Arc<crate::media_manager::MediaManager>,
     ) -> Self {
         let working_dir = PathBuf::from(&config.working_dir);
         if let Err(e) = std::fs::create_dir_all(&working_dir) {
@@ -119,6 +126,7 @@ impl ToolRegistry {
             backend = sandbox_router.backend_name(),
             "Sandbox initialized"
         );
+        let local_storage = storage;
         let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(
                 bash::BashTool::new_with_isolation(
@@ -132,6 +140,7 @@ impl ToolRegistry {
                 browser::BrowserTool::new(&config.data_dir)
                     .with_default_timeout_secs(config.tool_timeout_secs("browser", 30)),
             ),
+            Box::new(browser_vision::BrowserVisionTool::new(config)),
             Box::new(read_file::ReadFileTool::new_with_isolation(
                 &config.working_dir,
                 config.working_dir_isolation,
@@ -152,9 +161,9 @@ impl ToolRegistry {
                 &config.working_dir,
                 config.working_dir_isolation,
             )),
-            Box::new(memory::ReadMemoryTool::new(&config.data_dir, db.clone())),
+            Box::new(memory::ReadMemoryTool::new(local_storage.clone(), db.clone())),
             Box::new(memory::WriteMemoryTool::new(
-                &config.data_dir,
+                local_storage.clone(),
                 db.clone(),
                 memory_backend.clone(),
             )),
@@ -216,7 +225,7 @@ impl ToolRegistry {
             )),
             Box::new(export_chat::ExportChatTool::new(
                 db.clone(),
-                &config.data_dir,
+                local_storage.clone(),
             )),
             Box::new(subagents::SessionsSpawnTool::new(
                 config,
@@ -249,9 +258,9 @@ impl ToolRegistry {
                 &skills_data_dir,
                 &config.data_dir,
             )),
-            Box::new(sync_skills::SyncSkillsTool::new(&skills_data_dir)),
-            Box::new(todo::TodoReadTool::new(&config.data_dir)),
-            Box::new(todo::TodoWriteTool::new(&config.data_dir)),
+            Box::new(sync_skills::SyncSkillsTool::new(&skills_data_dir, local_storage.clone())),
+            Box::new(todo::TodoReadTool::new(local_storage.clone())),
+            Box::new(todo::TodoWriteTool::new(local_storage.clone())),
             Box::new(structured_memory::StructuredMemorySearchTool::new(
                 db.clone(),
                 memory_backend.clone(),
@@ -273,7 +282,28 @@ impl ToolRegistry {
                 db.clone(),
                 channel_registry.clone(),
             )),
+            Box::new(training::BatchGenerateTool),
+            Box::new(training::ExportTrajectoriesTool),
+            Box::new(training::CompressTrajectoriesTool),
+            Box::new(training::TrainPipelineTool),
         ];
+
+        let rl_manager = std::sync::Arc::new(crate::rl::RlRunManager::new());
+        tools.push(Box::new(rl_training::RlListEnvironmentsTool::new(
+            &config.training_environments_dir,
+        )));
+        tools.push(Box::new(rl_training::RlStartTrainingTool::new(
+            &config.training_environments_dir,
+            rl_manager.clone(),
+        )));
+        tools.push(Box::new(rl_training::RlCheckStatusTool::new(
+            rl_manager.clone(),
+        )));
+        tools.push(Box::new(rl_training::RlStopTrainingTool::new(rl_manager)));
+        tools.push(Box::new(create_skill::CreateSkillTool::new(
+            &skills_data_dir,
+            local_storage.clone(),
+        )));
 
         // Add ClawHub tools if enabled
         if config.clawhub.agent_tools_enabled {
@@ -290,6 +320,35 @@ impl ToolRegistry {
             tools.push(Box::new(read_document::ReadDocumentTool::new(
                 db.clone(),
                 config.control_chat_ids.clone(),
+                media_manager.clone(),
+            )));
+        }
+
+        // Add knowledge tools
+        {
+            let knowledge_manager = Arc::new(crate::knowledge::KnowledgeManager::new(db.clone()));
+            tools.push(Box::new(knowledge::CreateKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::AddDocumentToKnowledgeTool::new(
+                knowledge_manager.clone(),
+                db.clone(),
+            )));
+            tools.push(Box::new(knowledge::RemoveDocumentFromKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::ListKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::QueryKnowledgeTool::new(
+                knowledge_manager.clone(),
+                None,
+            )));
+            tools.push(Box::new(knowledge::AttachKnowledgeTool::new(
+                knowledge_manager.clone(),
+            )));
+            tools.push(Box::new(knowledge::DeleteKnowledgeTool::new(
+                knowledge_manager,
             )));
         }
 
@@ -299,7 +358,7 @@ impl ToolRegistry {
                 &config.tts_provider,
                 config.tts_api_key.as_deref().or(Some(&config.api_key)),
                 &config.tts_voice,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
@@ -311,7 +370,7 @@ impl ToolRegistry {
                 config.image_gen_fal_key.as_deref(),
                 &config.image_gen_default_size,
                 &config.image_gen_default_quality,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
@@ -323,7 +382,7 @@ impl ToolRegistry {
                 config.video_gen_fal_model.as_deref(),
                 config.video_gen_minimax_key.as_deref(),
                 config.video_gen_timeout_secs,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
@@ -340,7 +399,7 @@ impl ToolRegistry {
     /// When `allow_session_tools` is true, orchestration tools are exposed for depth-limited child spawning.
     pub fn new_sub_agent(
         config: &Config,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         channel_registry: Option<Arc<ChannelRegistry>>,
         allow_session_tools: bool,
     ) -> Self {
@@ -359,6 +418,11 @@ impl ToolRegistry {
             Self::build_extra_mounts(&working_dir, &skills_data_dir),
         ));
         let memory_backend = Arc::new(MemoryBackend::local_only(db.clone()));
+        let sub_storage: Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let storage = mchact_storage_backend::local::LocalStorage::new_sync(&config.data_dir)
+                .unwrap_or_else(|e| panic!("Cannot initialize storage at '{}': {e}", config.data_dir));
+            Arc::new(storage)
+        };
         let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(
                 bash::BashTool::new_with_isolation(
@@ -372,6 +436,7 @@ impl ToolRegistry {
                 browser::BrowserTool::new(&config.data_dir)
                     .with_default_timeout_secs(config.tool_timeout_secs("browser", 30)),
             ),
+            Box::new(browser_vision::BrowserVisionTool::new(config)),
             Box::new(read_file::ReadFileTool::new_with_isolation(
                 &config.working_dir,
                 config.working_dir_isolation,
@@ -392,7 +457,7 @@ impl ToolRegistry {
                 &config.working_dir,
                 config.working_dir_isolation,
             )),
-            Box::new(memory::ReadMemoryTool::new(&config.data_dir, db.clone())),
+            Box::new(memory::ReadMemoryTool::new(sub_storage.clone(), db.clone())),
             Box::new(web_fetch::WebFetchTool::new(
                 config.tool_timeout_secs("web_fetch", 15),
                 config.web_fetch_validation,
@@ -593,7 +658,7 @@ mod tests {
     #[test]
     fn test_auth_context_from_input() {
         let input = json!({
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "telegram",
                 "caller_chat_id": 123,
                 "control_chat_ids": [123, 999]
@@ -609,7 +674,7 @@ mod tests {
     #[test]
     fn test_authorize_chat_access_denied() {
         let input = json!({
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "telegram",
                 "caller_chat_id": 100,
                 "control_chat_ids": []
@@ -625,7 +690,7 @@ mod tests {
             std::path::Path::new("/tmp/work"),
             WorkingDirIsolation::Shared,
             &json!({
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 123,
                     "control_chat_ids": []
@@ -641,7 +706,7 @@ mod tests {
             std::path::Path::new("/tmp/work"),
             WorkingDirIsolation::Chat,
             &json!({
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "discord",
                     "caller_chat_id": -100123,
                     "control_chat_ids": []
@@ -738,7 +803,7 @@ mod tests {
         let approved = registry
             .execute_with_auth(
                 "bash",
-                json!({"__microclaw_high_risk_approved": true}),
+                json!({"__mchact_high_risk_approved": true}),
                 &auth,
             )
             .await;
@@ -771,7 +836,7 @@ mod tests {
         let approved = registry
             .execute_with_auth(
                 "bash",
-                json!({"__microclaw_high_risk_approved": true}),
+                json!({"__mchact_high_risk_approved": true}),
                 &auth,
             )
             .await;
@@ -857,7 +922,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dynamic_plugin_tool_executes_without_restart() {
-        let root = std::env::temp_dir().join(format!("microclaw_plugin_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_plugin_{}", uuid::Uuid::new_v4()));
         let plugins_dir = root.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         let manifest = plugins_dir.join("demo.yaml");

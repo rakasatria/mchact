@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${MICROCLAW_REPO:-microclaw/microclaw}"
-BIN_NAME="microclaw"
+REPO="${MCHACT_REPO:-mchact/mchact}"
+BIN_NAME="mchact"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
-SKIP_RUN="${MICROCLAW_INSTALL_SKIP_RUN:-0}"
+SKIP_RUN="${MCHACT_INSTALL_SKIP_RUN:-0}"
 
 log() {
   printf '%s\n' "$*"
@@ -23,7 +23,7 @@ print_help() {
 Usage: install.sh [--skip-run]
 
 Options:
-  --skip-run   Do not auto-run microclaw after install.
+  --skip-run   Do not auto-run mchact after install.
 EOF
 }
 
@@ -84,8 +84,8 @@ detect_arch() {
 }
 
 detect_install_dir() {
-  if [ -n "${MICROCLAW_INSTALL_DIR:-}" ]; then
-    echo "$MICROCLAW_INSTALL_DIR"
+  if [ -n "${MCHACT_INSTALL_DIR:-}" ]; then
+    echo "$MCHACT_INSTALL_DIR"
     return
   fi
   if [ -w "/usr/local/bin" ]; then
@@ -112,8 +112,8 @@ download_release_json() {
 
 extract_asset_url() {
   # Match assets like:
-  #   microclaw-0.0.5-aarch64-apple-darwin.tar.gz
-  #   microclaw-0.0.5-aarch64-linux-gnu.tar.gz
+  #   mchact-0.0.5-aarch64-apple-darwin.tar.gz
+  #   mchact-0.0.5-aarch64-linux-gnu.tar.gz
   local release_json="$1"
   local os="$2"
   local arch="$3"
@@ -238,7 +238,7 @@ main() {
   if [ -z "$asset_url" ]; then
     err "No prebuilt binary found for ${os}/${arch} in the latest GitHub release."
     err "Use a separate install method instead:"
-    err "  Homebrew (macOS): brew tap microclaw/tap && brew install microclaw"
+    err "  Homebrew (macOS): brew tap mchact/tap && brew install mchact"
     err "  Build from source: https://github.com/${REPO}"
     exit 1
   fi

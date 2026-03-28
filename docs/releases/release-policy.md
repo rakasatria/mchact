@@ -2,7 +2,7 @@
 
 ## Release Shape
 
-MicroClaw releases from tagged commits (`v*`).
+mchact releases from tagged commits (`v*`).
 
 Each release should have:
 

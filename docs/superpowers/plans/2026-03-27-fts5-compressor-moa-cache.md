@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add cross-session full-text search, intelligent context compression, MoA sub-agent collaboration, and Anthropic prompt caching to MicroClaw.
+**Goal:** Add cross-session full-text search, intelligent context compression, MoA sub-agent collaboration, and Anthropic prompt caching to mchact.
 
 **Architecture:** FTS5 virtual table on existing `messages` table with auto-sync triggers. New `ContextCompressor` module replaces single-pass compaction. Shared `subagent_findings` table enables inter-worker communication. `mixture_of_agents` tool orchestrates multi-perspective consensus. Anthropic `cache_control` markers applied at serialization time.
 
@@ -17,7 +17,7 @@
 ### New files
 | File | Responsibility |
 |------|---------------|
-| `crates/microclaw-storage/src/fts.rs` | FTS5 query sanitization |
+| `crates/mchact-storage/src/fts.rs` | FTS5 query sanitization |
 | `src/tools/session_search.rs` | SessionSearchTool (Tool trait) |
 | `src/compressor.rs` | 5-phase ContextCompressor |
 | `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool |
@@ -26,8 +26,8 @@
 ### Modified files
 | File | What changes |
 |------|-------------|
-| `crates/microclaw-storage/src/lib.rs` | Add `pub mod fts;` |
-| `crates/microclaw-storage/src/db.rs` | Migration v20, FTS search methods, findings CRUD |
+| `crates/mchact-storage/src/lib.rs` | Add `pub mod fts;` |
+| `crates/mchact-storage/src/db.rs` | Migration v20, FTS search methods, findings CRUD |
 | `src/tools/mod.rs` | Register new tools |
 | `src/agent_engine.rs` | Delegate to ContextCompressor |
 | `src/llm.rs` | Anthropic cache_control markers |
@@ -37,13 +37,13 @@
 ### Task 1: FTS5 Query Sanitizer
 
 **Files:**
-- Create: `crates/microclaw-storage/src/fts.rs`
-- Modify: `crates/microclaw-storage/src/lib.rs`
+- Create: `crates/mchact-storage/src/fts.rs`
+- Modify: `crates/mchact-storage/src/lib.rs`
 
 - [ ] **Step 1: Create fts.rs with sanitize_fts_query and tests**
 
 ```rust
-// crates/microclaw-storage/src/fts.rs
+// crates/mchact-storage/src/fts.rs
 
 /// Sanitize a raw user query for safe use in FTS5 MATCH expressions.
 /// Strips all FTS5 operators and quotes each token individually.
@@ -120,10 +120,10 @@ mod tests {
 
 - [ ] **Step 2: Export the module from lib.rs**
 
-Add `pub mod fts;` to `crates/microclaw-storage/src/lib.rs` so it becomes:
+Add `pub mod fts;` to `crates/mchact-storage/src/lib.rs` so it becomes:
 
 ```rust
-//! Storage and persistence domain for MicroClaw.
+//! Storage and persistence domain for mchact.
 
 pub mod db;
 pub mod fts;
@@ -134,13 +134,13 @@ pub mod usage;
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p microclaw-storage fts`
+Run: `cargo test -p mchact-storage fts`
 Expected: All 6 tests pass.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/microclaw-storage/src/fts.rs crates/microclaw-storage/src/lib.rs
+git add crates/mchact-storage/src/fts.rs crates/mchact-storage/src/lib.rs
 git commit -m "feat(storage): add FTS5 query sanitizer module"
 ```
 
@@ -149,11 +149,11 @@ git commit -m "feat(storage): add FTS5 query sanitizer module"
 ### Task 2: Migration v20 — FTS5 Table + Findings Table
 
 **Files:**
-- Modify: `crates/microclaw-storage/src/db.rs`
+- Modify: `crates/mchact-storage/src/db.rs`
 
 - [ ] **Step 1: Bump SCHEMA_VERSION_CURRENT to 20**
 
-At line 195 of `crates/microclaw-storage/src/db.rs`, change:
+At line 195 of `crates/mchact-storage/src/db.rs`, change:
 ```rust
 const SCHEMA_VERSION_CURRENT: i64 = 20;
 ```
@@ -215,13 +215,13 @@ After line 856 (`version = 19;`), before the `if version != SCHEMA_VERSION_CURRE
 
 - [ ] **Step 3: Build to verify migration compiles**
 
-Run: `cargo build -p microclaw-storage`
+Run: `cargo build -p mchact-storage`
 Expected: Compiles with no errors.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/microclaw-storage/src/db.rs
+git add crates/mchact-storage/src/db.rs
 git commit -m "feat(storage): add migration v20 — FTS5 table, triggers, backfill, findings table"
 ```
 
@@ -230,7 +230,7 @@ git commit -m "feat(storage): add migration v20 — FTS5 table, triggers, backfi
 ### Task 3: FTS Search and Context Database Methods
 
 **Files:**
-- Modify: `crates/microclaw-storage/src/db.rs`
+- Modify: `crates/mchact-storage/src/db.rs`
 
 - [ ] **Step 1: Add FtsSearchResult and Finding structs**
 
@@ -269,7 +269,7 @@ Add to the `impl Database` block (after `store_message_if_new` around line 1245)
         query: &str,
         chat_id: Option<i64>,
         limit: usize,
-    ) -> Result<Vec<FtsSearchResult>, MicroClawError> {
+    ) -> Result<Vec<FtsSearchResult>, mchactError> {
         use crate::fts::sanitize_fts_query;
         let match_expr = match sanitize_fts_query(query) {
             Some(expr) => expr,
@@ -319,7 +319,7 @@ Add directly after `search_messages_fts`:
         chat_id: i64,
         timestamp: &str,
         window: usize,
-    ) -> Result<Vec<StoredMessage>, MicroClawError> {
+    ) -> Result<Vec<StoredMessage>, mchactError> {
         let conn = self.lock_conn();
         let window_param = window as i64;
         let mut stmt = conn.prepare(
@@ -357,7 +357,7 @@ Add directly after `search_messages_fts`:
 - [ ] **Step 4: Add rebuild_fts_index method**
 
 ```rust
-    pub fn rebuild_fts_index(&self) -> Result<(), MicroClawError> {
+    pub fn rebuild_fts_index(&self) -> Result<(), mchactError> {
         let conn = self.lock_conn();
         conn.execute_batch("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")?;
         Ok(())
@@ -373,7 +373,7 @@ Add directly after `search_messages_fts`:
         run_id: &str,
         finding: &str,
         category: &str,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, mchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -387,7 +387,7 @@ Add directly after `search_messages_fts`:
     pub fn get_findings(
         &self,
         orchestration_id: &str,
-    ) -> Result<Vec<Finding>, MicroClawError> {
+    ) -> Result<Vec<Finding>, mchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, orchestration_id, run_id, finding, category, created_at
@@ -415,7 +415,7 @@ Add directly after `search_messages_fts`:
     pub fn delete_findings(
         &self,
         orchestration_id: &str,
-    ) -> Result<usize, MicroClawError> {
+    ) -> Result<usize, mchactError> {
         let conn = self.lock_conn();
         let affected = conn.execute(
             "DELETE FROM subagent_findings WHERE orchestration_id = ?1",
@@ -427,13 +427,13 @@ Add directly after `search_messages_fts`:
 
 - [ ] **Step 6: Build to verify**
 
-Run: `cargo build -p microclaw-storage`
+Run: `cargo build -p mchact-storage`
 Expected: Compiles with no errors.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/microclaw-storage/src/db.rs
+git add crates/mchact-storage/src/db.rs
 git commit -m "feat(storage): add FTS search, context window, and findings CRUD methods"
 ```
 
@@ -454,18 +454,18 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct SessionSearchTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 
 impl SessionSearchTool {
-    pub fn new(db: Arc<Database>, control_chat_ids: Vec<i64>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, control_chat_ids: Vec<i64>) -> Self {
         Self {
             db,
             control_chat_ids,
@@ -668,7 +668,7 @@ git commit -m "feat(tools): add session_search tool with FTS5 full-text search"
 ```rust
 // src/compressor.rs
 
-use microclaw_core::llm_types::{ContentBlock, Message, MessageContent};
+use mchact_core::llm_types::{ContentBlock, Message, MessageContent};
 
 const CHARS_PER_TOKEN: usize = 4;
 const MIN_SUMMARY_TOKENS: usize = 2000;
@@ -1112,19 +1112,19 @@ git commit -m "feat: replace single-pass compaction with 5-phase ContextCompress
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 // -- FindingsWriteTool --
 
 pub struct FindingsWriteTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsWriteTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1214,11 +1214,11 @@ impl Tool for FindingsWriteTool {
 // -- FindingsReadTool --
 
 pub struct FindingsReadTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsReadTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1380,7 +1380,7 @@ In the Anthropic provider's `send_message_with_model` method (around line 917-93
 ```rust
         // Serialize to Value so we can apply cache markers
         let mut body = serde_json::to_value(&request)
-            .map_err(|e| MicroClawError::Internal(format!("Serialization failed: {e}")))?;
+            .map_err(|e| mchactError::Internal(format!("Serialization failed: {e}")))?;
 
         // Apply Anthropic prompt caching
         if let Some(msgs) = body.get_mut("messages").and_then(|m| m.as_array_mut()) {
@@ -1462,7 +1462,7 @@ mod cache_tests {
 
 - [ ] **Step 4: Build and test**
 
-Run: `cargo test -p microclaw cache_tests`
+Run: `cargo test -p mchact cache_tests`
 Expected: All 3 tests pass.
 
 - [ ] **Step 5: Commit**
@@ -1488,9 +1488,9 @@ git commit -m "feat(llm): add Anthropic prompt caching with cache_control marker
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::DynDataStore;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 use crate::channels::ChannelRegistry;
@@ -1508,14 +1508,14 @@ const AGGREGATOR_SYSTEM_PROMPT: &str = "You have been provided with a set of res
 
 pub struct MixtureOfAgentsTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl MixtureOfAgentsTool {
     pub fn new(
         config: &Config,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         channel_registry: Arc<ChannelRegistry>,
     ) -> Self {
         Self {
@@ -1812,7 +1812,7 @@ Expected: All existing tests pass, plus new FTS and cache tests.
 
 - [ ] **Step 3: Verify FTS5 is available in bundled SQLite**
 
-Run: `cargo test -p microclaw-storage fts`
+Run: `cargo test -p mchact-storage fts`
 Expected: All tests pass, confirming FTS5 is bundled.
 
 - [ ] **Step 4: Final commit if any fixups needed**

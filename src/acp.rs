@@ -18,9 +18,10 @@ use agent_client_protocol::{
     SessionId, SessionMode, SessionModeState, SessionUpdate, SetSessionModeRequest,
     SetSessionModeResponse, StopReason,
 };
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
-use microclaw_storage::db::{call_blocking, Database, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
+use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::DynDataStore;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,12 +35,10 @@ const ACP_MODE_ID: &str = "chat";
 
 pub async fn serve(
     config: Config,
-    db: Database,
-    memory: MemoryManager,
+    db: Arc<DynDataStore>,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
-    let db = Arc::new(db);
     let llm = llm::create_provider(&config);
     let embedding = embedding::create_provider(&config);
     let mut registry = ChannelRegistry::new();
@@ -50,20 +49,39 @@ pub async fn serve(
         db.clone(),
         MemoryMcpClient::discover(&mcp_manager),
     ));
+    let storage_config = crate::runtime::build_storage_backend_config(&config);
+    crate::runtime::apply_storage_env_overrides(&config);
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::from(
+        mchact_storage_backend::create_storage(&storage_config)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot initialize '{}' storage backend: {e}",
+                    config.storage_backend
+                )
+            }),
+    );
+    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage.clone(), db.clone()));
+
     let mut tools = ToolRegistry::new(
         &config,
         channel_registry.clone(),
         db.clone(),
         memory_backend.clone(),
+        storage.clone(),
+        media_manager.clone(),
     );
     for (server, tool_info) in mcp_manager.all_tools() {
         tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
     }
 
+    let memory = MemoryManager::new(storage, "groups");
+
     let app_state = Arc::new(AppState {
         config: config.clone(),
         channel_registry,
         db: db.clone(),
+        media_manager,
         memory,
         skills,
         hooks: Arc::new(HookManager::from_config(&config).with_db(db.clone())),
@@ -88,7 +106,7 @@ pub async fn serve(
             let stdin = tokio::io::stdin().compat();
             let stdout = tokio::io::stdout().compat_write();
             let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<OutboundNotification>();
-            let agent = MicroClawAcpAgent::new(app_state, outbound_tx);
+            let agent = MchactAcpAgent::new(app_state, outbound_tx);
             let (client, io) = AgentSideConnection::new(agent, stdout, stdin, |fut| {
                 tokio::task::spawn_local(fut);
             });
@@ -110,13 +128,13 @@ pub async fn serve(
 }
 
 #[derive(Clone)]
-struct MicroClawAcpAgent {
+struct MchactAcpAgent {
     app_state: Arc<AppState>,
     outbound_tx: mpsc::UnboundedSender<OutboundNotification>,
     sessions: Arc<RwLock<HashMap<String, SessionState>>>,
 }
 
-impl MicroClawAcpAgent {
+impl MchactAcpAgent {
     fn new(
         app_state: Arc<AppState>,
         outbound_tx: mpsc::UnboundedSender<OutboundNotification>,
@@ -201,11 +219,11 @@ impl MicroClawAcpAgent {
 }
 
 #[async_trait::async_trait(?Send)]
-impl Agent for MicroClawAcpAgent {
+impl Agent for MchactAcpAgent {
     async fn initialize(&self, args: InitializeRequest) -> AcpResult<InitializeResponse> {
         Ok(InitializeResponse::new(args.protocol_version)
             .agent_info(
-                Implementation::new("microclaw", env!("CARGO_PKG_VERSION")).title("MicroClaw"),
+                Implementation::new("mchact", env!("CARGO_PKG_VERSION")).title("mchact"),
             )
             .agent_capabilities(
                 AgentCapabilities::new()
@@ -282,7 +300,7 @@ impl Agent for MicroClawAcpAgent {
                 args.session_id.clone(),
                 SessionUpdate::AgentMessageChunk(ContentChunk::new(command_reply.clone().into())),
             )?;
-            self.store_message(chat_id, "microclaw", command_reply, true)
+            self.store_message(chat_id, "mchact", command_reply, true)
                 .await
                 .map_err(to_acp_error)?;
             return Ok(PromptResponse::new(StopReason::EndTurn));
@@ -319,7 +337,7 @@ impl Agent for MicroClawAcpAgent {
         let _ = forward_task.await;
 
         let response = result.map_err(to_acp_error)?;
-        self.store_message(chat_id, "microclaw", response, true)
+        self.store_message(chat_id, "mchact", response, true)
             .await
             .map_err(to_acp_error)?;
         Ok(PromptResponse::new(StopReason::EndTurn))
@@ -389,7 +407,7 @@ fn default_mode_state() -> SessionModeState {
     SessionModeState::new(
         ACP_MODE_ID,
         vec![SessionMode::new(ACP_MODE_ID, "Chat")
-            .description("General-purpose MicroClaw chat mode.")],
+            .description("General-purpose mchact chat mode.")],
     )
 }
 

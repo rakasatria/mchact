@@ -34,21 +34,24 @@ use crate::config::Config;
 use crate::embedding::EmbeddingProvider;
 use crate::hooks::HookManager;
 use crate::llm::LlmProvider;
+use crate::media_manager::MediaManager;
 use crate::memory::MemoryManager;
 use crate::memory_backend::MemoryBackend;
 use crate::skills::SkillManager;
 use crate::tools::ToolRegistry;
 use crate::web::WebAdapter;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_observability::logs::OtlpLogExporter;
-use microclaw_observability::metrics::OtlpMetricExporter;
-use microclaw_observability::traces::OtlpTraceExporter;
-use microclaw_storage::db::Database;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_observability::logs::OtlpLogExporter;
+use mchact_observability::metrics::OtlpMetricExporter;
+use mchact_observability::traces::OtlpTraceExporter;
+use mchact_storage::DynDataStore;
+use mchact_storage_backend::StorageBackendConfig;
 
 pub struct AppState {
     pub config: Config,
     pub channel_registry: Arc<ChannelRegistry>,
-    pub db: Arc<Database>,
+    pub db: Arc<DynDataStore>,
+    pub media_manager: Arc<MediaManager>,
     pub memory: MemoryManager,
     pub skills: SkillManager,
     pub hooks: Arc<HookManager>,
@@ -62,6 +65,13 @@ pub struct AppState {
     pub metric_exporter: Option<Arc<OtlpMetricExporter>>,
     pub trace_exporter: Option<Arc<OtlpTraceExporter>>,
     pub log_exporter: Option<Arc<OtlpLogExporter>>,
+}
+
+impl AppState {
+    /// Access the database through the driver-agnostic DataStore trait.
+    pub fn db_store(&self) -> &dyn mchact_storage::DataStore {
+        &*self.db
+    }
 }
 
 fn prepare_channel_runtimes<T, Build, Register, ModelOverride>(
@@ -139,15 +149,13 @@ where
 
 pub async fn run(
     config: Config,
-    db: Database,
-    memory: MemoryManager,
+    db: Arc<DynDataStore>,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
-    let db = Arc::new(db);
     let llm = crate::llm::create_provider(&config);
     let embedding = crate::embedding::create_provider(&config);
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         let dim = embedding
             .as_ref()
@@ -155,7 +163,7 @@ pub async fn run(
             .or(config.embedding_dim)
             .unwrap_or(1536);
         if let Err(e) = db.prepare_vector_index(dim) {
-            warn!("Failed to initialize sqlite-vec index: {e}");
+            warn!("Failed to initialize vector index: {e}");
         }
     }
 
@@ -446,18 +454,41 @@ pub async fn run(
     ));
 
     let observation_store = mchact_memory::driver::create_store(&config.memory).await;
+
+    let storage_config = build_storage_backend_config(&config);
+    apply_storage_env_overrides(&config);
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::from(
+        mchact_storage_backend::create_storage(&storage_config)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot initialize '{}' storage backend: {e}",
+                    config.storage_backend
+                )
+            }),
+    );
+    let media_manager = Arc::new(MediaManager::new(storage.clone(), db.clone()));
+    let memory = MemoryManager::new(storage.clone(), "groups");
+    let skills = skills.with_storage(storage.clone());
+
     let mut tools = ToolRegistry::new(
         &config,
         channel_registry.clone(),
         db.clone(),
         memory_backend.clone(),
+        storage.clone(),
+        media_manager.clone(),
     );
 
     for (server, tool_info) in mcp_manager.all_tools() {
         tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
     }
 
-    let hooks = Arc::new(HookManager::from_config(&config).with_db(db.clone()));
+    let hooks = Arc::new(
+        HookManager::from_config(&config)
+            .with_db(db.clone())
+            .with_storage(storage),
+    );
     let llm_provider_overrides = config.llm_provider_overrides();
 
     let metric_exporter = OtlpMetricExporter::from_observability(config.observability.as_ref());
@@ -468,6 +499,7 @@ pub async fn run(
         config,
         channel_registry,
         db,
+        media_manager,
         memory,
         skills,
         hooks,
@@ -492,6 +524,7 @@ pub async fn run(
 
     crate::scheduler::spawn_scheduler(state.clone());
     crate::scheduler::spawn_reflector(state.clone());
+    crate::scheduler::spawn_knowledge_processor(state.clone());
     if state.config.subagents.announce_to_chat {
         let relay_state = state.clone();
         spawn_guarded("subagents_announce_relay".to_string(), async move {
@@ -760,5 +793,89 @@ pub async fn run(
         Err(anyhow!(
             "No channel is enabled. Configure channels.<name>.enabled (or legacy channel settings) for Telegram, Discord, Slack, Feishu, Matrix, WhatsApp, iMessage, Email, Nostr, Signal, DingTalk, QQ, Weixin, IRC, or web."
         ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Storage backend helpers
+// ---------------------------------------------------------------------------
+
+/// Forward config-level credentials to the environment variables that the
+/// underlying cloud SDKs expect, but only when the env var is not already set
+/// (explicit env vars take precedence over config file values).
+///
+/// # Safety
+///
+/// Called once during single-threaded startup before any cloud SDK clients are
+/// created or background tasks are spawned.
+pub fn apply_storage_env_overrides(config: &crate::config::Config) {
+    // SAFETY: called once at startup before spawning background tasks.
+    unsafe {
+        if let Some(ref key) = config.storage_s3_access_key_id {
+            if std::env::var("AWS_ACCESS_KEY_ID").is_err() {
+                std::env::set_var("AWS_ACCESS_KEY_ID", key);
+            }
+        }
+        if let Some(ref secret) = config.storage_s3_secret_access_key {
+            if std::env::var("AWS_SECRET_ACCESS_KEY").is_err() {
+                std::env::set_var("AWS_SECRET_ACCESS_KEY", secret);
+            }
+        }
+        if let Some(ref conn) = config.storage_azure_connection_string {
+            if std::env::var("AZURE_STORAGE_CONNECTION_STRING").is_err() {
+                std::env::set_var("AZURE_STORAGE_CONNECTION_STRING", conn);
+            }
+        }
+        if let Some(ref key) = config.storage_azure_account_key {
+            if std::env::var("AZURE_STORAGE_KEY").is_err() {
+                std::env::set_var("AZURE_STORAGE_KEY", key);
+            }
+        }
+        if let Some(ref path) = config.storage_gcs_credentials_path {
+            if std::env::var("GOOGLE_APPLICATION_CREDENTIALS").is_err() {
+                std::env::set_var("GOOGLE_APPLICATION_CREDENTIALS", path);
+            }
+        }
+    }
+}
+
+pub fn build_storage_backend_config(config: &crate::config::Config) -> StorageBackendConfig {
+    let s3 = config.storage_s3_bucket.as_ref().map(|bucket| {
+        mchact_storage_backend::S3Config {
+            bucket: bucket.clone(),
+            region: config
+                .storage_s3_region
+                .clone()
+                .unwrap_or_else(|| "us-east-1".into()),
+            prefix: String::new(),
+            endpoint_url: config.storage_s3_endpoint.clone(),
+        }
+    });
+
+    let azure = config.storage_azure_account_name.as_ref().map(|account| {
+        mchact_storage_backend::AzureConfig {
+            account: account.clone(),
+            container: config
+                .storage_azure_container
+                .clone()
+                .unwrap_or_else(|| "mchact".into()),
+            prefix: String::new(),
+        }
+    });
+
+    let gcs = config.storage_gcs_bucket.as_ref().map(|bucket| {
+        mchact_storage_backend::GcsConfig {
+            bucket: bucket.clone(),
+            prefix: String::new(),
+        }
+    });
+
+    StorageBackendConfig {
+        backend: config.storage_backend.clone(),
+        data_dir: config.data_dir.clone(),
+        cache_max_bytes: config.storage_cache_max_size_mb * 1024 * 1024,
+        s3,
+        azure,
+        gcs,
     }
 }

@@ -1,19 +1,19 @@
 param(
-  [string]$Repo = $(if ($env:MICROCLAW_REPO) { $env:MICROCLAW_REPO } else { 'microclaw/microclaw' }),
-  [string]$InstallDir = $(if ($env:MICROCLAW_INSTALL_DIR) { $env:MICROCLAW_INSTALL_DIR } else { Join-Path $env:USERPROFILE '.local\bin' }),
+  [string]$Repo = $(if ($env:MCHACT_REPO) { $env:MCHACT_REPO } else { 'mchact/mchact' }),
+  [string]$InstallDir = $(if ($env:MCHACT_INSTALL_DIR) { $env:MCHACT_INSTALL_DIR } else { Join-Path $env:USERPROFILE '.local\bin' }),
   [switch]$SkipRun,
   [int]$WaitForPid = 0
 )
 
 $ErrorActionPreference = 'Stop'
-$BinName = 'microclaw.exe'
+$BinName = 'mchact.exe'
 $ApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
 $skipRunFromEnv = $false
-if ($env:MICROCLAW_INSTALL_SKIP_RUN) {
-  $skipRunFromEnv = @('1', 'true', 'yes') -contains $env:MICROCLAW_INSTALL_SKIP_RUN.Trim().ToLowerInvariant()
+if ($env:MCHACT_INSTALL_SKIP_RUN) {
+  $skipRunFromEnv = @('1', 'true', 'yes') -contains $env:MCHACT_INSTALL_SKIP_RUN.Trim().ToLowerInvariant()
 }
 $skipRunEffective = $SkipRun.IsPresent -or $skipRunFromEnv
-$hadExistingCommand = ($WaitForPid -gt 0) -or ($null -ne (Get-Command microclaw -ErrorAction SilentlyContinue))
+$hadExistingCommand = ($WaitForPid -gt 0) -or ($null -ne (Get-Command mchact -ErrorAction SilentlyContinue))
 
 function Write-Info([string]$msg) {
   Write-Host $msg
@@ -29,8 +29,8 @@ function Resolve-Arch {
 
 function Select-AssetUrl([object]$release, [string]$arch) {
   $patterns = @(
-    "microclaw-[0-9]+\.[0-9]+\.[0-9]+-$arch-windows-msvc\.zip$",
-    "microclaw-[0-9]+\.[0-9]+\.[0-9]+-.*$arch.*windows.*\.zip$"
+    "mchact-[0-9]+\.[0-9]+\.[0-9]+-$arch-windows-msvc\.zip$",
+    "mchact-[0-9]+\.[0-9]+\.[0-9]+-.*$arch.*windows.*\.zip$"
   )
 
   foreach ($p in $patterns) {
@@ -93,18 +93,18 @@ function Wait-ForProcessExit([int]$pid) {
 }
 
 $arch = Resolve-Arch
-Write-Info "Installing microclaw for windows/$arch..."
+Write-Info "Installing mchact for windows/$arch..."
 
-$release = Invoke-RestMethod -Uri $ApiUrl -Headers @{ 'User-Agent' = 'microclaw-install-script' }
+$release = Invoke-RestMethod -Uri $ApiUrl -Headers @{ 'User-Agent' = 'mchact-install-script' }
 $assetUrl = Select-AssetUrl -release $release -arch $arch
 if (-not $assetUrl) {
   throw "No prebuilt binary found for windows/$arch in the latest GitHub release."
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$tmpDir = New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ("microclaw-install-" + [guid]::NewGuid().ToString()))
+$tmpDir = New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ("mchact-install-" + [guid]::NewGuid().ToString()))
 try {
-  $archivePath = Join-Path $tmpDir.FullName 'microclaw.zip'
+  $archivePath = Join-Path $tmpDir.FullName 'mchact.zip'
   Write-Info "Downloading: $assetUrl"
   Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
 
@@ -127,7 +127,7 @@ try {
 
   $pathUpdated = Ensure-UserPathContains $InstallDir
 
-  Write-Info "Installed microclaw to: $targetPath"
+  Write-Info "Installed mchact to: $targetPath"
   if ($pathUpdated) {
     Write-Info "Added '$InstallDir' to your user PATH."
     Write-Info "Open a new terminal if command lookup does not refresh immediately."
@@ -135,20 +135,20 @@ try {
     Write-Info "PATH already contains '$InstallDir'."
   }
 
-  Write-Info "microclaw"
+  Write-Info "mchact"
   if ($skipRunEffective) {
     Write-Info "Skipping auto-run (-SkipRun)."
   } elseif ($hadExistingCommand) {
     Write-Info "Skipping auto-run (upgrade detected)."
-  } elseif (Get-Command microclaw -ErrorAction SilentlyContinue) {
-    Write-Info "Running: microclaw"
+  } elseif (Get-Command mchact -ErrorAction SilentlyContinue) {
+    Write-Info "Running: mchact"
     try {
-      & microclaw
+      & mchact
     } catch {
-      Write-Info "Auto-run failed. Try running: microclaw"
+      Write-Info "Auto-run failed. Try running: mchact"
     }
   } else {
-    Write-Info "Could not find 'microclaw' in PATH."
+    Write-Info "Could not find 'mchact' in PATH."
     Write-Info "Add this directory to PATH: $InstallDir"
     Write-Info "Then run: $targetPath"
   }

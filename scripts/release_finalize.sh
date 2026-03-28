@@ -238,7 +238,7 @@ release_asset_sha256() {
 homebrew_macos_asset_name() {
   local version="$1"
   local arch="$2"
-  echo "microclaw-${version}-${arch}-apple-darwin.tar.gz"
+  echo "mchact-${version}-${arch}-apple-darwin.tar.gz"
 }
 
 previous_release_tag() {
@@ -382,7 +382,7 @@ cd "$TAP_DIR"
 mkdir -p Formula
 
 cat > "$FORMULA_PATH" << RUBY
-class Microclaw < Formula
+class Mchact < Formula
   desc "Agentic AI assistant for Telegram - web search, scheduling, memory, tool execution"
   homepage "https://github.com/$GITHUB_REPO"
   license "MIT"
@@ -398,22 +398,22 @@ class Microclaw < Formula
   end
 
   def install
-    bin.install "microclaw"
+    bin.install "mchact"
   end
 
   test do
-    assert_match "MicroClaw", shell_output("#{bin}/microclaw help")
+    assert_match "Mchact", shell_output("#{bin}/mchact help")
   end
 end
 RUBY
 
 git add .
-git commit -m "microclaw homebrew release $NEW_VERSION"
+git commit -m "mchact homebrew release $NEW_VERSION"
 sync_rebase_and_push origin
 
 echo ""
 echo "Done! Released $TAG and updated Homebrew tap."
 echo ""
 echo "Users can install with:"
-echo "  brew tap microclaw/tap"
-echo "  brew install microclaw"
+echo "  brew tap mchact/tap"
+echo "  brew install mchact"

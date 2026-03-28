@@ -6,7 +6,7 @@
 
 ## Problem
 
-MicroClaw has three capability gaps compared to hermes-agent:
+mchact has three capability gaps compared to hermes-agent:
 
 1. **No cross-session search.** After compaction, old messages exist only as static markdown archives. The agent cannot search or recall details from past conversations. The `messages` table has no FTS index.
 
@@ -55,7 +55,7 @@ No changes to `store_message` or `store_message_if_new` — triggers handle sync
 
 #### Query Sanitizer
 
-**New file:** `crates/microclaw-storage/src/fts.rs`
+**New file:** `crates/mchact-storage/src/fts.rs`
 
 ```rust
 pub fn sanitize_fts_query(raw: &str) -> Option<String>
@@ -68,7 +68,7 @@ pub fn sanitize_fts_query(raw: &str) -> Option<String>
 
 #### Database Methods
 
-**File:** `crates/microclaw-storage/src/db.rs`
+**File:** `crates/mchact-storage/src/db.rs`
 
 ```rust
 #[derive(Debug, Clone)]
@@ -88,16 +88,16 @@ impl Database {
         query: &str,
         chat_id: Option<i64>,
         limit: usize,
-    ) -> Result<Vec<FtsSearchResult>, MicroClawError>;
+    ) -> Result<Vec<FtsSearchResult>, mchactError>;
 
     pub fn get_message_context(
         &self,
         chat_id: i64,
         timestamp: &str,
         window: usize,
-    ) -> Result<Vec<StoredMessage>, MicroClawError>;
+    ) -> Result<Vec<StoredMessage>, mchactError>;
 
-    pub fn rebuild_fts_index(&self) -> Result<(), MicroClawError>;
+    pub fn rebuild_fts_index(&self) -> Result<(), mchactError>;
 }
 ```
 
@@ -133,7 +133,7 @@ ORDER BY timestamp ASC
 
 ```rust
 pub struct SessionSearchTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 ```
@@ -286,17 +286,17 @@ impl Database {
         run_id: &str,
         finding: &str,
         category: &str,
-    ) -> Result<i64, MicroClawError>;
+    ) -> Result<i64, mchactError>;
 
     pub fn get_findings(
         &self,
         orchestration_id: &str,
-    ) -> Result<Vec<Finding>, MicroClawError>;
+    ) -> Result<Vec<Finding>, mchactError>;
 
     pub fn delete_findings(
         &self,
         orchestration_id: &str,
-    ) -> Result<usize, MicroClawError>;
+    ) -> Result<usize, mchactError>;
 }
 ```
 
@@ -348,7 +348,7 @@ When `subagents_orchestrate` completes (all workers done or timeout), delete fin
 
 ### Feature 5: Mixture of Agents Tool
 
-A dedicated `mixture_of_agents` tool that gives the **same question** to multiple independent agents and synthesizes a consensus answer. Combines Hermes' proven pattern (model diversity, resilience) with MicroClaw's strengths (tool-equipped sub-agents, shared findings).
+A dedicated `mixture_of_agents` tool that gives the **same question** to multiple independent agents and synthesizes a consensus answer. Combines Hermes' proven pattern (model diversity, resilience) with mchact's strengths (tool-equipped sub-agents, shared findings).
 
 #### How It Differs From `subagents_orchestrate`
 
@@ -374,7 +374,7 @@ A dedicated `mixture_of_agents` tool that gives the **same question** to multipl
 ```rust
 pub struct MixtureOfAgentsTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 ```
@@ -473,7 +473,7 @@ pub struct MixtureOfAgentsTool {
 
 #### Model Diversity via `provider_presets`
 
-MicroClaw already supports `provider_presets` in config:
+mchact already supports `provider_presets` in config:
 ```yaml
 provider_presets:
   claude:
@@ -512,7 +512,7 @@ Registered in `ToolRegistry::new()` (main agent only). Not available to sub-agen
 
 | File | Purpose | ~Lines |
 |------|---------|--------|
-| `crates/microclaw-storage/src/fts.rs` | FTS5 query sanitizer | 60 |
+| `crates/mchact-storage/src/fts.rs` | FTS5 query sanitizer | 60 |
 | `src/tools/session_search.rs` | SessionSearchTool | 200 |
 | `src/compressor.rs` | 5-phase ContextCompressor | 350 |
 | `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool | 150 |
@@ -521,14 +521,14 @@ Registered in `ToolRegistry::new()` (main agent only). Not available to sub-agen
 
 | File | Change | ~Lines |
 |------|--------|--------|
-| `crates/microclaw-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
-| `crates/microclaw-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
+| `crates/mchact-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
+| `crates/mchact-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
 | `src/tools/mod.rs` | Register session_search + findings tools | 15 |
 | `src/agent_engine.rs` | Replace compact_messages body with ContextCompressor::compress() | 20 (net -80) |
 
 ### Unchanged
 
-- `crates/microclaw-core/src/llm_types.rs` — no changes to Message/ContentBlock
+- `crates/mchact-core/src/llm_types.rs` — no changes to Message/ContentBlock
 - `store_message` / `store_message_if_new` — FTS5 triggers handle sync
 - `archive_conversation` — still writes markdown before compaction
 - Sub-agent spawn/orchestrate logic — unchanged, just gets new tools
@@ -620,7 +620,7 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 
 | File | Purpose | ~Lines |
 |------|---------|--------|
-| `crates/microclaw-storage/src/fts.rs` | FTS5 query sanitizer | 60 |
+| `crates/mchact-storage/src/fts.rs` | FTS5 query sanitizer | 60 |
 | `src/tools/session_search.rs` | SessionSearchTool | 200 |
 | `src/compressor.rs` | 5-phase ContextCompressor | 350 |
 | `src/tools/findings.rs` | FindingsWriteTool + FindingsReadTool | 150 |
@@ -630,15 +630,15 @@ For a 10-iteration tool loop with a 3K-token system prompt:
 
 | File | Change | ~Lines |
 |------|--------|--------|
-| `crates/microclaw-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
-| `crates/microclaw-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
+| `crates/mchact-storage/src/lib.rs` | Add `pub mod fts;` | 1 |
+| `crates/mchact-storage/src/db.rs` | Migration v20, FtsSearchResult, search methods, findings CRUD, rebuild_fts_index | 250 |
 | `src/tools/mod.rs` | Register session_search, findings, and mixture_of_agents tools | 20 |
 | `src/agent_engine.rs` | Replace compact_messages body with ContextCompressor::compress() | 20 (net -80) |
 | `src/llm.rs` | `apply_anthropic_cache_control()` + `apply_cache_marker()` in Anthropic provider path | 70 |
 
 ### Unchanged
 
-- `crates/microclaw-core/src/llm_types.rs` — no changes to Message/ContentBlock
+- `crates/mchact-core/src/llm_types.rs` — no changes to Message/ContentBlock
 - `store_message` / `store_message_if_new` — FTS5 triggers handle sync
 - `archive_conversation` — still writes markdown before compaction
 - Sub-agent spawn/orchestrate logic — unchanged, just gets new tools

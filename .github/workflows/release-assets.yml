@@ -132,31 +132,31 @@ jobs:
         include:
           - label: linux-x86_64
             os: ubuntu-latest
-            bin: microclaw
+            bin: mchact
             target_triple: x86_64-unknown-linux-gnu
             asset_triple: x86_64-linux-gnu
             archive_ext: tar.gz
           - label: linux-arm64
             os: ubuntu-24.04-arm
-            bin: microclaw
+            bin: mchact
             target_triple: aarch64-unknown-linux-gnu
             asset_triple: aarch64-linux-gnu
             archive_ext: tar.gz
           - label: macos-x86_64
             os: macos-15-intel
-            bin: microclaw
+            bin: mchact
             target_triple: x86_64-apple-darwin
             asset_triple: x86_64-apple-darwin
             archive_ext: tar.gz
           - label: macos-arm64
             os: macos-14
-            bin: microclaw
+            bin: mchact
             target_triple: aarch64-apple-darwin
             asset_triple: aarch64-apple-darwin
             archive_ext: tar.gz
           - label: windows-x86_64
             os: windows-latest
-            bin: microclaw.exe
+            bin: mchact.exe
             target_triple: x86_64-pc-windows-msvc
             asset_triple: x86_64-windows-msvc
             archive_ext: zip
@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           RELEASE_VERSION="${RELEASE_TAG#v}"
-          ASSET_NAME="microclaw-${RELEASE_VERSION}-${{ matrix.asset_triple }}.tar.gz"
+          ASSET_NAME="mchact-${RELEASE_VERSION}-${{ matrix.asset_triple }}.tar.gz"
           tar -czf "$ASSET_NAME" -C target/release "${{ matrix.bin }}"
           echo "ASSET_NAME=$ASSET_NAME" >> "$GITHUB_ENV"
 
@@ -199,7 +199,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseVersion = $env:RELEASE_TAG -replace '^v', ''
-          $assetName = "microclaw-${releaseVersion}-${{ matrix.asset_triple }}.zip"
+          $assetName = "mchact-${releaseVersion}-${{ matrix.asset_triple }}.zip"
           Compress-Archive -Path "target/release/${{ matrix.bin }}" -DestinationPath $assetName -Force
           "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -239,7 +239,7 @@ jobs:
             echo "images<<EOF"
             echo "ghcr.io/${GITHUB_REPOSITORY}"
             if [[ -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]]; then
-              echo "docker.io/microclaw/microclaw"
+              echo "docker.io/mchact/mchact"
             fi
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
@@ -248,7 +248,7 @@ jobs:
         shell: bash
         run: |
           if [[ -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]]; then
-            echo "Docker Hub publishing enabled for docker.io/microclaw/microclaw"
+            echo "Docker Hub publishing enabled for docker.io/mchact/mchact"
           else
             echo "Docker Hub publishing secrets are not configured; publishing GHCR only."
           fi
@@ -264,7 +264,7 @@ jobs:
             type=semver,pattern={{major}},value=${{ env.RELEASE_TAG }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=MicroClaw
+            org.opencontainers.image.title=Mchact
             org.opencontainers.image.description=Multi-channel agent runtime for Telegram, Discord, Web, and more.
 
       - name: Log in to GHCR

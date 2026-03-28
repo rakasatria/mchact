@@ -109,13 +109,13 @@ export function SessionSidebar({
         <div className="flex items-center gap-2">
           <img
             src="/icon.png"
-            alt="MicroClaw"
+            alt="mchact"
             className="h-7 w-7 rounded-md border border-black/10 object-cover"
             loading="eager"
             decoding="async"
           />
           <Text size="5" weight="bold">
-            MicroClaw
+            mchact
           </Text>
         </div>
         <div className="relative flex items-center gap-2">
@@ -295,12 +295,12 @@ export function SessionSidebar({
         </Button>
         <div className="mt-3 flex items-center justify-between gap-3">
           <a
-            href="https://microclaw.ai"
+            href="https://mchact.ai"
             target="_blank"
             rel="noreferrer"
             className={isDark ? 'text-xs text-slate-400 hover:text-slate-200' : 'text-xs text-slate-600 hover:text-slate-900'}
           >
-            microclaw.ai
+            mchact.ai
           </a>
           <Text size="1" className={isDark ? 'text-slate-500' : 'text-slate-500'}>
             {appVersion ? `v${appVersion}` : 'v--'}

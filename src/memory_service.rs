@@ -7,8 +7,9 @@ use crate::agent_engine::is_slash_command_text;
 use crate::embedding::EmbeddingProvider;
 use crate::memory_backend::MemoryBackend;
 use crate::runtime::AppState;
-use microclaw_storage::db::{call_blocking, Database, Memory};
-use microclaw_storage::memory_quality;
+use mchact_storage::db::{call_blocking, Memory};
+use mchact_storage::DynDataStore;
+use mchact_storage::memory_quality;
 
 pub(crate) struct ReflectorApplyOutcome {
     pub inserted: usize,
@@ -147,7 +148,7 @@ pub(crate) fn should_skip_memory_poisoning_risk(content: &str) -> bool {
     looks_like_broken_behavior_fact(content) && !is_corrective_action_item(content)
 }
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 pub(crate) async fn upsert_memory_embedding(
     state: &Arc<AppState>,
     memory_id: i64,
@@ -160,9 +161,9 @@ pub(crate) async fn upsert_memory_embedding(
     upsert_memory_embedding_with_provider(state.db.clone(), provider, memory_id, content).await
 }
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 async fn upsert_memory_embedding_with_provider(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     provider: &Arc<dyn EmbeddingProvider>,
     memory_id: i64,
     content: &str,
@@ -274,7 +275,7 @@ pub(crate) async fn maybe_handle_explicit_memory_command(
         )
         .await?;
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         if let Some(provider) = &state.embedding {
             let _ = upsert_memory_embedding_with_provider(
@@ -294,7 +295,7 @@ pub(crate) async fn maybe_handle_explicit_memory_command(
 
 pub(crate) async fn build_db_memory_context(
     memory_backend: &Arc<MemoryBackend>,
-    db: &Arc<Database>,
+    db: &Arc<DynDataStore>,
     embedding: Option<&Arc<dyn EmbeddingProvider>>,
     chat_id: i64,
     query: &str,
@@ -310,16 +311,16 @@ pub(crate) async fn build_db_memory_context(
     }
 
     let mut ordered: Vec<&Memory> = Vec::new();
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     let mut retrieval_method = if memory_supports_local_semantic_ranking(memory_backend) {
         "keyword"
     } else {
         "provider"
     };
-    #[cfg(not(feature = "sqlite-vec"))]
+    #[cfg(not(feature = "vector-search"))]
     let retrieval_method = "keyword";
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         if let Some(provider) = embedding {
             if memory_supports_local_semantic_ranking(memory_backend) && !query.trim().is_empty() {
@@ -345,7 +346,7 @@ pub(crate) async fn build_db_memory_context(
         }
     }
 
-    #[cfg(not(feature = "sqlite-vec"))]
+    #[cfg(not(feature = "vector-search"))]
     {
         let _ = embedding;
     }
@@ -425,13 +426,13 @@ pub(crate) async fn apply_reflector_extractions(
     let mut inserted = 0usize;
     let mut updated = 0usize;
     let mut skipped = 0usize;
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     let dedup_method = if state.embedding.is_some() {
         "semantic"
     } else {
         "jaccard"
     };
-    #[cfg(not(feature = "sqlite-vec"))]
+    #[cfg(not(feature = "vector-search"))]
     let dedup_method = "jaccard";
 
     let mut seen_contents: Vec<(i64, String)> =
@@ -482,7 +483,7 @@ pub(crate) async fn apply_reflector_extractions(
                     .is_ok()
                 {
                     updated += 1;
-                    #[cfg(feature = "sqlite-vec")]
+                    #[cfg(feature = "vector-search")]
                     {
                         let _ = upsert_memory_embedding(state, sid, &content).await;
                     }
@@ -513,7 +514,7 @@ pub(crate) async fn apply_reflector_extractions(
                         .await
                     {
                         updated += 1;
-                        #[cfg(feature = "sqlite-vec")]
+                        #[cfg(feature = "vector-search")]
                         {
                             let _ = upsert_memory_embedding(state, new_id, &content).await;
                         }
@@ -526,7 +527,7 @@ pub(crate) async fn apply_reflector_extractions(
         }
 
         let duplicate_id = {
-            #[cfg(feature = "sqlite-vec")]
+            #[cfg(feature = "vector-search")]
             {
                 if let Some(provider) = &state.embedding {
                     if let Ok(query_vec) = provider.embed(&content).await {
@@ -550,7 +551,7 @@ pub(crate) async fn apply_reflector_extractions(
                         .map(|(id, _)| *id)
                 }
             }
-            #[cfg(not(feature = "sqlite-vec"))]
+            #[cfg(not(feature = "vector-search"))]
             {
                 seen_contents
                     .iter()
@@ -602,11 +603,11 @@ pub(crate) async fn apply_reflector_extractions(
             .ok();
         if let Some(memory_id) = inserted_id {
             inserted += 1;
-            #[cfg(feature = "sqlite-vec")]
+            #[cfg(feature = "vector-search")]
             {
                 let _ = upsert_memory_embedding(state, memory_id, &content).await;
             }
-            #[cfg(not(feature = "sqlite-vec"))]
+            #[cfg(not(feature = "vector-search"))]
             let _ = memory_id;
             seen_contents.push((memory_id, content));
             topic_latest.insert(topic_key, memory_id);
@@ -621,7 +622,7 @@ pub(crate) async fn apply_reflector_extractions(
     }
 }
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 pub(crate) fn memory_supports_local_semantic_ranking(memory_backend: &MemoryBackend) -> bool {
     memory_backend.supports_local_semantic_ranking()
 }

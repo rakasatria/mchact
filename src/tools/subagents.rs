@@ -11,14 +11,13 @@ use super::{
     ToolRegistry, ToolResult,
 };
 use crate::config::{Config, ResolvedSubagentAcpTargetConfig};
-use microclaw_channels::channel::deliver_and_store_bot_message;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::{
+use mchact_channels::channel::deliver_and_store_bot_message;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::{
     ContentBlock, Message, MessageContent, ResponseContentBlock, ToolDefinition,
 };
-use microclaw_storage::db::{
-    call_blocking, CreateSubagentRunParams, Database, FinishSubagentRunParams,
-};
+use mchact_storage::db::{call_blocking, CreateSubagentRunParams, FinishSubagentRunParams};
+use mchact_storage::DynDataStore;
 
 const MAX_SUB_AGENT_ITERATIONS: usize = 16;
 
@@ -236,7 +235,7 @@ fn subagent_runtime(config: &Config) -> Arc<SubagentRuntime> {
 }
 
 async fn log_subagent_event(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     run_id: &str,
     event_type: &str,
     detail: Option<String>,
@@ -250,7 +249,7 @@ async fn log_subagent_event(
 }
 
 pub(crate) async fn is_cancelled(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     run_id: &str,
     local_flag: &Arc<AtomicBool>,
 ) -> Result<bool, String> {
@@ -266,7 +265,7 @@ pub(crate) async fn is_cancelled(
 
 struct RunSubAgentTaskParams {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
     auth_context: ToolAuthContext,
     run_id: String,
@@ -511,7 +510,7 @@ async fn run_sub_agent_task(
 }
 
 async fn build_announce_payload(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: i64,
     run_id: &str,
 ) -> Result<String, String> {
@@ -551,7 +550,7 @@ async fn build_announce_payload(
 pub async fn flush_pending_announces_once(
     config: &Config,
     channel_registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     max_batch: usize,
 ) -> usize {
     let now = chrono::Utc::now().to_rfc3339();
@@ -614,12 +613,12 @@ pub async fn flush_pending_announces_once(
 
 pub struct SessionsSpawnTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SessionsSpawnTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1044,11 +1043,11 @@ impl Tool for SessionsSpawnTool {
 }
 
 pub struct SubagentsListTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsListTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1129,11 +1128,11 @@ impl Tool for SubagentsListTool {
 }
 
 pub struct SubagentsInfoTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsInfoTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1220,11 +1219,11 @@ impl Tool for SubagentsInfoTool {
 
 pub struct SubagentsKillTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsKillTool {
-    pub fn new(config: &Config, db: Arc<Database>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1340,16 +1339,16 @@ impl Tool for SubagentsKillTool {
 
 pub struct SubagentsRetryAnnouncesTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 pub struct SubagentsFocusTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsFocusTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1417,11 +1416,11 @@ impl Tool for SubagentsFocusTool {
 }
 
 pub struct SubagentsUnfocusTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsUnfocusTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1469,11 +1468,11 @@ impl Tool for SubagentsUnfocusTool {
 }
 
 pub struct SubagentsFocusedTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsFocusedTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1522,12 +1521,12 @@ impl Tool for SubagentsFocusedTool {
 
 pub struct SubagentsSendTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SubagentsSendTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1602,7 +1601,7 @@ impl Tool for SubagentsSendTool {
         let spawn_input = json!({
             "task": format!("Continuation request: {message}"),
             "context": format!("This is a follow-up sent to focused run {}. Continue the work based on prior run context and produce actionable output.", focused_run),
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": auth.caller_channel,
                 "caller_chat_id": chat_id,
                 "control_chat_ids": auth.control_chat_ids,
@@ -1621,17 +1620,17 @@ impl Tool for SubagentsSendTool {
 }
 
 pub struct SubagentsLogTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 pub struct SubagentsOrchestrateTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SubagentsOrchestrateTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1639,7 +1638,7 @@ impl SubagentsOrchestrateTool {
         }
     }
 
-    fn merge_run_artifacts(runs: &[microclaw_storage::db::SubagentRunRecord]) -> serde_json::Value {
+    fn merge_run_artifacts(runs: &[mchact_storage::db::SubagentRunRecord]) -> serde_json::Value {
         let mut summaries = Vec::new();
         let mut findings = BTreeSet::new();
         let mut next_actions = BTreeSet::new();
@@ -1792,7 +1791,7 @@ impl Tool for SubagentsOrchestrateTool {
                 ),
                 "chat_id": chat_id,
                 "token_budget": each_budget,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": auth.caller_channel.clone(),
                     "caller_chat_id": chat_id,
                     "control_chat_ids": auth.control_chat_ids.clone(),
@@ -1863,7 +1862,7 @@ impl Tool for SubagentsOrchestrateTool {
                         out.push(row);
                     }
                 }
-                Ok::<_, microclaw_core::error::MicroClawError>(out)
+                Ok::<_, mchact_core::error::MchactError>(out)
             })
             .await
             {
@@ -1909,7 +1908,7 @@ impl Tool for SubagentsOrchestrateTool {
 }
 
 impl SubagentsLogTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1994,7 +1993,7 @@ impl Tool for SubagentsLogTool {
 }
 
 impl SubagentsRetryAnnouncesTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -2058,6 +2057,7 @@ impl Tool for SubagentsRetryAnnouncesTool {
 mod tests {
     use super::*;
     use crate::config::WorkingDirIsolation;
+    use mchact_storage::db::Database;
 
     fn test_config() -> Config {
         let mut cfg = Config::test_defaults();
@@ -2072,7 +2072,7 @@ mod tests {
 
     fn test_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_subagents_tool_test_{}",
+            "mchact_subagents_tool_test_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -2084,7 +2084,7 @@ mod tests {
         let tool =
             SessionsSpawnTool::new(&test_config(), test_db(), Arc::new(ChannelRegistry::new()));
         let result = tool
-            .execute(json!({"__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1}}))
+            .execute(json!({"__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1}}))
             .await;
         assert!(result.is_error);
         assert!(result.content.contains("task"));
@@ -2098,7 +2098,7 @@ mod tests {
             .execute(json!({
                 "task": "run",
                 "runtime": "mystery",
-                "__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1}
+                "__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1}
             }))
             .await;
         assert!(result.is_error);
@@ -2113,7 +2113,7 @@ mod tests {
             .execute(json!({
                 "task": "run",
                 "runtime": "acp",
-                "__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1}
+                "__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1}
             }))
             .await;
         assert!(result.is_error);
@@ -2131,7 +2131,7 @@ mod tests {
                 "task": "run",
                 "runtime": "acp",
                 "runtime_target": "missing",
-                "__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1}
+                "__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1}
             }))
             .await;
         assert!(result.is_error);
@@ -2154,7 +2154,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "task": "run",
-                "__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1},
+                "__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1},
                 "__subagent_runtime": {
                     "run_id": "parent",
                     "depth": 0,
@@ -2177,7 +2177,7 @@ mod tests {
     async fn test_subagents_info_requires_run_id() {
         let tool = SubagentsInfoTool::new(test_db());
         let result = tool
-            .execute(json!({"__microclaw_auth": {"caller_channel":"web", "caller_chat_id": 1}}))
+            .execute(json!({"__mchact_auth": {"caller_channel":"web", "caller_chat_id": 1}}))
             .await;
         assert!(result.is_error);
         assert!(result.content.contains("run_id"));

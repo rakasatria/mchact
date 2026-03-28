@@ -6,17 +6,18 @@ use serde_json::json;
 use tracing::{info, warn};
 
 use super::{authorize_chat_access, schema_object, Tool, ToolResult};
-use microclaw_channels::channel::{
+use mchact_channels::channel::{
     deliver_and_store_bot_message, enforce_channel_policy, get_required_chat_routing,
 };
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database, StoredMessage};
-use microclaw_tools::runtime::auth_context_from_input;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::DynDataStore;
+use mchact_tools::runtime::auth_context_from_input;
 
 pub struct SendMessageTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     default_bot_username: String,
     channel_bot_usernames: std::collections::HashMap<String, String>,
 }
@@ -24,7 +25,7 @@ pub struct SendMessageTool {
 impl SendMessageTool {
     pub fn new(
         registry: Arc<ChannelRegistry>,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         default_bot_username: String,
         channel_bot_usernames: std::collections::HashMap<String, String>,
     ) -> Self {
@@ -357,14 +358,16 @@ impl Tool for SendMessageTool {
 mod tests {
     use super::*;
     use crate::web::WebAdapter;
-    use microclaw_channels::channel::ConversationKind;
-    use microclaw_channels::channel_adapter::ChannelAdapter;
-    use microclaw_channels::channel_adapter::ChannelRegistry;
+    use mchact_storage::db::Database;
+    use mchact_storage::prelude::*;
+    use mchact_channels::channel::ConversationKind;
+    use mchact_channels::channel_adapter::ChannelAdapter;
+    use mchact_channels::channel_adapter::ChannelRegistry;
     use serde_json::json;
     use std::path::Path;
 
     fn test_db() -> (Arc<Database>, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("microclaw_sendmsg_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_sendmsg_{}", uuid::Uuid::new_v4()));
         let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
         (db, dir)
     }
@@ -424,7 +427,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "text": "hello",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -450,7 +453,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 999,
                 "text": "hello web",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 999,
                     "control_chat_ids": []
                 }
@@ -490,7 +493,7 @@ mod tests {
             .execute(json!({
                 "chat_id": chat_id,
                 "text": "hello",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": chat_id,
                     "control_chat_ids": []
                 }
@@ -540,7 +543,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "text": "hello",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
@@ -626,7 +629,7 @@ mod tests {
                 "chat_id": chat_id,
                 "text": "reaction-only: 👍",
                 "attachment_path": attachment.to_string_lossy(),
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": chat_id,
                     "caller_channel": "feishu",
                     "control_chat_ids": []

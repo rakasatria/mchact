@@ -6,7 +6,7 @@
 
 ## Problem
 
-MicroClaw's multimodal capabilities are limited:
+mchact's multimodal capabilities are limited:
 - **Documents**: Saved to disk but agent cannot read content
 - **TTS**: None — no voice reply capability
 - **STT**: OpenAI Whisper only, Telegram-only, no local option
@@ -22,14 +22,14 @@ Eight modules delivered as a unified system behind feature flags.
 
 ---
 
-## Module 1: Media Crate (`crates/microclaw-media/`)
+## Module 1: Media Crate (`crates/mchact-media/`)
 
 New crate housing all multimodal provider routers. Keeps the main binary lean when features are disabled.
 
 **Cargo.toml:**
 ```toml
 [package]
-name = "microclaw-media"
+name = "mchact-media"
 version = "0.1.0"
 edition = "2021"
 
@@ -64,7 +64,7 @@ kreuzberg = { version = "4.6", features = ["pdf", "office", "html"], optional = 
 
 **Module structure:**
 ```
-crates/microclaw-media/src/
+crates/mchact-media/src/
   lib.rs          -- pub mod declarations
   tts.rs          -- TtsProvider trait + router
   tts_edge.rs     -- Edge TTS (msedge-tts)
@@ -144,7 +144,7 @@ impl Database {
         &self,
         chat_id: i64,
         file_hash: &str,
-    ) -> Result<Option<DocumentExtraction>, MicroClawError>;
+    ) -> Result<Option<DocumentExtraction>, mchactError>;
 
     pub fn insert_document_extraction(
         &self,
@@ -154,20 +154,20 @@ impl Database {
         mime_type: Option<&str>,
         file_size: i64,
         extracted_text: &str,
-    ) -> Result<i64, MicroClawError>;
+    ) -> Result<i64, mchactError>;
 
     pub fn search_document_extractions(
         &self,
         chat_id: Option<i64>,  // None = all chats (control only)
         query: &str,
         limit: usize,
-    ) -> Result<Vec<DocumentExtraction>, MicroClawError>;
+    ) -> Result<Vec<DocumentExtraction>, mchactError>;
 
     pub fn list_document_extractions(
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<DocumentExtraction>, MicroClawError>;
+    ) -> Result<Vec<DocumentExtraction>, mchactError>;
 }
 
 #[derive(Debug, Clone)]
@@ -188,7 +188,7 @@ pub struct DocumentExtraction {
 
 ```rust
 pub struct ReadDocumentTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 ```
@@ -206,7 +206,7 @@ pub struct ReadDocumentTool {
 
 **Path guard:** Reuse existing `path_guard` module to block sensitive paths
 
-**Feature flag:** `documents` on `microclaw-media`
+**Feature flag:** `documents` on `mchact-media`
 
 ---
 
@@ -276,7 +276,7 @@ async fn send_voice(
 
 ## Module 4: Speech-to-Text (Enhanced)
 
-**Refactor:** Move transcription from `telegram.rs` and `transcribe.rs` into `crates/microclaw-media/src/stt.rs`.
+**Refactor:** Move transcription from `telegram.rs` and `transcribe.rs` into `crates/mchact-media/src/stt.rs`.
 
 **Trait:**
 ```rust
@@ -318,7 +318,7 @@ Voice message (any channel)
 
 **Channel expansion:** Discord, Slack, Feishu, Web, Matrix all gain voice transcription.
 
-**Feature flag:** `stt-local` on `microclaw-media` (for whisper-rs). OpenAI STT always available (just reqwest).
+**Feature flag:** `stt-local` on `mchact-media` (for whisper-rs). OpenAI STT always available (just reqwest).
 
 ---
 
@@ -503,7 +503,7 @@ vision_fallback_api_key: "${OPENROUTER_API_KEY}"
 vision_fallback_base_url: "https://openrouter.ai/api/v1"
 ```
 
-OpenRouter uses OpenAI-compatible format — MicroClaw's existing `OpenAiProvider` works as-is with different `base_url` + `api_key`. No new provider code needed.
+OpenRouter uses OpenAI-compatible format — mchact's existing `OpenAiProvider` works as-is with different `base_url` + `api_key`. No new provider code needed.
 
 **Image validation:** Replace custom `guess_image_media_type` in telegram.rs with `infer` crate (0.19.0) for MIME detection from magic bytes. Add `moka` cache (0.12.15) for downloaded images.
 
@@ -718,25 +718,25 @@ Adapter accumulates media events and adds them to message attachments array.
 
 | File | Purpose | ~Lines |
 |---|---|---|
-| `crates/microclaw-media/Cargo.toml` | Crate config with feature flags | 40 |
-| `crates/microclaw-media/src/lib.rs` | Module declarations | 20 |
-| `crates/microclaw-media/src/tts.rs` | TtsProvider trait + TtsRouter | 80 |
-| `crates/microclaw-media/src/tts_edge.rs` | Edge TTS provider | 60 |
-| `crates/microclaw-media/src/tts_kitten.rs` | KittenTTS local provider | 80 |
-| `crates/microclaw-media/src/tts_openai.rs` | OpenAI TTS provider | 50 |
-| `crates/microclaw-media/src/tts_elevenlabs.rs` | ElevenLabs provider | 50 |
-| `crates/microclaw-media/src/stt.rs` | SttProvider trait + SttRouter | 60 |
-| `crates/microclaw-media/src/stt_openai.rs` | OpenAI Whisper (refactored) | 40 |
-| `crates/microclaw-media/src/stt_whisper.rs` | whisper-rs local | 80 |
-| `crates/microclaw-media/src/image_gen.rs` | ImageGenProvider trait + router | 60 |
-| `crates/microclaw-media/src/image_gen_openai.rs` | DALL-E provider | 70 |
-| `crates/microclaw-media/src/image_gen_fal.rs` | FAL FLUX provider | 70 |
-| `crates/microclaw-media/src/video_gen.rs` | VideoGenProvider trait + router + poll_until_ready | 100 |
-| `crates/microclaw-media/src/video_gen_sora.rs` | Sora 2 provider | 60 |
-| `crates/microclaw-media/src/video_gen_fal.rs` | FAL video provider | 60 |
-| `crates/microclaw-media/src/video_gen_minimax.rs` | MiniMax Hailuo 2.3 provider | 60 |
-| `crates/microclaw-media/src/documents.rs` | kreuzberg wrapper + hash computation | 60 |
-| `crates/microclaw-media/src/audio_encode.rs` | OGG Opus encoding | 60 |
+| `crates/mchact-media/Cargo.toml` | Crate config with feature flags | 40 |
+| `crates/mchact-media/src/lib.rs` | Module declarations | 20 |
+| `crates/mchact-media/src/tts.rs` | TtsProvider trait + TtsRouter | 80 |
+| `crates/mchact-media/src/tts_edge.rs` | Edge TTS provider | 60 |
+| `crates/mchact-media/src/tts_kitten.rs` | KittenTTS local provider | 80 |
+| `crates/mchact-media/src/tts_openai.rs` | OpenAI TTS provider | 50 |
+| `crates/mchact-media/src/tts_elevenlabs.rs` | ElevenLabs provider | 50 |
+| `crates/mchact-media/src/stt.rs` | SttProvider trait + SttRouter | 60 |
+| `crates/mchact-media/src/stt_openai.rs` | OpenAI Whisper (refactored) | 40 |
+| `crates/mchact-media/src/stt_whisper.rs` | whisper-rs local | 80 |
+| `crates/mchact-media/src/image_gen.rs` | ImageGenProvider trait + router | 60 |
+| `crates/mchact-media/src/image_gen_openai.rs` | DALL-E provider | 70 |
+| `crates/mchact-media/src/image_gen_fal.rs` | FAL FLUX provider | 70 |
+| `crates/mchact-media/src/video_gen.rs` | VideoGenProvider trait + router + poll_until_ready | 100 |
+| `crates/mchact-media/src/video_gen_sora.rs` | Sora 2 provider | 60 |
+| `crates/mchact-media/src/video_gen_fal.rs` | FAL video provider | 60 |
+| `crates/mchact-media/src/video_gen_minimax.rs` | MiniMax Hailuo 2.3 provider | 60 |
+| `crates/mchact-media/src/documents.rs` | kreuzberg wrapper + hash computation | 60 |
+| `crates/mchact-media/src/audio_encode.rs` | OGG Opus encoding | 60 |
 
 ### New files (tools)
 
@@ -761,14 +761,14 @@ Adapter accumulates media events and adds them to message attachments array.
 
 | File | Change | ~Lines |
 |---|---|---|
-| `Cargo.toml` (root) | Add `microclaw-media` to workspace | 5 |
-| `crates/microclaw-storage/src/db.rs` | Migration v21 (document_extractions table), DocumentExtraction struct, document CRUD + search methods | 150 |
+| `Cargo.toml` (root) | Add `mchact-media` to workspace | 5 |
+| `crates/mchact-storage/src/db.rs` | Migration v21 (document_extractions table), DocumentExtraction struct, document CRUD + search methods | 150 |
 | `src/config.rs` | Add TTS/STT/image/video/vision/document config fields with `*_enabled` toggles | 100 |
 | `src/tools/mod.rs` | Register 4 new tools (conditionally based on `*_enabled` config flags) | 30 |
 | `src/agent_engine.rs` | Vision routing check before LLM call | 30 |
 | `src/setup.rs` | 3 new multimodal setup pages | 150 |
 | `src/web.rs` | `/api/upload`, `/api/media/{id}`, media SSE events | 150 |
-| `crates/microclaw-channels/src/channel_adapter.rs` | Add `send_voice()`, `send_video()` trait methods | 20 |
+| `crates/mchact-channels/src/channel_adapter.rs` | Add `send_voice()`, `send_video()` trait methods | 20 |
 | `src/channels/telegram.rs` | Implement `send_voice()`, `send_video()`, use shared STT | 40 |
 | `src/channels/discord.rs` | Implement `send_voice()`, `send_video()`, add voice transcription | 40 |
 | `src/channels/slack.rs` | Implement voice/video send methods | 20 |
@@ -783,7 +783,7 @@ Adapter accumulates media events and adds them to message attachments array.
 
 ## Configuration Summary
 
-All new config fields in `microclaw.config.yaml`:
+All new config fields in `mchact.config.yaml`:
 
 ```yaml
 # Text-to-Speech

@@ -6,8 +6,8 @@ Use this guide for rolling upgrades that may include schema/auth/hooks/session/m
 
 ## Pre-Upgrade Checklist
 
-1. Backup SQLite database (`microclaw.db`).
-2. Record current config (`microclaw.config.yaml`).
+1. Backup SQLite database (`mchact.db`).
+2. Record current config (`mchact.config.yaml`).
 3. Ensure shell runtime for hooks (`sh`) is available if hooks are used.
 4. Record current binary/image version and commit SHA.
 
@@ -30,8 +30,8 @@ On first start, schema migrations are applied automatically.
 ## Hooks Rollout
 
 1. Add hooks under `hooks/<name>/HOOK.md`.
-2. Verify discovery with `microclaw hooks list`.
-3. Enable one-by-one with `microclaw hooks enable <name>`.
+2. Verify discovery with `mchact hooks list`.
+3. Enable one-by-one with `mchact hooks enable <name>`.
 
 ## Post-Upgrade Validation
 
@@ -47,7 +47,7 @@ On first start, schema migrations are applied automatically.
 
 As of 2026-03-05 (local `main` HEAD), recent merged PRs include:
 
-- #195 `mcp: strip internal microclaw keys from forwarded args`
+- #195 `mcp: strip internal mchact keys from forwarded args`
 - #192 `Journald`
 - #191 `add flake.nix`
 - #190 `fix(mcp): fix streamable HTTP transport protocol compliance`
@@ -61,8 +61,8 @@ If release validation fails after deploy:
 
 1. Stop the new process.
 2. Restore previous binary/image version.
-3. Restore pre-upgrade `microclaw.db` backup.
-4. Restore previous `microclaw.config.yaml`.
+3. Restore pre-upgrade `mchact.db` backup.
+4. Restore previous `mchact.config.yaml`.
 5. Start old version and run:
    - `GET /api/health`
    - `GET /api/auth/status`

@@ -17,10 +17,10 @@ use crate::channels::startup_guard::{
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_core::text::split_text;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_core::text::split_text;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "email",
@@ -301,7 +301,7 @@ impl ChannelAdapter for EmailAdapter {
             &self.sendmail_path,
             &self.from_address,
             to,
-            "MicroClaw reply",
+            "mchact reply",
             text,
         )
     }
@@ -527,7 +527,7 @@ async fn process_email_webhook_message(
                 &runtime_ctx.sendmail_path,
                 &runtime_ctx.from_address,
                 &target,
-                "MicroClaw command reply",
+                "mchact command reply",
                 &reply,
             );
             return;
@@ -541,7 +541,7 @@ async fn process_email_webhook_message(
             &runtime_ctx.sendmail_path,
             &runtime_ctx.from_address,
             &target,
-            "MicroClaw command reply",
+            "mchact command reply",
             &unknown_command_response(),
         );
         return;
@@ -616,7 +616,7 @@ async fn process_email_webhook_message(
                     &runtime_ctx.sendmail_path,
                     &runtime_ctx.from_address,
                     &target,
-                    "MicroClaw reply",
+                    "mchact reply",
                     &email_body,
                 ) {
                     error!("Email: failed to send response: {e}");
@@ -638,7 +638,7 @@ async fn process_email_webhook_message(
                     &runtime_ctx.sendmail_path,
                     &runtime_ctx.from_address,
                     &target,
-                    "MicroClaw reply",
+                    "mchact reply",
                     fallback,
                 );
             }

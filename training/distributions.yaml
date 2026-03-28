@@ -1,0 +1,172 @@
+default:
+  description: "All tools enabled"
+  tools:
+    web_search: 100
+    web_fetch: 100
+    browser: 100
+    bash: 100
+    read_file: 100
+    write_file: 100
+    edit_file: 100
+    glob: 100
+    grep: 100
+    image_generate: 100
+    browser_vision: 100
+    mixture_of_agents: 100
+
+research:
+  description: "Web-heavy research tasks"
+  tools:
+    web_search: 90
+    browser: 70
+    web_fetch: 60
+    browser_vision: 50
+    mixture_of_agents: 40
+    bash: 10
+
+development:
+  description: "Code-heavy development tasks"
+  tools:
+    bash: 95
+    read_file: 95
+    write_file: 95
+    edit_file: 95
+    grep: 90
+    glob: 90
+    mixture_of_agents: 60
+    web_search: 30
+
+science:
+  description: "Research + code mix"
+  tools:
+    web_search: 94
+    bash: 94
+    read_file: 94
+    write_file: 94
+    browser_vision: 65
+    browser: 50
+    image_generate: 15
+    mixture_of_agents: 10
+
+safe:
+  description: "No shell access"
+  tools:
+    web_search: 80
+    browser: 70
+    web_fetch: 60
+    browser_vision: 60
+    image_generate: 60
+    mixture_of_agents: 50
+
+minimal:
+  description: "Web search only"
+  tools:
+    web_search: 100
+
+terminal_only:
+  description: "Shell and files only"
+  tools:
+    bash: 100
+    read_file: 100
+    write_file: 100
+    edit_file: 100
+    glob: 100
+    grep: 100
+
+terminal_web:
+  description: "Shell, files, and web"
+  tools:
+    bash: 100
+    read_file: 100
+    write_file: 100
+    edit_file: 100
+    glob: 100
+    grep: 100
+    web_search: 100
+    web_fetch: 100
+
+browser_tasks:
+  description: "Browser-heavy automation"
+  tools:
+    browser: 97
+    bash: 15
+    browser_vision: 12
+
+terminal_tasks:
+  description: "Terminal-heavy with browser support"
+  tools:
+    bash: 97
+    read_file: 97
+    write_file: 97
+    web_search: 97
+    browser: 75
+    browser_vision: 50
+    image_generate: 10
+
+mixed_tasks:
+  description: "Balanced browser and terminal"
+  tools:
+    browser: 92
+    bash: 92
+    read_file: 92
+    write_file: 92
+    web_search: 35
+    browser_vision: 15
+    image_generate: 15
+
+balanced:
+  description: "Equal probability for all tools"
+  tools:
+    web_search: 50
+    web_fetch: 50
+    browser: 50
+    bash: 50
+    read_file: 50
+    write_file: 50
+    image_generate: 50
+    browser_vision: 50
+    mixture_of_agents: 50
+
+creative:
+  description: "Image and vision focused"
+  tools:
+    image_generate: 90
+    browser_vision: 90
+    web_search: 30
+
+reasoning:
+  description: "Multi-model reasoning"
+  tools:
+    mixture_of_agents: 90
+    web_search: 30
+    bash: 20
+
+multimodal:
+  description: "Media-heavy tasks"
+  tools:
+    image_generate: 90
+    text_to_speech: 70
+    browser_vision: 60
+    web_search: 50
+    bash: 30
+
+browser_use:
+  description: "Full browser automation"
+  tools:
+    browser: 100
+    web_search: 80
+    browser_vision: 70
+
+browser_only:
+  description: "Browser only"
+  tools:
+    browser: 100
+
+image_gen:
+  description: "Image generation focused"
+  tools:
+    image_generate: 90
+    browser_vision: 90
+    web_search: 55
+    bash: 45
+    mixture_of_agents: 10

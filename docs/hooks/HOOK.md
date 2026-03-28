@@ -72,10 +72,10 @@ Hook command must print JSON to stdout:
 
 ## CLI
 
-- `microclaw hooks list`
-- `microclaw hooks info <name>`
-- `microclaw hooks enable <name>`
-- `microclaw hooks disable <name>`
+- `mchact hooks list`
+- `mchact hooks info <name>`
+- `mchact hooks enable <name>`
+- `mchact hooks disable <name>`
 
 Enable/disable state is persisted in:
 

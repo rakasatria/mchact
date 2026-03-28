@@ -106,7 +106,7 @@ export function GeneralTab(): React.ReactElement {
             onChange={(e) =>
               setConfigField("souls_dir", e.target.value)
             }
-            placeholder="~/.microclaw/souls"
+            placeholder="~/.mchact/souls"
           />
         </ConfigFieldCard>
         <ConfigFieldCard
