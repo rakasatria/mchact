@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 use crate::config::WorkingDirIsolation;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -69,7 +69,7 @@ impl Tool for GrepTool {
             super::resolve_tool_working_dir(&self.working_dir, self.working_dir_isolation, &input);
         let resolved_path = super::resolve_tool_path(&working_dir, path);
         let resolved_path_str = resolved_path.to_string_lossy().to_string();
-        if let Err(msg) = microclaw_tools::path_guard::check_path(&resolved_path_str) {
+        if let Err(msg) = mchact_tools::path_guard::check_path(&resolved_path_str) {
             return ToolResult::error(msg);
         }
         let file_glob = input.get("glob").and_then(|v| v.as_str());
@@ -133,7 +133,7 @@ fn grep_recursive(
             if entry_path.is_dir() {
                 grep_recursive(&entry_path, file_glob, re, results, file_count)?;
             } else if entry_path.is_file() {
-                if microclaw_tools::path_guard::is_blocked(&entry_path) {
+                if mchact_tools::path_guard::is_blocked(&entry_path) {
                     continue;
                 }
                 if let Some(ref pat) = glob_pattern {
@@ -175,7 +175,7 @@ mod tests {
     use serde_json::json;
 
     fn setup_grep_dir() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("microclaw_grep_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_grep_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("hello.rs"),
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_grep_file_function() {
-        let dir = std::env::temp_dir().join(format!("microclaw_gf_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_gf_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("test.txt");
         std::fs::write(&file, "foo bar\nbaz qux\nfoo again\n").unwrap();
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_grep_recursive_skips_hidden_dirs() {
-        let dir = std::env::temp_dir().join(format!("microclaw_gr_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_gr_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(dir.join(".hidden")).unwrap();
         std::fs::write(dir.join(".hidden").join("secret.txt"), "match_me").unwrap();
         std::fs::write(dir.join("visible.txt"), "match_me").unwrap();
@@ -287,7 +287,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_grep_defaults_to_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_grep2_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_grep2_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         let shared = work.join("shared");
         std::fs::create_dir_all(&shared).unwrap();

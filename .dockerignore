@@ -12,9 +12,9 @@ coverage
 
 # Local runtime/state data
 data
-microclaw.data
-microclaw.config.yaml
-microclaw.config.yaml.*
+mchact.data
+mchact.config.yaml
+mchact.config.yaml.*
 *.db
 *.sqlite
 *.sqlite3

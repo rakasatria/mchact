@@ -1401,6 +1401,16 @@ impl Config {
             observability: None,
             channels: HashMap::new(),
             memory: mchact_memory::driver::MemoryConfig::default(),
+            training_default_workers: default_training_workers(),
+            training_default_batch_size: default_training_batch_size(),
+            training_default_max_iterations: default_training_max_iterations(),
+            training_default_distribution: default_training_distribution(),
+            training_output_dir: default_training_output_dir(),
+            training_compress_target_tokens: default_training_compress_target_tokens(),
+            training_compress_model: default_training_compress_model(),
+            training_compress_tokenizer: default_training_compress_tokenizer(),
+            training_environments_dir: default_training_environments_dir(),
+            training_distributions_file: default_training_distributions_file(),
         }
     }
 

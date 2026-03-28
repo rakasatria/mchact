@@ -7,7 +7,7 @@
 
 ## Context
 
-MicroClaw supports session resume and compaction but lacks first-class branching/forking for exploratory workflows.
+mchact supports session resume and compaction but lacks first-class branching/forking for exploratory workflows.
 
 ## Goals
 

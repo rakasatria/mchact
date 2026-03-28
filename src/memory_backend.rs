@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::mcp::{McpManager, McpServer, McpToolInfo};
-use microclaw_core::error::MicroClawError;
-use microclaw_storage::db::{call_blocking, Database, Memory};
+use mchact_core::error::MchactError;
+use mchact_storage::db::{call_blocking, Database, Memory};
 
 #[derive(Clone)]
 pub struct MemoryMcpClient {
@@ -144,8 +144,8 @@ impl MemoryProviderFailure {
         format!("{}:{}", self.op, self.kind.as_str())
     }
 
-    fn into_error(self) -> MicroClawError {
-        MicroClawError::ToolExecution(self.to_string())
+    fn into_error(self) -> MchactError {
+        MchactError::ToolExecution(self.to_string())
     }
 }
 
@@ -155,11 +155,11 @@ impl fmt::Display for MemoryProviderFailure {
     }
 }
 
-fn classify_memory_error(op: impl Into<String>, err: String) -> MicroClawError {
+fn classify_memory_error(op: impl Into<String>, err: String) -> MchactError {
     MemoryProviderFailure::classify(op, err).into_error()
 }
 
-fn invalid_memory_payload(op: impl Into<String>, detail: impl Into<String>) -> MicroClawError {
+fn invalid_memory_payload(op: impl Into<String>, detail: impl Into<String>) -> MchactError {
     MemoryProviderFailure::invalid_payload(op, detail).into_error()
 }
 
@@ -252,7 +252,7 @@ impl MemoryBackend {
                 || snapshot.consecutive_primary_failures >= 3)
     }
 
-    pub async fn run_startup_health_check(&self) -> Result<(), MicroClawError> {
+    pub async fn run_startup_health_check(&self) -> Result<(), MchactError> {
         let Some(primary) = &self.primary_provider else {
             return Ok(());
         };
@@ -279,7 +279,7 @@ impl MemoryBackend {
     pub async fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.provider.get_all_memories_for_chat(chat_id).await
     }
 
@@ -287,7 +287,7 @@ impl MemoryBackend {
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.provider.get_memories_for_context(chat_id, limit).await
     }
 
@@ -298,13 +298,13 @@ impl MemoryBackend {
         limit: usize,
         include_archived: bool,
         broad_recall: bool,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.provider
             .search_memories_with_options(chat_id, query, limit, include_archived, broad_recall)
             .await
     }
 
-    pub async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError> {
+    pub async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
         self.provider.get_memory_by_id(id).await
     }
 
@@ -315,7 +315,7 @@ impl MemoryBackend {
         category: &str,
         source: &str,
         confidence: f64,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         self.provider
             .insert_memory_with_metadata(chat_id, content, category, source, confidence)
             .await
@@ -328,7 +328,7 @@ impl MemoryBackend {
         category: &str,
         confidence: f64,
         source: &str,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         self.provider
             .update_memory_with_metadata(id, content, category, confidence, source)
             .await
@@ -339,12 +339,12 @@ impl MemoryBackend {
         id: i64,
         content: &str,
         category: &str,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         self.update_memory_with_metadata(id, content, category, 0.8, "tool")
             .await
     }
 
-    pub async fn archive_memory(&self, id: i64) -> Result<bool, MicroClawError> {
+    pub async fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
         self.provider.archive_memory(id).await
     }
 
@@ -356,7 +356,7 @@ impl MemoryBackend {
         source: &str,
         confidence: f64,
         reason: Option<&str>,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         self.provider
             .supersede_memory(
                 from_memory_id,
@@ -373,7 +373,7 @@ impl MemoryBackend {
         &self,
         id: i64,
         confidence_floor: Option<f64>,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         self.provider
             .touch_memory_last_seen(id, confidence_floor)
             .await
@@ -389,13 +389,13 @@ pub trait MemoryProvider: Send + Sync {
     async fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
-    ) -> Result<Vec<Memory>, MicroClawError>;
+    ) -> Result<Vec<Memory>, MchactError>;
 
     async fn get_memories_for_context(
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<Memory>, MicroClawError>;
+    ) -> Result<Vec<Memory>, MchactError>;
 
     async fn search_memories_with_options(
         &self,
@@ -404,9 +404,9 @@ pub trait MemoryProvider: Send + Sync {
         limit: usize,
         include_archived: bool,
         broad_recall: bool,
-    ) -> Result<Vec<Memory>, MicroClawError>;
+    ) -> Result<Vec<Memory>, MchactError>;
 
-    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError>;
+    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError>;
 
     async fn insert_memory_with_metadata(
         &self,
@@ -415,7 +415,7 @@ pub trait MemoryProvider: Send + Sync {
         category: &str,
         source: &str,
         confidence: f64,
-    ) -> Result<i64, MicroClawError>;
+    ) -> Result<i64, MchactError>;
 
     async fn update_memory_with_metadata(
         &self,
@@ -424,9 +424,9 @@ pub trait MemoryProvider: Send + Sync {
         category: &str,
         confidence: f64,
         source: &str,
-    ) -> Result<bool, MicroClawError>;
+    ) -> Result<bool, MchactError>;
 
-    async fn archive_memory(&self, id: i64) -> Result<bool, MicroClawError>;
+    async fn archive_memory(&self, id: i64) -> Result<bool, MchactError>;
 
     async fn supersede_memory(
         &self,
@@ -436,13 +436,13 @@ pub trait MemoryProvider: Send + Sync {
         source: &str,
         confidence: f64,
         reason: Option<&str>,
-    ) -> Result<i64, MicroClawError>;
+    ) -> Result<i64, MchactError>;
 
     async fn touch_memory_last_seen(
         &self,
         id: i64,
         confidence_floor: Option<f64>,
-    ) -> Result<bool, MicroClawError>;
+    ) -> Result<bool, MchactError>;
 }
 
 #[derive(Debug, Clone)]
@@ -561,7 +561,7 @@ impl MemoryProvider for SqliteMemoryProvider {
     async fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         let chat = chat_id;
         call_blocking(self.db.clone(), move |db| {
             db.get_all_memories_for_chat(chat)
@@ -573,7 +573,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         call_blocking(self.db.clone(), move |db| {
             db.get_memories_for_context(chat_id, limit)
         })
@@ -587,7 +587,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         limit: usize,
         include_archived: bool,
         broad_recall: bool,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         let q = query.to_string();
         call_blocking(self.db.clone(), move |db| {
             db.search_memories_with_options(chat_id, &q, limit, include_archived, broad_recall)
@@ -595,7 +595,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         .await
     }
 
-    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError> {
+    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
         call_blocking(self.db.clone(), move |db| db.get_memory_by_id(id)).await
     }
 
@@ -606,7 +606,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         category: &str,
         source: &str,
         confidence: f64,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         let text = content.to_string();
         let cat = category.to_string();
         let src = source.to_string();
@@ -623,7 +623,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         category: &str,
         confidence: f64,
         source: &str,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         let text = content.to_string();
         let cat = category.to_string();
         let src = source.to_string();
@@ -633,7 +633,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         .await
     }
 
-    async fn archive_memory(&self, id: i64) -> Result<bool, MicroClawError> {
+    async fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
         call_blocking(self.db.clone(), move |db| db.archive_memory(id)).await
     }
 
@@ -645,7 +645,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         source: &str,
         confidence: f64,
         reason: Option<&str>,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         let text = new_content.to_string();
         let cat = category.to_string();
         let src = source.to_string();
@@ -667,7 +667,7 @@ impl MemoryProvider for SqliteMemoryProvider {
         &self,
         id: i64,
         confidence_floor: Option<f64>,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         call_blocking(self.db.clone(), move |db| {
             db.touch_memory_last_seen(id, confidence_floor)
         })
@@ -694,7 +694,7 @@ impl MemoryProvider for McpMemoryProvider {
     async fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         let op = "memory_query(list)";
         let payload = serde_json::json!({
             "op": "list",
@@ -712,7 +712,7 @@ impl MemoryProvider for McpMemoryProvider {
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         let op = "memory_query(context)";
         let payload = serde_json::json!({
             "op": "context",
@@ -734,7 +734,7 @@ impl MemoryProvider for McpMemoryProvider {
         limit: usize,
         include_archived: bool,
         broad_recall: bool,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         let op = "memory_query(search)";
         let payload = serde_json::json!({
             "op": "search",
@@ -752,7 +752,7 @@ impl MemoryProvider for McpMemoryProvider {
         parse_memory_list_strict(&value).map_err(|err| invalid_memory_payload(op, err))
     }
 
-    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError> {
+    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
         let op = "memory_query(get)";
         let payload = serde_json::json!({
             "op": "get",
@@ -782,7 +782,7 @@ impl MemoryProvider for McpMemoryProvider {
         category: &str,
         source: &str,
         confidence: f64,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         let op = "memory_upsert(insert)";
         let payload = serde_json::json!({
             "op": "insert",
@@ -807,7 +807,7 @@ impl MemoryProvider for McpMemoryProvider {
         category: &str,
         confidence: f64,
         source: &str,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         let op = "memory_upsert(update)";
         let payload = serde_json::json!({
             "op": "update",
@@ -826,7 +826,7 @@ impl MemoryProvider for McpMemoryProvider {
             .ok_or_else(|| invalid_memory_payload(op, "expected `updated`/`ok`/`success`"))
     }
 
-    async fn archive_memory(&self, id: i64) -> Result<bool, MicroClawError> {
+    async fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
         let op = "memory_upsert(archive)";
         let payload = serde_json::json!({
             "op": "archive",
@@ -849,7 +849,7 @@ impl MemoryProvider for McpMemoryProvider {
         source: &str,
         confidence: f64,
         reason: Option<&str>,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         let op = "memory_upsert(supersede)";
         let payload = serde_json::json!({
             "op": "supersede",
@@ -872,7 +872,7 @@ impl MemoryProvider for McpMemoryProvider {
         &self,
         id: i64,
         confidence_floor: Option<f64>,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         let op = "memory_upsert(touch)";
         let payload = serde_json::json!({
             "op": "touch",
@@ -916,10 +916,10 @@ impl FallbackMemoryProvider {
         op_name: &str,
         primary: FutPrimary,
         fallback: FutFallback,
-    ) -> Result<T, MicroClawError>
+    ) -> Result<T, MchactError>
     where
-        FutPrimary: std::future::Future<Output = Result<T, MicroClawError>>,
-        FutFallback: std::future::Future<Output = Result<T, MicroClawError>>,
+        FutPrimary: std::future::Future<Output = Result<T, MchactError>>,
+        FutFallback: std::future::Future<Output = Result<T, MchactError>>,
     {
         match primary.await {
             Ok(value) => {
@@ -949,7 +949,7 @@ impl MemoryProvider for FallbackMemoryProvider {
     async fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.fallback_on_err(
             "memory_query(list)",
             self.primary.get_all_memories_for_chat(chat_id),
@@ -962,7 +962,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.fallback_on_err(
             "memory_query(context)",
             self.primary.get_memories_for_context(chat_id, limit),
@@ -978,7 +978,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         limit: usize,
         include_archived: bool,
         broad_recall: bool,
-    ) -> Result<Vec<Memory>, MicroClawError> {
+    ) -> Result<Vec<Memory>, MchactError> {
         self.fallback_on_err(
             "memory_query(search)",
             self.primary.search_memories_with_options(
@@ -999,7 +999,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         .await
     }
 
-    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError> {
+    async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
         self.fallback_on_err(
             "memory_query(get)",
             self.primary.get_memory_by_id(id),
@@ -1015,7 +1015,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         category: &str,
         source: &str,
         confidence: f64,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         self.fallback_on_err(
             "memory_upsert(insert)",
             self.primary
@@ -1033,7 +1033,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         category: &str,
         confidence: f64,
         source: &str,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         self.fallback_on_err(
             "memory_upsert(update)",
             self.primary
@@ -1044,7 +1044,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         .await
     }
 
-    async fn archive_memory(&self, id: i64) -> Result<bool, MicroClawError> {
+    async fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
         self.fallback_on_err(
             "memory_upsert(archive)",
             self.primary.archive_memory(id),
@@ -1061,7 +1061,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         source: &str,
         confidence: f64,
         reason: Option<&str>,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, MchactError> {
         self.fallback_on_err(
             "memory_upsert(supersede)",
             self.primary.supersede_memory(
@@ -1088,7 +1088,7 @@ impl MemoryProvider for FallbackMemoryProvider {
         &self,
         id: i64,
         confidence_floor: Option<f64>,
-    ) -> Result<bool, MicroClawError> {
+    ) -> Result<bool, MchactError> {
         self.fallback_on_err(
             "memory_upsert(touch)",
             self.primary.touch_memory_last_seen(id, confidence_floor),
@@ -1116,9 +1116,9 @@ fn parse_json_loose(text: &str) -> Result<serde_json::Value, String> {
     Err("MCP memory response is not valid JSON".to_string())
 }
 
-fn fallback_reason_for_error(op_name: &str, err: &MicroClawError) -> String {
+fn fallback_reason_for_error(op_name: &str, err: &MchactError) -> String {
     let structured = match err {
-        MicroClawError::ToolExecution(message) => Some(message.as_str()),
+        MchactError::ToolExecution(message) => Some(message.as_str()),
         _ => None,
     };
     if let Some(message) = structured.filter(|message| message.starts_with(op_name)) {
@@ -1311,7 +1311,7 @@ mod tests {
         async fn get_all_memories_for_chat(
             &self,
             _chat_id: Option<i64>,
-        ) -> Result<Vec<Memory>, MicroClawError> {
+        ) -> Result<Vec<Memory>, MchactError> {
             Ok(vec![sample_memory(1, "all")])
         }
 
@@ -1319,10 +1319,10 @@ mod tests {
             &self,
             _chat_id: i64,
             _limit: usize,
-        ) -> Result<Vec<Memory>, MicroClawError> {
+        ) -> Result<Vec<Memory>, MchactError> {
             self.get_context_calls.fetch_add(1, Ordering::SeqCst);
             match &self.get_context_error {
-                Some(message) => Err(MicroClawError::ToolExecution(message.clone())),
+                Some(message) => Err(MchactError::ToolExecution(message.clone())),
                 None => Ok(self.get_context_memories.clone()),
             }
         }
@@ -1334,11 +1334,11 @@ mod tests {
             _limit: usize,
             _include_archived: bool,
             _broad_recall: bool,
-        ) -> Result<Vec<Memory>, MicroClawError> {
+        ) -> Result<Vec<Memory>, MchactError> {
             Ok(vec![sample_memory(2, "search")])
         }
 
-        async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MicroClawError> {
+        async fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
             Ok(Some(sample_memory(id, "by-id")))
         }
 
@@ -1349,7 +1349,7 @@ mod tests {
             _category: &str,
             _source: &str,
             _confidence: f64,
-        ) -> Result<i64, MicroClawError> {
+        ) -> Result<i64, MchactError> {
             Ok(10)
         }
 
@@ -1360,11 +1360,11 @@ mod tests {
             _category: &str,
             _confidence: f64,
             _source: &str,
-        ) -> Result<bool, MicroClawError> {
+        ) -> Result<bool, MchactError> {
             Ok(true)
         }
 
-        async fn archive_memory(&self, _id: i64) -> Result<bool, MicroClawError> {
+        async fn archive_memory(&self, _id: i64) -> Result<bool, MchactError> {
             Ok(true)
         }
 
@@ -1376,7 +1376,7 @@ mod tests {
             _source: &str,
             _confidence: f64,
             _reason: Option<&str>,
-        ) -> Result<i64, MicroClawError> {
+        ) -> Result<i64, MchactError> {
             Ok(11)
         }
 
@@ -1384,7 +1384,7 @@ mod tests {
             &self,
             _id: i64,
             _confidence_floor: Option<f64>,
-        ) -> Result<bool, MicroClawError> {
+        ) -> Result<bool, MchactError> {
             Ok(true)
         }
     }

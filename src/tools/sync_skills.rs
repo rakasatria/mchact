@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::json;
 
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -46,7 +46,7 @@ impl SyncSkillsTool {
         for url in candidates {
             match client
                 .get(&url)
-                .header("User-Agent", "MicroClaw/1.0")
+                .header("User-Agent", "mchact/1.0")
                 .send()
                 .await
             {
@@ -136,7 +136,7 @@ impl SyncSkillsTool {
         let description = if !get("description").trim().is_empty() {
             get("description").trim().to_string()
         } else {
-            format!("Synced from {source_repo} skill '{skill_name}' and adapted for MicroClaw.")
+            format!("Synced from {source_repo} skill '{skill_name}' and adapted for mchact.")
         };
 
         let mut platforms = Self::str_seq(fm.get("platforms"));
@@ -255,7 +255,7 @@ impl Tool for SyncSkillsTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "sync_skills".into(),
-            description: "Sync a skill from a GitHub repository into local ~/.microclaw/skills (or configured skills dir). Use ONLY for skills from GitHub repos (owner/repo format or full GitHub URL). For ClawHub skills, use clawhub_install instead. Auto-detects the source repo from the path.".into(),
+            description: "Sync a skill from a GitHub repository into local ~/.mchact/skills (or configured skills dir). Use ONLY for skills from GitHub repos (owner/repo format or full GitHub URL). For ClawHub skills, use clawhub_install instead. Auto-detects the source repo from the path.".into(),
             input_schema: schema_object(
                 json!({
                     "skill_name": {

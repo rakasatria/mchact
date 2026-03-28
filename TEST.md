@@ -1,6 +1,6 @@
-# MicroClaw Testing Guide
+# mchact Testing Guide
 
-This document describes how to test every feature of MicroClaw. It includes both automated tests (unit/integration) and manual black-box functional tests organized by user stories.
+This document describes how to test every feature of mchact. It includes both automated tests (unit/integration) and manual black-box functional tests organized by user stories.
 
 ## Automated Tests
 
@@ -23,11 +23,11 @@ cargo deny check advisories bans licenses
 
 ## Black-Box Functional Tests
 
-Since MicroClaw is a multi-platform bot with external dependencies (LLM APIs, Telegram/Discord/WhatsApp APIs, DuckDuckGo), many features require live interaction testing.
+Since mchact is a multi-platform bot with external dependencies (LLM APIs, Telegram/Discord/WhatsApp APIs, DuckDuckGo), many features require live interaction testing.
 
 ### Prerequisites
 
-1. A working `microclaw.config.yaml` file with valid credentials
+1. A working `mchact.config.yaml` file with valid credentials
 2. `cargo build` succeeds with zero errors
 3. Bot is running: `cargo run -- start`
 4. A Telegram account to send messages
@@ -39,15 +39,15 @@ Since MicroClaw is a multi-platform bot with external dependencies (LLM APIs, Te
 
 | # | User Story | Steps | Expected |
 |---|-----------|-------|----------|
-| 1.1 | First launch without config | Run `microclaw start` with no config.yaml present | Auto-launches setup wizard |
-| 1.2 | Normal startup | Fill config.yaml, run `microclaw start` | Logs: Database initialized / Memory manager initialized / Scheduler started |
+| 1.1 | First launch without config | Run `mchact start` with no config.yaml present | Auto-launches setup wizard |
+| 1.2 | Normal startup | Fill config.yaml, run `mchact start` | Logs: Database initialized / Memory manager initialized / Scheduler started |
 | 1.3 | Missing required field | Remove `api_key` from config, start | Error message + launches setup wizard |
 | 1.4 | Invalid timezone | Set `timezone: "Mars/Olympus"` | Startup error with invalid timezone message |
-| 1.5 | CLI help | `microclaw help` | Full output: commands, features, config docs |
-| 1.6 | CLI version | `microclaw version` | Output: `microclaw {VERSION}` |
-| 1.7 | Unknown command | `microclaw foobar` | "Unknown command: foobar" + help text |
-| 1.8 | Setup wizard | `microclaw setup` | TUI interactive guide, provider/model selection |
-| 1.9 | MICROCLAW_CONFIG env var | `MICROCLAW_CONFIG=/tmp/test.yaml microclaw start` | Loads config from specified path |
+| 1.5 | CLI help | `mchact help` | Full output: commands, features, config docs |
+| 1.6 | CLI version | `mchact version` | Output: `mchact {VERSION}` |
+| 1.7 | Unknown command | `mchact foobar` | "Unknown command: foobar" + help text |
+| 1.8 | Setup wizard | `mchact setup` | TUI interactive guide, provider/model selection |
+| 1.9 | MCHACT_CONFIG env var | `MCHACT_CONFIG=/tmp/test.yaml mchact start` | Loads config from specified path |
 
 ---
 
@@ -273,7 +273,7 @@ Since MicroClaw is a multi-platform bot with external dependencies (LLM APIs, Te
 
 | # | User Story | Steps | Expected |
 |---|-----------|-------|----------|
-| 16A.1 | ACP startup | Run `microclaw acp` | MicroClaw starts as an ACP stdio server |
+| 16A.1 | ACP startup | Run `mchact acp` | mchact starts as an ACP stdio server |
 | 16A.2 | ACP session continuity | Use one ACP client session for two turns | Second turn keeps prior context |
 | 16A.3 | ACP cancellation | Start a long-running ACP request, then send `/stop` | Active ACP run is cancelled cleanly |
 
@@ -396,12 +396,12 @@ Since MicroClaw is a multi-platform bot with external dependencies (LLM APIs, Te
 
 | # | User Story | Steps | Expected |
 |---|-----------|-------|----------|
-| 25.1 | Install service | `microclaw gateway install` | macOS: LaunchAgent; Linux: systemd service |
-| 25.2 | Start service | `microclaw gateway start` | Service starts |
-| 25.3 | Check status | `microclaw gateway status` | Reports running state |
-| 25.4 | View logs | `microclaw gateway logs 50` | Shows last 50 log lines |
-| 25.5 | Stop service | `microclaw gateway stop` | Service stops |
-| 25.6 | Uninstall service | `microclaw gateway uninstall` | Service removed |
+| 25.1 | Install service | `mchact gateway install` | macOS: LaunchAgent; Linux: systemd service |
+| 25.2 | Start service | `mchact gateway start` | Service starts |
+| 25.3 | Check status | `mchact gateway status` | Reports running state |
+| 25.4 | View logs | `mchact gateway logs 50` | Shows last 50 log lines |
+| 25.5 | Stop service | `mchact gateway stop` | Service stops |
+| 25.6 | Uninstall service | `mchact gateway uninstall` | Service removed |
 
 ---
 
@@ -469,7 +469,7 @@ Use this checklist when adding a new platform adapter (for example Slack/Feishu/
 After running tests, verify the database directly:
 
 ```sh
-sqlite3 microclaw.data/runtime/microclaw.db
+sqlite3 mchact.data/runtime/mchact.db
 
 -- Check messages are stored
 SELECT COUNT(*) FROM messages;
@@ -495,8 +495,8 @@ After testing:
 
 ```sh
 # Remove test files
-rm -f /tmp/microclaw_test.txt /tmp/todos.txt /tmp/test.txt /tmp/session_test.txt
+rm -f /tmp/mchact_test.txt /tmp/todos.txt /tmp/test.txt /tmp/session_test.txt
 
 # Cancel any remaining scheduled tasks via the bot, or:
-sqlite3 microclaw.data/runtime/microclaw.db "UPDATE scheduled_tasks SET status='cancelled' WHERE status='active';"
+sqlite3 mchact.data/runtime/mchact.db "UPDATE scheduled_tasks SET status='cancelled' WHERE status='active';"
 ```

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde_json::json;
 
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 

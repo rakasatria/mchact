@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, Database};
 
 pub struct ReadDocumentTool {
     db: Arc<Database>,
@@ -153,13 +153,13 @@ impl Tool for ReadDocumentTool {
 
         // Mode: Extract from file path
         if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
-            match microclaw_media::documents::extract_text(file_path).await {
+            match mchact_media::documents::extract_text(file_path).await {
                 Ok(text) => {
                     if let Some(chat_id) = caller_chat_id {
                         let file_bytes =
                             tokio::fs::read(file_path).await.unwrap_or_default();
                         let file_hash =
-                            microclaw_media::documents::compute_file_hash(&file_bytes);
+                            mchact_media::documents::compute_file_hash(&file_bytes);
                         let filename = std::path::Path::new(file_path)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -208,7 +208,7 @@ mod tests {
 
     fn make_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_read_doc_{}",
+            "mchact_read_doc_{}",
             uuid::Uuid::new_v4()
         ));
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())
@@ -232,7 +232,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "list": true,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -257,7 +257,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "zzznomatch",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -278,7 +278,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "quarterly earnings",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -299,7 +299,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "file_hash": "hash999",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -317,7 +317,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "file_hash": "nonexistent",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -344,7 +344,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "file_path": "/tmp/test_nonexistent_doc.pdf",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -366,7 +366,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "list": true,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 55,
                     "control_chat_ids": []
@@ -389,7 +389,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "cross chat searchable",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
@@ -411,7 +411,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "other chat unique phrase",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 42,
                     "control_chat_ids": []

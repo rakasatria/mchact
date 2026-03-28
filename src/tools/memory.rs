@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::memory_backend::MemoryBackend;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_storage::memory_quality;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::Database;
+use mchact_storage::memory_quality;
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
 
@@ -344,10 +344,10 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
 
-    use microclaw_storage::db::{Database, StoredMessage};
+    use mchact_storage::db::{Database, StoredMessage};
 
     fn test_dir() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("microclaw_memtool_{}", uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!("mchact_memtool_{}", uuid::Uuid::new_v4()))
     }
 
     fn test_db(dir: &std::path::Path) -> Arc<Database> {
@@ -457,7 +457,7 @@ mod tests {
             .execute(json!({
                 "scope": "chat",
                 "content": "from auth chat id",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "web",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -547,7 +547,7 @@ mod tests {
             .execute(json!({
                 "scope": "bot",
                 "content": "bot identity",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "feishu.ops",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -559,7 +559,7 @@ mod tests {
         let read = read_tool
             .execute(json!({
                 "scope": "bot",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "feishu.ops",
                     "caller_chat_id": 42,
                     "control_chat_ids": []
@@ -599,7 +599,7 @@ mod tests {
             .execute(json!({
                 "scope": "global",
                 "content": "secret",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -619,7 +619,7 @@ mod tests {
             .execute(json!({
                 "scope": "global",
                 "content": "global ok",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
@@ -640,7 +640,7 @@ mod tests {
             .execute(json!({
                 "scope": "chat",
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -667,7 +667,7 @@ mod tests {
             .execute(json!({
                 "scope": "chat",
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }

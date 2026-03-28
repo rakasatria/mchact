@@ -1,0 +1,260 @@
+<h2>mchact-memory: Unified Storage Layer</h2>
+<p class="subtitle">One trait, two backends, capabilities scale with infrastructure</p>
+
+<div class="section">
+  <h3>Architecture: Capability-Tiered Storage</h3>
+  <div class="mockup">
+    <div class="mockup-header">Data Flow — Same API, Different Backends</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6; padding: 20px; background: #1a1a2e; color: #e0e0e0;">
+<pre style="margin:0; white-space:pre;">
+┌─────────────────────────────────────────────────────────┐
+│                   mchact Application                     │
+│  agent_engine / scheduler / tools / deriver / dreamer    │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+            ┌──────────▼──────────┐
+            │   ObservationStore  │  ◄── Unified trait
+            │   (async trait)     │
+            │                     │
+            │  • store_observation│
+            │  • search_hybrid    │
+            │  • get_peer_card    │
+            │  • derive_from_msgs │
+            │  • dream_consolidate│
+            │  • trace_reasoning  │
+            │  • capabilities()   │  ◄── Runtime capability check
+            └─────┬─────────┬────┘
+                  │         │
+        ┌─────────▼──┐  ┌──▼───────────┐
+        │  SQLite     │  │  PostgreSQL   │
+        │  Backend    │  │  + pgvector   │
+        │             │  │  Backend      │
+        │ ┌─────────┐ │  │ ┌──────────┐ │
+        │ │memories │ │  │ │observa-  │ │
+        │ │table    │ │  │ │tions     │ │
+        │ │(flat)   │ │  │ │(leveled) │ │
+        │ ├─────────┤ │  │ ├──────────┤ │
+        │ │FTS5     │ │  │ │pgvector  │ │
+        │ │keyword  │ │  │ │semantic  │ │
+        │ │search   │ │  │ │+ FTS     │ │
+        │ ├─────────┤ │  │ ├──────────┤ │
+        │ │sqlite-  │ │  │ │native    │ │
+        │ │vec(opt) │ │  │ │HNSW      │ │
+        │ │vectors  │ │  │ │vectors   │ │
+        │ └─────────┘ │  │ ├──────────┤ │
+        │             │  │ │peers     │ │
+        │  NO peers   │  │ │peer_cards│ │
+        │  NO DAG     │  │ │source DAG│ │
+        │  NO dreamer │  │ │dreamer   │ │
+        │             │  │ │queue     │ │
+        └─────────────┘  └────────────┘
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Capability Matrix — What Each Backend Unlocks</h3>
+  <div class="mockup">
+    <div class="mockup-header">Feature Availability by Backend</div>
+    <div class="mockup-body" style="padding: 20px;">
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <thead>
+          <tr style="border-bottom: 2px solid #444; text-align:left;">
+            <th style="padding:8px;">Capability</th>
+            <th style="padding:8px;">SQLite</th>
+            <th style="padding:8px;">PostgreSQL + pgvector</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;"><strong>Flat memories</strong> (PROFILE/KNOWLEDGE/EVENT)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;"><strong>Keyword search</strong> (FTS)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; FTS5</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; tsvector + GIN</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;"><strong>Confidence scoring</strong></td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;"><strong>Reflector extraction</strong> (basic)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Existing</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Existing</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;"><strong>Supersede edges</strong></td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Existing</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full DAG</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(74,222,128,0.05);">
+            <td style="padding:8px;"><strong>Vector / semantic search</strong></td>
+            <td style="padding:8px; color:#facc15;">&#9679; Optional (sqlite-vec + external API)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Native pgvector HNSW</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(74,222,128,0.05);">
+            <td style="padding:8px;"><strong>Hybrid search (RRF)</strong></td>
+            <td style="padding:8px; color:#facc15;">&#9679; Keyword only (no RRF)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full RRF (semantic + keyword)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Observation levels</strong> (explicit/deductive/inductive/contradiction)</td>
+            <td style="padding:8px; color:#fb923c;">&#10007; Flat only</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full hierarchy</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Peers</strong> (observer/observed identity)</td>
+            <td style="padding:8px; color:#fb923c;">&#10007; chat_id only</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full peer model</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Peer cards</strong> (durable biographical facts)</td>
+            <td style="padding:8px; color:#fb923c;">&#10007; None</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Max 40 facts per peer</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Deriver agent</strong> (multi-level extraction)</td>
+            <td style="padding:8px; color:#fb923c;">&#10007; Basic reflector only</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Explicit + deductive extraction</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Dreamer agent</strong> (offline consolidation)</td>
+            <td style="padding:8px; color:#fb923c;">&#10007; None</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Pattern discovery + induction</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Source attribution DAG</strong></td>
+            <td style="padding:8px; color:#fb923c;">&#10007; Flat supersede only</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Full reasoning chain</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333; background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Contradiction detection</strong></td>
+            <td style="padding:8px; color:#fb923c;">&#10007; None</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Auto-detected</td>
+          </tr>
+          <tr style="background: rgba(251,146,60,0.08);">
+            <td style="padding:8px;"><strong>Background processing queue</strong></td>
+            <td style="padding:8px; color:#fb923c;">&#10007; None (reflector loop only)</td>
+            <td style="padding:8px; color:#4ade80;">&#10003; Task queue (derive/dream/consolidate)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>How It Works — Runtime Capability Discovery</h3>
+  <div class="mockup">
+    <div class="mockup-header">The Trait Adapts to What's Available</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.6; padding: 20px; background: #1a1a2e; color: #e0e0e0;">
+<pre style="margin:0; white-space:pre;">
+// The unified trait
+trait ObservationStore {
+    // Core — works on both backends
+    fn store_observation(obs: Observation) -> Id;
+    fn search(query, strategy: SearchStrategy) -> Vec&lt;Observation&gt;;
+    fn get_for_context(chat_id, budget) -> Vec&lt;Observation&gt;;
+    fn inject_into_prompt(chat_id) -> String;
+
+    // Capability-gated — graceful degradation
+    fn capabilities() -> Capabilities;
+    fn get_peer(name) -> Option&lt;Peer&gt;;          // postgres only
+    fn get_peer_card(peer_id) -> Option&lt;PeerCard&gt;; // postgres only
+    fn trace_reasoning(obs_id) -> Vec&lt;Observation&gt;; // postgres only
+    fn dream(peer_id) -> DreamResult;             // postgres only
+}
+
+struct Capabilities {
+    observation_levels: bool,  // sqlite=false, pg=true
+    peer_model: bool,          // sqlite=false, pg=true
+    hybrid_search: bool,       // sqlite=maybe, pg=true
+    semantic_search: bool,     // sqlite=optional, pg=true
+    dreamer: bool,             // sqlite=false, pg=true
+    source_dag: bool,          // sqlite=false, pg=true
+    contradiction_detect: bool,// sqlite=false, pg=true
+}
+
+// Config chooses backend
+// storage_backend: "sqlite"    → lightweight, local, existing behavior
+// storage_backend: "postgres"  → full observation engine
+
+// The deriver checks capabilities:
+if store.capabilities().observation_levels {
+    // Extract explicit + deductive observations
+} else {
+    // Fall back to flat memory reflector
+}
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Key Insight: Graceful Degradation</h3>
+  <div class="mockup">
+    <div class="mockup-header">Same Code Paths — Different Depth</div>
+    <div class="mockup-body" style="padding: 20px; font-size: 14px; line-height: 1.7;">
+      <p><strong>When running on SQLite:</strong></p>
+      <ul>
+        <li>Observations stored as flat memories (category = PROFILE/KNOWLEDGE/EVENT)</li>
+        <li>Reflector extracts facts (existing behavior, unchanged)</li>
+        <li>Search uses FTS5 keyword matching (existing)</li>
+        <li>sqlite-vec for optional semantic search (existing)</li>
+        <li>No peers, no DAG, no dreamer — but everything still works</li>
+        <li><em>Perfect for: local dev, single-user, lightweight deploys</em></li>
+      </ul>
+      <p style="margin-top:16px;"><strong>When running on PostgreSQL + pgvector:</strong></p>
+      <ul>
+        <li>Observations stored with full hierarchy (explicit/deductive/inductive/contradiction)</li>
+        <li>Deriver extracts multi-level observations with source attribution</li>
+        <li>Hybrid search: pgvector HNSW + tsvector FTS merged via RRF</li>
+        <li>Peer identity model (observer/observed, user/agent unified)</li>
+        <li>Peer cards (durable biographical summaries)</li>
+        <li>Dreamer runs offline consolidation + pattern discovery</li>
+        <li>Full reasoning DAG with trace_reasoning()</li>
+        <li><em>Perfect for: production, multi-agent (hermes/clawteam), teams</em></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Crate Structure</h3>
+  <div class="mockup">
+    <div class="mockup-header">crates/mchact-memory/</div>
+    <div class="mockup-body" style="font-family: monospace; font-size: 13px; line-height: 1.5; padding: 20px; background: #1a1a2e; color: #e0e0e0;">
+<pre style="margin:0; white-space:pre;">
+crates/mchact-memory/
+├── Cargo.toml              # sqlx, pgvector, rusqlite (optional)
+├── src/
+│   ├── lib.rs              # Public API + ObservationStore trait
+│   ├── types.rs            # Observation, Peer, PeerCard, ObservationLevel
+│   ├── capabilities.rs     # Capabilities struct + runtime checks
+│   │
+│   ├── sqlite/             # SQLite backend (wraps existing microclaw-storage)
+│   │   ├── mod.rs
+│   │   ├── store.rs        # impl ObservationStore for SqliteStore
+│   │   └── compat.rs       # Memory ↔ Observation mapping layer
+│   │
+│   ├── postgres/           # PostgreSQL + pgvector backend
+│   │   ├── mod.rs
+│   │   ├── store.rs        # impl ObservationStore for PgStore
+│   │   ├── schema.rs       # Migrations (observations, peers, queue, etc.)
+│   │   └── search.rs       # RRF hybrid search implementation
+│   │
+│   ├── deriver.rs          # Observation extraction (adapts to capabilities)
+│   ├── dreamer.rs          # Consolidation + induction (postgres only)
+│   ├── dag.rs              # Source attribution DAG traversal
+│   ├── quality.rs          # Quality gates (reuse + extend)
+│   ├── injection.rs        # Prompt injection (adapts to capabilities)
+│   └── queue.rs            # Background task queue (postgres only)
+</pre>
+    </div>
+  </div>
+</div>

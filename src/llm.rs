@@ -18,8 +18,8 @@ use crate::codex_auth::{
 use crate::config::WorkingDirIsolation;
 use crate::config::{resolve_model_name_with_fallback, Config};
 use crate::http_client::llm_user_agent;
-use microclaw_core::error::MicroClawError;
-use microclaw_core::llm_types::{
+use mchact_core::error::MchactError;
+use mchact_core::llm_types::{
     ContentBlock, ImageSource, Message, MessageContent, MessagesRequest, MessagesResponse,
     ResponseContentBlock, ToolDefinition, Usage,
 };
@@ -203,7 +203,7 @@ pub trait LlmProvider: Send + Sync {
         system: &str,
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
-    ) -> Result<MessagesResponse, MicroClawError>;
+    ) -> Result<MessagesResponse, MchactError>;
 
     async fn send_message_with_model(
         &self,
@@ -211,7 +211,7 @@ pub trait LlmProvider: Send + Sync {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         _model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message(system, messages, tools).await
     }
 
@@ -221,7 +221,7 @@ pub trait LlmProvider: Send + Sync {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let response = self.send_message(system, messages, tools).await?;
         if let Some(tx) = text_tx {
             for block in &response.content {
@@ -240,7 +240,7 @@ pub trait LlmProvider: Send + Sync {
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
         _model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message_stream(system, messages, tools, text_tx)
             .await
     }
@@ -280,7 +280,7 @@ impl AnthropicProvider {
         &self,
         request: &MessagesRequest,
         text_tx: Option<&UnboundedSender<String>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let mut streamed_request = request.clone();
         streamed_request.stream = Some(true);
 
@@ -315,12 +315,12 @@ impl AnthropicProvider {
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             if let Ok(api_err) = serde_json::from_str::<AnthropicApiError>(&body) {
-                return Err(MicroClawError::LlmApi(format!(
+                return Err(MchactError::LlmApi(format!(
                     "{}: {}",
                     api_err.error.error_type, api_err.error.message
                 )));
             }
-            return Err(MicroClawError::LlmApi(format!("HTTP {status}: {body}")));
+            return Err(MchactError::LlmApi(format!("HTTP {status}: {body}")));
         }
 
         let mut byte_stream = response.bytes_stream();
@@ -955,7 +955,7 @@ impl LlmProvider for AnthropicProvider {
         system: &str,
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message_with_model(system, messages, tools, None)
             .await
     }
@@ -966,7 +966,7 @@ impl LlmProvider for AnthropicProvider {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let messages = sanitize_messages(messages);
         let model = resolve_request_model("anthropic", &self.model, model_override);
 
@@ -1007,7 +1007,7 @@ impl LlmProvider for AnthropicProvider {
             if status.is_success() {
                 let body = response.text().await?;
                 let parsed: MessagesResponse = serde_json::from_str(&body).map_err(|e| {
-                    MicroClawError::LlmApi(format!("Failed to parse response: {e}\nBody: {body}"))
+                    MchactError::LlmApi(format!("Failed to parse response: {e}\nBody: {body}"))
                 })?;
                 return Ok(parsed);
             }
@@ -1025,12 +1025,12 @@ impl LlmProvider for AnthropicProvider {
 
             let body = response.text().await.unwrap_or_default();
             if let Ok(api_err) = serde_json::from_str::<AnthropicApiError>(&body) {
-                return Err(MicroClawError::LlmApi(format!(
+                return Err(MchactError::LlmApi(format!(
                     "{}: {}",
                     api_err.error.error_type, api_err.error.message
                 )));
             }
-            return Err(MicroClawError::LlmApi(format!("HTTP {status}: {body}")));
+            return Err(MchactError::LlmApi(format!("HTTP {status}: {body}")));
         }
     }
 
@@ -1040,7 +1040,7 @@ impl LlmProvider for AnthropicProvider {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message_stream_with_model(system, messages, tools, text_tx, None)
             .await
     }
@@ -1052,7 +1052,7 @@ impl LlmProvider for AnthropicProvider {
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
         model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let messages = sanitize_messages(messages);
         let model = resolve_request_model("anthropic", &self.model, model_override);
         let request = MessagesRequest {
@@ -1493,7 +1493,7 @@ impl LlmProvider for OpenAiProvider {
         system: &str,
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message_with_model(system, messages, tools, None)
             .await
     }
@@ -1504,7 +1504,7 @@ impl LlmProvider for OpenAiProvider {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let model = resolve_request_model(&self.provider, &self.model, model_override);
         if self.is_openai_codex {
             return self
@@ -1567,7 +1567,7 @@ impl LlmProvider for OpenAiProvider {
             if status.is_success() {
                 let text = response.text().await?;
                 let oai: OaiResponse = serde_json::from_str(&text).map_err(|e| {
-                    MicroClawError::LlmApi(format!(
+                    MchactError::LlmApi(format!(
                         "Failed to parse OpenAI response: {e}\nBody: {text}"
                     ))
                 })?;
@@ -1598,9 +1598,9 @@ impl LlmProvider for OpenAiProvider {
                 continue;
             }
             if let Ok(err) = serde_json::from_str::<OaiErrorResponse>(&text) {
-                return Err(MicroClawError::LlmApi(err.error.message));
+                return Err(MchactError::LlmApi(err.error.message));
             }
-            return Err(MicroClawError::LlmApi(format!("HTTP {status}: {text}")));
+            return Err(MchactError::LlmApi(format!("HTTP {status}: {text}")));
         }
     }
 
@@ -1610,7 +1610,7 @@ impl LlmProvider for OpenAiProvider {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         self.send_message_stream_with_model(system, messages, tools, text_tx, None)
             .await
     }
@@ -1622,7 +1622,7 @@ impl LlmProvider for OpenAiProvider {
         tools: Option<Vec<ToolDefinition>>,
         text_tx: Option<&UnboundedSender<String>>,
         model_override: Option<&str>,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let model = resolve_request_model(&self.provider, &self.model, model_override);
         if self.is_openai_codex {
             let response = self
@@ -1733,9 +1733,9 @@ impl LlmProvider for OpenAiProvider {
                 continue;
             }
             if let Ok(err) = serde_json::from_str::<OaiErrorResponse>(&text) {
-                return Err(MicroClawError::LlmApi(err.error.message));
+                return Err(MchactError::LlmApi(err.error.message));
             }
-            return Err(MicroClawError::LlmApi(format!("HTTP {status}: {text}")));
+            return Err(MchactError::LlmApi(format!("HTTP {status}: {text}")));
         };
 
         let mut byte_stream = response.bytes_stream();
@@ -1839,7 +1839,7 @@ impl OpenAiProvider {
         messages: Vec<Message>,
         tools: Option<Vec<ToolDefinition>>,
         model: &str,
-    ) -> Result<MessagesResponse, MicroClawError> {
+    ) -> Result<MessagesResponse, MchactError> {
         let instructions = if system.trim().is_empty() {
             "You are a helpful assistant."
         } else {
@@ -1915,14 +1915,14 @@ impl OpenAiProvider {
 
             let text = response.text().await.unwrap_or_default();
             if let Ok(err) = serde_json::from_str::<OaiErrorResponse>(&text) {
-                return Err(MicroClawError::LlmApi(err.error.message));
+                return Err(MchactError::LlmApi(err.error.message));
             }
-            return Err(MicroClawError::LlmApi(format!("HTTP {status}: {text}")));
+            return Err(MchactError::LlmApi(format!("HTTP {status}: {text}")));
         }
     }
 }
 
-fn parse_openai_codex_response_payload(text: &str) -> Result<OaiResponsesResponse, MicroClawError> {
+fn parse_openai_codex_response_payload(text: &str) -> Result<OaiResponsesResponse, MchactError> {
     if let Ok(parsed) = serde_json::from_str::<OaiResponsesResponse>(text) {
         return Ok(parsed);
     }
@@ -1957,7 +1957,7 @@ fn parse_openai_codex_response_payload(text: &str) -> Result<OaiResponsesRespons
         return Ok(parsed);
     }
 
-    Err(MicroClawError::LlmApi(format!(
+    Err(MchactError::LlmApi(format!(
         "Failed to parse OpenAI Codex response payload. Body: {text}"
     )))
 }
@@ -3629,7 +3629,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let codex_home = std::env::temp_dir().join(format!(
-            "microclaw-codex-home-oauth-{}",
+            "mchact-codex-home-oauth-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -3741,7 +3741,7 @@ mod tests {
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-empty-{}",
+            "mchact-codex-auth-empty-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -4041,7 +4041,7 @@ mod tests {
         let _guard = env_lock();
         let prev_codex_home = std::env::var("CODEX_HOME").ok();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw-llm-codex-base-default-{}",
+            "mchact-llm-codex-base-default-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -4066,7 +4066,7 @@ mod tests {
         let _guard = env_lock();
         let prev_codex_home = std::env::var("CODEX_HOME").ok();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw-llm-codex-base-file-{}",
+            "mchact-llm-codex-base-file-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

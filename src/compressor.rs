@@ -1,6 +1,6 @@
 // src/compressor.rs
 
-use microclaw_core::llm_types::{ContentBlock, Message, MessageContent};
+use mchact_core::llm_types::{ContentBlock, Message, MessageContent};
 
 const CHARS_PER_TOKEN: usize = 4;
 const MIN_SUMMARY_TOKENS: usize = 2000;

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_storage::db::{call_blocking, Database};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
@@ -143,7 +143,7 @@ impl HookManager {
 
     #[cfg(test)]
     pub fn for_tests() -> Self {
-        let tmp = std::env::temp_dir().join(format!("microclaw-hooks-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("mchact-hooks-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&tmp);
         let manager = Self {
             hooks_dir_candidates: vec![tmp.join("hooks")],
@@ -418,8 +418,8 @@ async fn run_hook_command(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .env("MICROCLAW_HOOK_EVENT", event.as_str())
-        .env("MICROCLAW_HOOK_NAME", &hook.name);
+        .env("MCHACT_HOOK_EVENT", event.as_str())
+        .env("MCHACT_HOOK_NAME", &hook.name);
 
     let mut child = command.spawn()?;
     if let Some(stdin) = child.stdin.as_mut() {
@@ -629,7 +629,7 @@ pub async fn handle_hooks_cli(args: &[String]) -> Result<()> {
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "microclaw hooks",
+    name = "mchact hooks",
     about = "Manage runtime hooks",
     disable_help_subcommand = true
 )]

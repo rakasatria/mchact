@@ -200,7 +200,7 @@ export function ModelTab(): React.ReactElement {
                   e.target.value,
                 )
               }
-              placeholder="microclaw/1.0"
+              placeholder="mchact/1.0"
             />
           </ConfigFieldCard>
 
@@ -502,7 +502,7 @@ export function ModelTab(): React.ReactElement {
                                     e.target.value,
                                 })
                               }
-                              placeholder="microclaw/1.0"
+                              placeholder="mchact/1.0"
                             />
                           </ConfigFieldCard>
                           <ConfigFieldCard

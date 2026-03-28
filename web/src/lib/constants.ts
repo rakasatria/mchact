@@ -1,6 +1,6 @@
 import type { A2APeerDraft, UiTheme } from "./types";
 
-export const DOCS_BASE = "https://microclaw.ai/docs";
+export const DOCS_BASE = "https://mchact.ai/docs";
 
 export const PROVIDER_SUGGESTIONS = [
   "openai",

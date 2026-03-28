@@ -1,6 +1,6 @@
 # Nixpkgs Automation
 
-This repository includes automation for keeping `microclaw` updated in `NixOS/nixpkgs`.
+This repository includes automation for keeping `mchact` updated in `NixOS/nixpkgs`.
 
 ## One-command Flow
 
@@ -14,9 +14,9 @@ By default, the script will:
 - detect version from `Cargo.toml`
 - clone `<your-gh-user>/nixpkgs` into `/tmp/nixpkgs-<timestamp>`
 - branch from `upstream/nixos-unstable`
-- update `pkgs/by-name/mi/microclaw/package.nix`
+- update `pkgs/by-name/mi/mchact/package.nix`
 - resolve `hash` and `cargoHash`
-- run `nix-build -A microclaw` and `result/bin/microclaw --help`
+- run `nix-build -A mchact` and `result/bin/mchact --help`
 - commit, push, and open PR to `NixOS/nixpkgs`
 
 ## Deploy Integration

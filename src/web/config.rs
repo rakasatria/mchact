@@ -1,6 +1,6 @@
 use super::*;
-use microclaw_tools::runtime::{tool_execution_policy, tool_risk};
-use microclaw_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
+use mchact_tools::runtime::{tool_execution_policy, tool_risk};
+use mchact_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
 
 fn effective_data_root_dir(config: &crate::config::Config) -> std::path::PathBuf {
     let data_dir = std::path::PathBuf::from(&config.data_dir);
@@ -683,7 +683,7 @@ fn default_mount_allowlist_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))?;
-    Some(home.join(".microclaw/sandbox-mount-allowlist.txt"))
+    Some(home.join(".mchact/sandbox-mount-allowlist.txt"))
 }
 
 pub(super) async fn api_update_config(

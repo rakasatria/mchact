@@ -514,7 +514,7 @@ export function useConfig(deps: UseConfigDeps) {
         const baseUrl = String(configDraft.llm_base_url || "").trim();
         if (apiKey || baseUrl) {
           setSaveStatus(
-            "Save failed: openai-codex ignores api_key/llm_base_url in microclaw config. Configure ~/.codex/auth.json and ~/.codex/config.toml.",
+            "Save failed: openai-codex ignores api_key/llm_base_url in mchact config. Configure ~/.codex/auth.json and ~/.codex/config.toml.",
           );
           return;
         }
@@ -536,7 +536,7 @@ export function useConfig(deps: UseConfigDeps) {
       });
       setConfigSelfCheck(selfCheck);
       setConfigSelfCheckLoading(false);
-      setSaveStatus("Saved. Restart microclaw to apply changes.");
+      setSaveStatus("Saved. Restart mchact to apply changes.");
     } catch (e) {
       setSaveStatus(
         `Save failed: ${e instanceof Error ? e.message : String(e)}`,

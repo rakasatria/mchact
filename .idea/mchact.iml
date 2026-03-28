@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-memory/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-memory/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-app/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-channels/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-clawhub/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-media/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-observability/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-storage/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/microclaw-tools/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-app/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-channels/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-clawhub/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-media/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-observability/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-storage/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/mchact-tools/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

@@ -17,11 +17,11 @@ use crate::chat_commands::maybe_handle_plugin_command;
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_core::text::floor_char_boundary;
-use microclaw_storage::db::call_blocking;
-use microclaw_storage::db::StoredMessage;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_core::text::floor_char_boundary;
+use mchact_storage::db::call_blocking;
+use mchact_storage::db::StoredMessage;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "irc",
@@ -58,7 +58,7 @@ pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
         ChannelFieldDef {
             yaml_key: "real_name",
             label: "IRC real name (optional)",
-            default: "MicroClaw",
+            default: "mchact",
             secret: false,
             required: false,
         },
@@ -171,7 +171,7 @@ impl IrcChannelConfig {
     fn real_name_or_default(&self) -> String {
         let real_name = self.real_name.trim();
         if real_name.is_empty() {
-            "MicroClaw".to_string()
+            "mchact".to_string()
         } else {
             real_name.to_string()
         }

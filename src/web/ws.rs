@@ -1,7 +1,7 @@
 use super::*;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_util::{SinkExt, StreamExt};
-use microclaw_storage::db::SessionSettings;
+use mchact_storage::db::SessionSettings;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, info, warn};
@@ -1266,7 +1266,7 @@ async fn handle_request_frame(
                 sender,
                 &id,
                 "METHOD_NOT_FOUND",
-                "method not supported by MicroClaw mission-control bridge",
+                "method not supported by mchact mission-control bridge",
             )
             .await;
         }
@@ -1277,14 +1277,14 @@ async fn handle_request_frame(
 fn bridge_agents(config: &crate::config::Config) -> Vec<GatewayAgent> {
     let label = config.bot_username_for_channel("web");
     let display = if label.trim().is_empty() {
-        "MicroClaw".to_string()
+        "mchact".to_string()
     } else {
         label
     };
 
     vec![GatewayAgent {
-        id: "microclaw-main".to_string(),
-        name: "MicroClaw Orchestrator".to_string(),
+        id: "mchact-main".to_string(),
+        name: "mchact Orchestrator".to_string(),
         label: display,
         model: bridge_primary_model(config),
         channel: "web",

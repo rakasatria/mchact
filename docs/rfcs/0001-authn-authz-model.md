@@ -7,7 +7,7 @@
 
 ## Context
 
-MicroClaw web APIs currently rely on a single bearer token gate for most routes.
+mchact web APIs currently rely on a single bearer token gate for most routes.
 This is insufficient for role separation, key rotation, and operator workflows.
 
 ## Goals

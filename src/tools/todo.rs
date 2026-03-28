@@ -3,8 +3,8 @@ use serde_json::json;
 use std::path::PathBuf;
 use tracing::info;
 
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_tools::todo_store::{format_todos, read_todos, write_todos, TodoItem};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_tools::todo_store::{format_todos, read_todos, write_todos, TodoItem};
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
 
@@ -161,7 +161,7 @@ mod tests {
     use serde_json::json;
 
     fn test_dir() -> PathBuf {
-        std::env::temp_dir().join(format!("microclaw_todo_test_{}", uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!("mchact_todo_test_{}", uuid::Uuid::new_v4()))
     }
 
     fn cleanup(dir: &std::path::Path) {
@@ -369,7 +369,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -388,7 +388,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "todos": [{"task": "x", "status": "pending"}],
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -408,7 +408,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "todos": [{"task": "cross", "status": "pending"}],
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
@@ -418,7 +418,7 @@ mod tests {
         let result = read_tool
             .execute(json!({
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }

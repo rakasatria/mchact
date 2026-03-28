@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 use crate::config::WorkingDirIsolation;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -65,7 +65,7 @@ impl Tool for WriteFileTool {
         let resolved_path = super::resolve_tool_path(&working_dir, path);
         let resolved_path_str = resolved_path.to_string_lossy().to_string();
 
-        if let Err(msg) = microclaw_tools::path_guard::check_path(&resolved_path_str) {
+        if let Err(msg) = mchact_tools::path_guard::check_path(&resolved_path_str) {
             return ToolResult::error(msg);
         }
 
@@ -77,7 +77,7 @@ impl Tool for WriteFileTool {
             let in_runtime_dir = normalized.contains("/runtime/skills/");
             if in_runtime_dir || !in_correct_dir {
                 return ToolResult::error(format!(
-                    "Wrong directory for skills! SKILL.md files MUST be written to ~/.microclaw/skills/<skill-name>/SKILL.md (or configured skills dir) — \
+                    "Wrong directory for skills! SKILL.md files MUST be written to ~/.mchact/skills/<skill-name>/SKILL.md (or configured skills dir) — \
                     NOT runtime/skills/ or any other location. Use the `sync_skills` tool instead, which handles this automatically. \
                     Attempted path: {}",
                     resolved_path.display()
@@ -129,7 +129,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_file_success() {
-        let dir = std::env::temp_dir().join(format!("microclaw_wf_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_wf_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("out.txt");
 
@@ -148,7 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_file_creates_parent_dirs() {
-        let dir = std::env::temp_dir().join(format!("microclaw_wf2_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_wf2_{}", uuid::Uuid::new_v4()));
         let file = dir.join("sub").join("dir").join("file.txt");
 
         let tool = WriteFileTool::new(".");
@@ -176,7 +176,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_file_resolves_relative_to_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_wf3_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_wf3_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         std::fs::create_dir_all(&work).unwrap();
 

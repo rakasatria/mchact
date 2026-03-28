@@ -1,5 +1,5 @@
 {
-  description = "MicroClaw - Multi-channel agent runtime";
+  description = "Mchact - Multi-channel agent runtime";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -35,8 +35,8 @@
         };
 
         packages = {
-          microclaw = pkgs.rustPlatform.buildRustPackage {
-            pname = "microclaw";
+          mchact = pkgs.rustPlatform.buildRustPackage {
+            pname = "mchact";
             version = "0.0.163";
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
@@ -57,7 +57,7 @@
             LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${pkgs.sqlite}/lib:${pkgs.libsodium}/lib";
             doCheck = false;
           };
-          default = self.packages.${system}.microclaw;
+          default = self.packages.${system}.mchact;
         };
       }
     );

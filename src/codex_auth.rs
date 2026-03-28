@@ -2,7 +2,7 @@ use base64::Engine;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use microclaw_core::error::MicroClawError;
+use mchact_core::error::MchactError;
 
 pub const OPENAI_CODEX_PROVIDER: &str = "openai-codex";
 pub const QWEN_PORTAL_PROVIDER: &str = "qwen-portal";
@@ -77,7 +77,7 @@ pub fn default_qwen_oauth_creds_path() -> PathBuf {
     Path::new(&base).join("oauth_creds.json")
 }
 
-pub fn codex_auth_file_has_access_token() -> Result<bool, MicroClawError> {
+pub fn codex_auth_file_has_access_token() -> Result<bool, MchactError> {
     if let Ok(token) = std::env::var("OPENAI_CODEX_ACCESS_TOKEN") {
         if !token.trim().is_empty() {
             return Ok(true);
@@ -89,13 +89,13 @@ pub fn codex_auth_file_has_access_token() -> Result<bool, MicroClawError> {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&path).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to read Codex auth file {}: {e}",
             path.display()
         ))
     })?;
     let parsed: CodexAuthFile = serde_json::from_str(&content).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to parse Codex auth file {}: {e}",
             path.display()
         ))
@@ -116,7 +116,7 @@ pub fn codex_auth_file_has_access_token() -> Result<bool, MicroClawError> {
 
 pub fn resolve_openai_codex_auth(
     _fallback_api_key: &str,
-) -> Result<CodexAuthResolved, MicroClawError> {
+) -> Result<CodexAuthResolved, MchactError> {
     if let Ok(token) = std::env::var("OPENAI_CODEX_ACCESS_TOKEN") {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
@@ -130,13 +130,13 @@ pub fn resolve_openai_codex_auth(
     let auth_path = default_codex_auth_path();
     if auth_path.exists() {
         let content = std::fs::read_to_string(&auth_path).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "Failed to read Codex auth file {}: {e}",
                 auth_path.display()
             ))
         })?;
         let parsed: CodexAuthFile = serde_json::from_str(&content).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "Failed to parse Codex auth file {}: {e}",
                 auth_path.display()
             ))
@@ -172,13 +172,13 @@ pub fn resolve_openai_codex_auth(
         }
     }
 
-    Err(MicroClawError::Config(format!(
+    Err(MchactError::Config(format!(
         "OpenAI Codex provider requires ~/.codex/auth.json (access token or OPENAI_API_KEY), or OPENAI_CODEX_ACCESS_TOKEN. Run `codex login` or update Codex config files (expected auth file: {}).",
         auth_path.display()
     )))
 }
 
-pub fn qwen_oauth_file_has_access_token() -> Result<bool, MicroClawError> {
+pub fn qwen_oauth_file_has_access_token() -> Result<bool, MchactError> {
     if let Ok(token) = std::env::var("QWEN_PORTAL_ACCESS_TOKEN") {
         if !token.trim().is_empty() {
             return Ok(true);
@@ -194,13 +194,13 @@ pub fn qwen_oauth_file_has_access_token() -> Result<bool, MicroClawError> {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&path).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to read Qwen oauth creds file {}: {e}",
             path.display()
         ))
     })?;
     let parsed: QwenOauthCredsFile = serde_json::from_str(&content).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to parse Qwen oauth creds file {}: {e}",
             path.display()
         ))
@@ -214,7 +214,7 @@ pub fn qwen_oauth_file_has_access_token() -> Result<bool, MicroClawError> {
 
 pub fn resolve_qwen_portal_auth(
     fallback_api_key: &str,
-) -> Result<CodexAuthResolved, MicroClawError> {
+) -> Result<CodexAuthResolved, MchactError> {
     if let Ok(token) = std::env::var("QWEN_PORTAL_ACCESS_TOKEN") {
         let trimmed = token.trim();
         if !trimmed.is_empty() {
@@ -236,13 +236,13 @@ pub fn resolve_qwen_portal_auth(
     let path = default_qwen_oauth_creds_path();
     if path.exists() {
         let content = std::fs::read_to_string(&path).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "Failed to read Qwen oauth creds file {}: {e}",
                 path.display()
             ))
         })?;
         let parsed: QwenOauthCredsFile = serde_json::from_str(&content).map_err(|e| {
-            MicroClawError::Config(format!(
+            MchactError::Config(format!(
                 "Failed to parse Qwen oauth creds file {}: {e}",
                 path.display()
             ))
@@ -266,7 +266,7 @@ pub fn resolve_qwen_portal_auth(
             account_id: None,
         });
     }
-    Err(MicroClawError::Config(
+    Err(MchactError::Config(
         "qwen-portal requires ~/.qwen/oauth_creds.json (access_token), or QWEN_PORTAL_ACCESS_TOKEN, or api_key.".into(),
     ))
 }
@@ -359,19 +359,19 @@ struct CodexRefreshResponse {
     refresh_token: Option<String>,
 }
 
-pub fn refresh_openai_codex_auth_if_needed() -> Result<(), MicroClawError> {
+pub fn refresh_openai_codex_auth_if_needed() -> Result<(), MchactError> {
     let auth_path = default_codex_auth_path();
     if !auth_path.exists() {
         return Ok(());
     }
     let content = std::fs::read_to_string(&auth_path).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to read Codex auth file {}: {e}",
             auth_path.display()
         ))
     })?;
     let mut parsed: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to parse Codex auth file {}: {e}",
             auth_path.display()
         ))
@@ -418,7 +418,7 @@ pub fn refresh_openai_codex_auth_if_needed() -> Result<(), MicroClawError> {
         return Ok(());
     }
     let parsed_resp: CodexRefreshResponse = resp.json().map_err(|e| {
-        MicroClawError::Config(format!(
+        MchactError::Config(format!(
             "Failed to parse OpenAI Codex refresh response: {e}"
         ))
     })?;
@@ -444,7 +444,7 @@ pub fn refresh_openai_codex_auth_if_needed() -> Result<(), MicroClawError> {
     std::fs::write(
         &auth_path,
         serde_json::to_string_pretty(&parsed).map_err(|e| {
-            MicroClawError::Config(format!("Failed to serialize refreshed Codex auth: {e}"))
+            MchactError::Config(format!("Failed to serialize refreshed Codex auth: {e}"))
         })?,
     )?;
     Ok(())
@@ -527,7 +527,7 @@ mod tests {
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-openai-key-only-{}",
+            "mchact-codex-auth-openai-key-only-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -568,7 +568,7 @@ mod tests {
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-openai-key-reject-{}",
+            "mchact-codex-auth-openai-key-reject-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -622,7 +622,7 @@ wire_api = "responses"
         let prev_qwen_access = std::env::var("QWEN_PORTAL_ACCESS_TOKEN").ok();
         std::env::remove_var("QWEN_PORTAL_ACCESS_TOKEN");
         let qwen_dir = std::env::temp_dir().join(format!(
-            "microclaw-qwen-oauth-creds-{}",
+            "mchact-qwen-oauth-creds-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -662,7 +662,7 @@ wire_api = "responses"
         std::env::remove_var("QWEN_PORTAL_ACCESS_TOKEN");
 
         let qwen_dir = std::env::temp_dir().join(format!(
-            "microclaw-qwen-oauth-resolve-{}",
+            "mchact-qwen-oauth-resolve-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

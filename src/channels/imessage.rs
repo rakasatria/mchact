@@ -7,9 +7,9 @@ use tracing::{error, info};
 
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_core::text::split_text;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_core::text::split_text;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "imessage",

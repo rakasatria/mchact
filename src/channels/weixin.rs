@@ -26,9 +26,9 @@ use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_comman
 use crate::config::Config;
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 const CHANNEL_KEY: &str = "weixin";
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
@@ -1318,7 +1318,7 @@ async fn send_typing(
 }
 
 fn generate_client_id() -> String {
-    format!("microclaw-weixin:{}", uuid::Uuid::new_v4())
+    format!("mchact-weixin:{}", uuid::Uuid::new_v4())
 }
 
 async fn send_text_message_native(
@@ -1896,7 +1896,7 @@ impl WeixinAdapter {
         let stored =
             load_account_data(&self.state_root, &self.local_account_key).ok_or_else(|| {
                 format!(
-                    "No Weixin credentials found for '{}'. Run `microclaw weixin login{}` first. Expected path: {}",
+                    "No Weixin credentials found for '{}'. Run `mchact weixin login{}` first. Expected path: {}",
                     self.name,
                     if self.local_account_key == "default" {
                         "".to_string()
@@ -2507,7 +2507,7 @@ async fn start_native_poll_loop(
                     if response.ret == SESSION_EXPIRED_ERRCODE || errcode == SESSION_EXPIRED_ERRCODE
                     {
                         error!(
-                            "Weixin session expired for '{}'; run `microclaw weixin login{}` again",
+                            "Weixin session expired for '{}'; run `mchact weixin login{}` again",
                             runtime.channel_name,
                             if runtime.local_account_key == "default" {
                                 "".to_string()
@@ -2849,7 +2849,7 @@ mod tests {
     use crate::config::Config;
     use axum::http::{HeaderMap, HeaderValue};
     use axum::{routing::get, Router};
-    use microclaw_channels::channel_adapter::ChannelAdapter;
+    use mchact_channels::channel_adapter::ChannelAdapter;
 
     fn unique_temp_dir() -> PathBuf {
         let root = std::env::temp_dir().join(format!("mc_weixin_test_{}", uuid::Uuid::new_v4()));

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 use crate::config::WorkingDirIsolation;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -66,7 +66,7 @@ impl Tool for GlobTool {
         let resolved_base = super::resolve_tool_path(&working_dir, base);
         let resolved_base_str = resolved_base.to_string_lossy().to_string();
 
-        if let Err(msg) = microclaw_tools::path_guard::check_path(&resolved_base_str) {
+        if let Err(msg) = mchact_tools::path_guard::check_path(&resolved_base_str) {
             return ToolResult::error(msg);
         }
 
@@ -84,7 +84,7 @@ impl Tool for GlobTool {
                     .filter_map(|p| p.ok())
                     .map(|p| p.display().to_string())
                     .collect();
-                matches = microclaw_tools::path_guard::filter_paths(matches);
+                matches = mchact_tools::path_guard::filter_paths(matches);
                 matches.sort();
 
                 if matches.is_empty() {
@@ -110,7 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_glob_finds_files() {
-        let dir = std::env::temp_dir().join(format!("microclaw_glob_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_glob_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.txt"), "").unwrap();
         std::fs::write(dir.join("b.txt"), "").unwrap();
@@ -130,7 +130,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_glob_no_matches() {
-        let dir = std::env::temp_dir().join(format!("microclaw_glob2_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_glob2_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
 
         let tool = GlobTool::new(".");
@@ -153,7 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_glob_defaults_to_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_glob3_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_glob3_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         let shared = work.join("shared");
         std::fs::create_dir_all(&shared).unwrap();

@@ -39,11 +39,11 @@ use crate::memory_backend::MemoryBackend;
 use crate::skills::SkillManager;
 use crate::tools::ToolRegistry;
 use crate::web::WebAdapter;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_observability::logs::OtlpLogExporter;
-use microclaw_observability::metrics::OtlpMetricExporter;
-use microclaw_observability::traces::OtlpTraceExporter;
-use microclaw_storage::db::Database;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_observability::logs::OtlpLogExporter;
+use mchact_observability::metrics::OtlpMetricExporter;
+use mchact_observability::traces::OtlpTraceExporter;
+use mchact_storage::db::Database;
 
 pub struct AppState {
     pub config: Config,

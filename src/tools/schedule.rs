@@ -6,10 +6,10 @@ use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde_json::json;
 
 use super::{authorize_chat_access, schema_object, Tool, ToolResult};
-use microclaw_channels::channel::enforce_channel_policy;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_channels::channel::enforce_channel_policy;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, Database};
 
 fn compute_next_run(cron_expr: &str, tz_name: &str) -> Result<String, String> {
     let tz: chrono_tz::Tz = tz_name
@@ -894,8 +894,8 @@ impl Tool for GetTaskHistoryTool {
 mod tests {
     use super::*;
     use crate::web::WebAdapter;
-    use microclaw_channels::channel_adapter::ChannelRegistry;
-    use microclaw_storage::db::Database;
+    use mchact_channels::channel_adapter::ChannelRegistry;
+    use mchact_storage::db::Database;
     use serde_json::json;
 
     fn test_registry() -> Arc<ChannelRegistry> {
@@ -905,7 +905,7 @@ mod tests {
     }
 
     fn test_db() -> (Arc<Database>, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("microclaw_sched_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_sched_{}", uuid::Uuid::new_v4()));
         let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
         (db, dir)
     }
@@ -1313,7 +1313,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "limit": 1,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -1334,7 +1334,7 @@ mod tests {
                 "prompt": "say hi",
                 "schedule_type": "once",
                 "schedule_value": "2099-12-31T23:59:59+00:00",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -1355,7 +1355,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "task_id": task_id,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -1378,7 +1378,7 @@ mod tests {
                 "prompt": "say hi",
                 "schedule_type": "once",
                 "schedule_value": "2099-12-31T23:59:59+00:00",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
@@ -1401,7 +1401,7 @@ mod tests {
                 "prompt": "say hi",
                 "schedule_type": "once",
                 "schedule_value": "2099-12-31T23:59:59+00:00",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }
@@ -1423,7 +1423,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "task_id": task_id,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }

@@ -1,6 +1,6 @@
 # Weixin
 
-MicroClaw now supports Weixin as a native Rust channel. No Node sidecar or `@tencent-weixin/openclaw-weixin` bridge is required for login, polling, text replies, or attachment replies.
+mchact now supports Weixin as a native Rust channel. No Node sidecar or `@tencent-weixin/openclaw-weixin` bridge is required for login, polling, text replies, or attachment replies.
 
 Native support includes:
 
@@ -23,7 +23,7 @@ channels:
     enabled: true
 ```
 
-`microclaw setup` writes the default Weixin endpoints automatically:
+`mchact setup` writes the default Weixin endpoints automatically:
 
 - `base_url: https://ilinkai.weixin.qq.com`
 - `cdn_base_url: https://novac2c.cdn.weixin.qq.com/c2c`
@@ -33,19 +33,19 @@ For a normal single-account deployment, you do not need to set them manually.
 Then login once:
 
 ```sh
-microclaw weixin login
+mchact weixin login
 ```
 
-Then start MicroClaw:
+Then start mchact:
 
 ```sh
-microclaw start
+mchact start
 ```
 
 By default, native Weixin runtime state is stored under:
 
-- `~/.microclaw/runtime/weixin/accounts/<account>.json`
-- `~/.microclaw/runtime/weixin/sync/<account>.txt`
+- `~/.mchact/runtime/weixin/accounts/<account>.json`
+- `~/.mchact/runtime/weixin/sync/<account>.txt`
 
 If you override `data_dir`, the effective path becomes `<data_dir>/runtime/weixin/...`.
 
@@ -91,36 +91,36 @@ Supported optional overrides:
 Login and persist credentials:
 
 ```sh
-microclaw weixin login
-microclaw weixin login --account ops
-microclaw weixin login --account ops --base-url https://ilinkai.weixin.qq.com
+mchact weixin login
+mchact weixin login --account ops
+mchact weixin login --account ops --base-url https://ilinkai.weixin.qq.com
 ```
 
 Inspect local state:
 
 ```sh
-microclaw weixin status
-microclaw weixin status --account ops
+mchact weixin status
+mchact weixin status --account ops
 ```
 
 Remove local credentials and sync cursor:
 
 ```sh
-microclaw weixin logout
-microclaw weixin logout --account ops
+mchact weixin logout
+mchact weixin logout --account ops
 ```
 
 ## Runtime Behavior
 
-- Polling starts automatically on `microclaw start` once credentials exist for that account.
-- During agent execution, MicroClaw sends native Weixin typing keepalives when a `typing_ticket` is available.
+- Polling starts automatically on `mchact start` once credentials exist for that account.
+- During agent execution, mchact sends native Weixin typing keepalives when a `typing_ticket` is available.
 - Replying requires a previously seen `context_token`, so proactive sends to a never-seen user are not possible yet.
 - Outbound native delivery supports text, image, video, and generic file attachments.
-- If login has not been completed yet, runtime startup keeps the adapter idle and prints a warning until `microclaw weixin login` is run.
+- If login has not been completed yet, runtime startup keeps the adapter idle and prints a warning until `mchact weixin login` is run.
 
 ## Inbound Webhook
 
-The native runtime uses long polling, but MicroClaw still accepts compatible webhook payloads for interoperability or controlled external forwarding.
+The native runtime uses long polling, but mchact still accepts compatible webhook payloads for interoperability or controlled external forwarding.
 
 Send `POST` requests to the configured `webhook_path` when you explicitly enable webhook forwarding.
 
@@ -143,7 +143,7 @@ Body:
 }
 ```
 
-MicroClaw also accepts a more upstream-like nested shape:
+mchact also accepts a more upstream-like nested shape:
 
 ```json
 {
@@ -160,19 +160,19 @@ MicroClaw also accepts a more upstream-like nested shape:
 }
 ```
 
-For `item_list`, MicroClaw currently normalizes:
+For `item_list`, mchact currently normalizes:
 
 - text -> plain text
 - voice with transcript -> transcript text
 - image -> `[image]`
-- file -> `[file]` or `[file: <name>]`, and when `file_item.media` is present MicroClaw downloads the payload into `<working_dir>/uploads/weixin.../<user>/...` and appends a `[document] ... saved_path=...` note
+- file -> `[file]` or `[file: <name>]`, and when `file_item.media` is present mchact downloads the payload into `<working_dir>/uploads/weixin.../<user>/...` and appends a `[document] ... saved_path=...` note
 - video -> `[video]`
 
 ## Context Token Behavior
 
-Weixin replies require a `context_token`. MicroClaw caches the latest token per `channel + user`.
+Weixin replies require a `context_token`. mchact caches the latest token per `channel + user`.
 
 Implications:
 
-- A user must send at least one inbound message before MicroClaw can reply.
-- Scheduled or proactive delivery to a never-seen Weixin user will fail until MicroClaw has seen one inbound message carrying a `context_token`.
+- A user must send at least one inbound message before mchact can reply.
+- Scheduled or proactive delivery to a never-seen Weixin user will fail until mchact has seen one inbound message carrying a `context_token`.

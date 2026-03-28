@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::mcp::{McpServer, McpToolInfo};
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{Tool, ToolResult};
 
@@ -52,7 +52,7 @@ impl McpTool {
 
     fn sanitize_input_for_mcp(input: serde_json::Value) -> serde_json::Value {
         let mut map = input.as_object().cloned().unwrap_or_default();
-        map.retain(|k, _| !k.starts_with("__microclaw_"));
+        map.retain(|k, _| !k.starts_with("__mchact_"));
         serde_json::Value::Object(map)
     }
 }
@@ -117,9 +117,9 @@ mod tests {
     fn test_sanitize_input_for_mcp_strips_internal_keys() {
         let input = json!({
             "query": "status",
-            "__microclaw_auth": {"caller_chat_id": 1},
-            "__microclaw_async": true,
-            "__microclaw_other": "x"
+            "__mchact_auth": {"caller_chat_id": 1},
+            "__mchact_async": true,
+            "__mchact_other": "x"
         });
         let out = McpTool::sanitize_input_for_mcp(input);
         assert_eq!(out, json!({"query": "status"}));

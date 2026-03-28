@@ -19,12 +19,12 @@ use crate::chat_commands::maybe_handle_plugin_command;
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::tools::ToolAuthContext;
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
 #[cfg(test)]
-use microclaw_core::llm_types::{ContentBlock, ImageSource, MessageContent};
-use microclaw_core::text::floor_char_boundary;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_core::llm_types::{ContentBlock, ImageSource, MessageContent};
+use mchact_core::text::floor_char_boundary;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 /// Configuration for Telegram streaming and reasoning display
 #[derive(Debug, Clone, Deserialize)]
@@ -1346,7 +1346,7 @@ pub async fn transcribe_audio(
         let Some(ref openai_key) = config.openai_api_key else {
             return Err("Voice transcription requires openai_api_key".into());
         };
-        microclaw_app::transcribe::transcribe_audio(openai_key, audio_bytes).await
+        mchact_app::transcribe::transcribe_audio(openai_key, audio_bytes).await
     }
 }
 
@@ -1791,8 +1791,8 @@ mod tests {
         build_system_prompt, history_to_claude_messages, message_to_text, strip_images_for_session,
         strip_thinking,
     };
-    use microclaw_core::llm_types::Message;
-    use microclaw_storage::db::StoredMessage;
+    use mchact_core::llm_types::Message;
+    use mchact_storage::db::StoredMessage;
 
     fn make_msg(id: &str, sender: &str, content: &str, is_bot: bool, ts: &str) -> StoredMessage {
         StoredMessage {
@@ -1970,10 +1970,10 @@ mod tests {
 
     #[test]
     fn test_render_markdown_v2_safe_heading_and_bold() {
-        let input = "## Rust 2024\nI am **MicroClawBot**.";
+        let input = "## Rust 2024\nI am **mchactBot**.";
         let rendered = render_markdown_v2_safe(input);
         assert!(rendered.contains("*Rust 2024*"));
-        assert!(rendered.contains("I am *MicroClawBot*"));
+        assert!(rendered.contains("I am *mchactBot*"));
     }
 
     #[test]

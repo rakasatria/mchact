@@ -1,18 +1,18 @@
 use crate::clawhub::service::{ClawHubGateway, RegistryClawHubGateway};
 use crate::config::Config;
-use crate::error::MicroClawError;
+use crate::error::MchactError;
 use crate::skills::SkillManager;
 use clap::{Parser, Subcommand};
-use microclaw_clawhub::install::InstallOptions;
+use mchact_clawhub::install::InstallOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 /// Retry an async operation up to 3 times with brief delays
-async fn retry_with_backoff<T, F, Fut>(mut operation: F) -> Result<T, MicroClawError>
+async fn retry_with_backoff<T, F, Fut>(mut operation: F) -> Result<T, MchactError>
 where
     F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, MicroClawError>>,
+    Fut: std::future::Future<Output = Result<T, MchactError>>,
 {
     let mut last_error = None;
     for attempt in 1..=3 {
@@ -27,10 +27,10 @@ where
         }
     }
     Err(last_error
-        .unwrap_or_else(|| MicroClawError::Config("Unexpected error during retry".to_string())))
+        .unwrap_or_else(|| MchactError::Config("Unexpected error during retry".to_string())))
 }
 
-pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), MicroClawError> {
+pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), MchactError> {
     let cli = match SkillCli::try_parse_from(
         std::iter::once("skill").chain(args.iter().map(std::string::String::as_str)),
     ) {
@@ -42,10 +42,10 @@ pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), Mi
             ) =>
         {
             err.print()
-                .map_err(|e| MicroClawError::Config(e.to_string()))?;
+                .map_err(|e| MchactError::Config(e.to_string()))?;
             return Ok(());
         }
-        Err(err) => return Err(MicroClawError::Config(err.to_string())),
+        Err(err) => return Err(MchactError::Config(err.to_string())),
     };
     let subcommand = cli.command;
 
@@ -104,7 +104,7 @@ pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), Mi
                 Ok(result) => {
                     println!("{}", result.message);
                     if result.requires_restart {
-                        println!("Restart MicroClaw or run /reload-skills to activate.");
+                        println!("Restart mchact or run /reload-skills to activate.");
                     }
                 }
                 Err(e) => eprintln!("Install failed: {}", e),
@@ -165,7 +165,7 @@ pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), Mi
             Ok(())
         }
         None => {
-            println!("Usage: microclaw skill <command>");
+            println!("Usage: mchact skill <command>");
             println!("\nCommands:");
             println!("  search <query>   Search for skills");
             println!("  install <slug>    Install a skill");
@@ -179,7 +179,7 @@ pub async fn handle_skill_cli(args: &[String], config: &Config) -> Result<(), Mi
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "microclaw skill",
+    name = "mchact skill",
     about = "Manage ClawHub skills",
     disable_help_subcommand = true
 )]

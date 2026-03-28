@@ -15,9 +15,9 @@
 
 ## Hook Issues
 
-- List hooks: `microclaw hooks list`
-- Inspect hook: `microclaw hooks info <name>`
-- Disable bad hook quickly: `microclaw hooks disable <name>`
+- List hooks: `mchact hooks list`
+- Inspect hook: `mchact hooks info <name>`
+- Disable bad hook quickly: `mchact hooks disable <name>`
 
 If a hook times out or crashes, runtime skips the hook and continues.
 
@@ -54,18 +54,18 @@ If a hook times out or crashes, runtime skips the hook and continues.
 - Symptom: Mission Control / OpenClaw operator cannot connect
   - The compatibility bridge is served from `GET /` with WebSocket upgrade, not `/ws`.
   - Verify the web listener first: `GET /api/health`.
-  - Check service state: `microclaw gateway status --json --deep`
+  - Check service state: `mchact gateway status --json --deep`
 
 - Symptom: local gateway RPC returns unauthorized
-  - Export one of `MICROCLAW_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, or `MICROCLAW_API_KEY`.
+  - Export one of `MCHACT_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`, `GATEWAY_TOKEN`, or `MCHACT_API_KEY`.
   - WebSocket `connect` requires a valid operator token; mutating RPC methods require `operator.write`.
 
 - Quick smoke checks:
 
 ```sh
-MICROCLAW_GATEWAY_TOKEN=... microclaw gateway call health
-MICROCLAW_GATEWAY_TOKEN=... microclaw gateway call status
-MICROCLAW_GATEWAY_TOKEN=... microclaw gateway call sessions.send \
+MCHACT_GATEWAY_TOKEN=... mchact gateway call health
+MCHACT_GATEWAY_TOKEN=... mchact gateway call status
+MCHACT_GATEWAY_TOKEN=... mchact gateway call sessions.send \
   --params '{"sessionKey":"main","message":"status summary"}'
 ```
 
@@ -265,11 +265,11 @@ Behavior:
 
 ## Sidecar MCP Integration (HAPI Bridge)
 
-Use this pattern when you want remote terminal/session capability via an external bridge, without embedding terminal runtime logic into MicroClaw core.
+Use this pattern when you want remote terminal/session capability via an external bridge, without embedding terminal runtime logic into mchact core.
 
 1. Keep base MCP config in `<data_dir>/mcp.json` (optional).
 2. Add sidecar config as a fragment in `<data_dir>/mcp.d/hapi-bridge.json`.
-3. Start the bridge service separately, then start MicroClaw.
+3. Start the bridge service separately, then start mchact.
 
 Example fragment:
 
@@ -290,7 +290,7 @@ Step-by-step guide: `docs/operations/hapi-bridge.md`.
 
 ## Memory MCP Backend (Optional)
 
-If any configured MCP server exposes both `memory_query` and `memory_upsert`, MicroClaw enables MCP-first structured-memory operations:
+If any configured MCP server exposes both `memory_query` and `memory_upsert`, mchact enables MCP-first structured-memory operations:
 
 - prompt-time structured-memory reads/searches
 - explicit `remember ...` fast path writes
@@ -299,14 +299,14 @@ If any configured MCP server exposes both `memory_query` and `memory_upsert`, Mi
 
 Fallback policy:
 
-- on MCP call failure, timeout, or invalid/unknown response shape, MicroClaw falls back to built-in SQLite memory automatically
+- on MCP call failure, timeout, or invalid/unknown response shape, mchact falls back to built-in SQLite memory automatically
 - fallback is per operation (best-effort), so one MCP failure does not disable memory for the whole runtime
 - fallback reasons are classified and surfaced as stable categories in health state, for example `timeout`, `transport`, `invalid_payload`, or `unsupported_operation`
 
 Operational checks:
 
 - confirm startup logs include `Memory MCP backend enabled via server '<name>'`
-- confirm startup health probe does not log `memory MCP startup probe failed`; if it does, MicroClaw keeps the external provider attached but serves operations via SQLite fallback as needed
+- confirm startup health probe does not log `memory MCP startup probe failed`; if it does, mchact keeps the external provider attached but serves operations via SQLite fallback as needed
 - verify server tool list includes exact names `memory_query` and `memory_upsert`
 - inspect `/api/health` or config self-check output for `memory_backend` health:
   - `startup_probe_ok=false` means the provider was discovered but failed the initial `memory_query(list)` probe

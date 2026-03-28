@@ -20,12 +20,12 @@ Date: 2026-03-05
 | OpenClaw | Optional Docker sandbox, session/tool policy layering | Docker-centric | Can run host-side depending mode/policy | Mature policy model and channel/session routing depth |
 | NanoClaw | Container-first execution model | Docker by default, Apple Container option | Designed around container isolation by default | Strong isolation narrative, explicit mount discipline |
 | ZeroClaw | Secure-by-default framing with multi-runtime direction | Native + containerized pathways (docs include multiple backends) | Runtime-dependent, layered controls | Broad runtime abstraction and strict config contract docs |
-| MicroClaw (before this PR) | Docker-only container runtime wiring | `auto`/`docker` | configurable fail-open/fail-closed | Strong path guards + approval gates |
+| mchact (before this PR) | Docker-only container runtime wiring | `auto`/`docker` | configurable fail-open/fail-closed | Strong path guards + approval gates |
 
-## Gap analysis for MicroClaw
+## Gap analysis for mchact
 
 1. Container runtime portability:
-MicroClaw sandbox runtime detection and health checks were Docker-specific, which creates friction on setups that standardize on Podman.
+mchact sandbox runtime detection and health checks were Docker-specific, which creates friction on setups that standardize on Podman.
 
 2. Diagnostics language and API surface:
 `doctor sandbox` and `/api/config/self_check` used Docker-specific messaging, reducing clarity when backend is `auto` and users run non-Docker engines.
@@ -41,7 +41,7 @@ This branch already changes `require_runtime` default to `true`, aligning behavi
 - `auto` remains Docker-first and Docker-only for backward compatibility.
 
 2. Unified runtime checks:
-- Added backend-aware runtime selection/availability helpers in `microclaw-tools::sandbox`.
+- Added backend-aware runtime selection/availability helpers in `mchact-tools::sandbox`.
 - `SandboxRouter` now uses backend-aware runtime resolution instead of Docker-only probing.
 
 3. Updated fail/diagnostic messaging:

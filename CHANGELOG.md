@@ -18,7 +18,7 @@ The format is loosely based on Keep a Changelog. Dates use UTC.
 
 - CI now builds the website docs alongside the web UI
 - release process documentation now points to explicit support and release-policy artifacts
-- Docker builds now compile embedded web assets inside the image build and default the runtime image to `microclaw start`
+- Docker builds now compile embedded web assets inside the image build and default the runtime image to `mchact start`
 
 ## 0.1.12
 

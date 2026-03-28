@@ -7,7 +7,7 @@
 
 ## Context
 
-MicroClaw has usage reporting and memory observability, but lacked a standardized runtime metrics schema and time-series storage API.
+mchact has usage reporting and memory observability, but lacked a standardized runtime metrics schema and time-series storage API.
 
 ## Goals
 

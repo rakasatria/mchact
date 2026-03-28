@@ -1,13 +1,13 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use microclaw_clawhub::client::ClawHubClient;
-use microclaw_clawhub::install::{install_skill, InstallOptions, InstallResult};
-use microclaw_clawhub::lockfile::read_lockfile;
-use microclaw_clawhub::types::{LockFile, SearchResult, SkillMeta};
+use mchact_clawhub::client::ClawHubClient;
+use mchact_clawhub::install::{install_skill, InstallOptions, InstallResult};
+use mchact_clawhub::lockfile::read_lockfile;
+use mchact_clawhub::types::{LockFile, SearchResult, SkillMeta};
 
 use crate::config::Config;
-use crate::error::MicroClawError;
+use crate::error::MchactError;
 
 #[async_trait]
 pub trait ClawHubGateway: Send + Sync {
@@ -16,8 +16,8 @@ pub trait ClawHubGateway: Send + Sync {
         query: &str,
         limit: usize,
         sort: &str,
-    ) -> Result<Vec<SearchResult>, MicroClawError>;
-    async fn get_skill(&self, slug: &str) -> Result<SkillMeta, MicroClawError>;
+    ) -> Result<Vec<SearchResult>, MchactError>;
+    async fn get_skill(&self, slug: &str) -> Result<SkillMeta, MchactError>;
     async fn install(
         &self,
         slug: &str,
@@ -25,8 +25,8 @@ pub trait ClawHubGateway: Send + Sync {
         skills_dir: &Path,
         lockfile_path: &Path,
         options: &InstallOptions,
-    ) -> Result<InstallResult, MicroClawError>;
-    fn read_lockfile(&self, path: &Path) -> Result<LockFile, MicroClawError>;
+    ) -> Result<InstallResult, MchactError>;
+    fn read_lockfile(&self, path: &Path) -> Result<LockFile, MchactError>;
 }
 
 pub struct RegistryClawHubGateway {
@@ -47,11 +47,11 @@ impl ClawHubGateway for RegistryClawHubGateway {
         query: &str,
         limit: usize,
         sort: &str,
-    ) -> Result<Vec<SearchResult>, MicroClawError> {
+    ) -> Result<Vec<SearchResult>, MchactError> {
         self.client.search(query, limit, sort).await
     }
 
-    async fn get_skill(&self, slug: &str) -> Result<SkillMeta, MicroClawError> {
+    async fn get_skill(&self, slug: &str) -> Result<SkillMeta, MchactError> {
         self.client.get_skill(slug).await
     }
 
@@ -62,7 +62,7 @@ impl ClawHubGateway for RegistryClawHubGateway {
         skills_dir: &Path,
         lockfile_path: &Path,
         options: &InstallOptions,
-    ) -> Result<InstallResult, MicroClawError> {
+    ) -> Result<InstallResult, MchactError> {
         install_skill(
             &self.client,
             slug,
@@ -74,7 +74,7 @@ impl ClawHubGateway for RegistryClawHubGateway {
         .await
     }
 
-    fn read_lockfile(&self, path: &Path) -> Result<LockFile, MicroClawError> {
+    fn read_lockfile(&self, path: &Path) -> Result<LockFile, MchactError> {
         read_lockfile(path)
     }
 }

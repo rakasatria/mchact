@@ -16,9 +16,9 @@ use crate::channels::startup_guard::{
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "nostr",
@@ -26,7 +26,7 @@ pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     fields: &[
         ChannelFieldDef {
             yaml_key: "publish_command",
-            label: "Nostr publish command (reads env MICROCLAW_NOSTR_TARGET/TEXT)",
+            label: "Nostr publish command (reads env MCHACT_NOSTR_TARGET/TEXT)",
             default: "",
             secret: false,
             required: false,
@@ -272,8 +272,8 @@ impl ChannelAdapter for NostrAdapter {
         let output = Command::new("sh")
             .arg("-lc")
             .arg(self.publish_command.trim())
-            .env("MICROCLAW_NOSTR_TARGET", external_chat_id)
-            .env("MICROCLAW_NOSTR_TEXT", text)
+            .env("MCHACT_NOSTR_TARGET", external_chat_id)
+            .env("MCHACT_NOSTR_TEXT", text)
             .output()
             .map_err(|e| format!("Failed running nostr publish command: {e}"))?;
         if !output.status.success() {

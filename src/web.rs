@@ -20,14 +20,14 @@ use crate::agent_engine::{process_with_agent_with_events, AgentEvent, AgentReque
 use crate::chat_commands::handle_chat_command;
 use crate::config::{Config, WorkingDirIsolation};
 use crate::runtime::AppState;
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel::{
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel::{
     deliver_and_store_bot_message, get_chat_routing, session_source_for_chat,
 };
-use microclaw_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
-use microclaw_observability::metrics::{OtlpMetricExporter, OtlpMetricSnapshot};
-use microclaw_storage::db::{call_blocking, ChatSummary, MetricsHistoryPoint, StoredMessage};
-use microclaw_storage::usage::build_usage_report;
+use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
+use mchact_observability::metrics::{OtlpMetricExporter, OtlpMetricSnapshot};
+use mchact_storage::db::{call_blocking, ChatSummary, MetricsHistoryPoint, StoredMessage};
+use mchact_storage::usage::build_usage_report;
 
 mod a2a;
 mod auth;
@@ -1008,7 +1008,7 @@ fn yaml_to_json_value(value: &serde_yaml::Value) -> serde_json::Value {
 fn config_path_for_save() -> Result<PathBuf, (StatusCode, String)> {
     match Config::resolve_config_path() {
         Ok(Some(path)) => Ok(path),
-        Ok(None) => Ok(PathBuf::from("./microclaw.config.yaml")),
+        Ok(None) => Ok(PathBuf::from("./mchact.config.yaml")),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -1273,7 +1273,7 @@ fn hook_token_from_headers(headers: &HeaderMap) -> Option<String> {
     auth_token_from_headers(headers).or_else(|| {
         headers
             .get("x-openclaw-token")
-            .or_else(|| headers.get("x-microclaw-hook-token"))
+            .or_else(|| headers.get("x-mchact-hook-token"))
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -2309,12 +2309,12 @@ mod tests {
     use crate::config::{Config, LlmProviderProfile, WorkingDirIsolation};
     use crate::llm::LlmProvider;
     use crate::{db::Database, memory::MemoryManager, skills::SkillManager, tools::ToolRegistry};
-    use crate::{error::MicroClawError, llm_types::ResponseContentBlock};
+    use crate::{error::MchactError, llm_types::ResponseContentBlock};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use futures_util::{SinkExt, StreamExt};
-    use microclaw_channels::channel_adapter::ChannelRegistry;
-    use microclaw_storage::db::call_blocking;
+    use mchact_channels::channel_adapter::ChannelRegistry;
+    use mchact_storage::db::call_blocking;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;
@@ -2347,14 +2347,14 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
         ) -> Result<
-            microclaw_core::llm_types::MessagesResponse,
-            microclaw_core::error::MicroClawError,
+            mchact_core::llm_types::MessagesResponse,
+            mchact_core::error::MchactError,
         > {
-            Ok(microclaw_core::llm_types::MessagesResponse {
-                content: vec![microclaw_core::llm_types::ResponseContentBlock::Text {
+            Ok(mchact_core::llm_types::MessagesResponse {
+                content: vec![mchact_core::llm_types::ResponseContentBlock::Text {
                     text: "hello from llm".into(),
                 }],
                 stop_reason: Some("end_turn".into()),
@@ -2365,12 +2365,12 @@ mod tests {
         async fn send_message_stream(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
             text_tx: Option<&tokio::sync::mpsc::UnboundedSender<String>>,
         ) -> Result<
-            microclaw_core::llm_types::MessagesResponse,
-            microclaw_core::error::MicroClawError,
+            mchact_core::llm_types::MessagesResponse,
+            mchact_core::error::MchactError,
         > {
             if let Some(tx) = text_tx {
                 let _ = tx.send("hello ".into());
@@ -2389,11 +2389,11 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             tokio::time::sleep(Duration::from_millis(self.sleep_ms)).await;
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "slow".into(),
                 }],
@@ -2410,10 +2410,10 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "<thinking>internal</thinking>Visible".into(),
                 }],
@@ -2432,12 +2432,12 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
-                return Ok(microclaw_core::llm_types::MessagesResponse {
+                return Ok(mchact_core::llm_types::MessagesResponse {
                     content: vec![ResponseContentBlock::ToolUse {
                         id: "tool_1".into(),
                         name: "glob".into(),
@@ -2448,7 +2448,7 @@ mod tests {
                     usage: None,
                 });
             }
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "after tool".into(),
                 }],
@@ -2467,12 +2467,12 @@ mod tests {
         async fn send_message(
             &self,
             _system: &str,
-            _messages: Vec<microclaw_core::llm_types::Message>,
-            _tools: Option<Vec<microclaw_core::llm_types::ToolDefinition>>,
-        ) -> Result<microclaw_core::llm_types::MessagesResponse, MicroClawError> {
+            _messages: Vec<mchact_core::llm_types::Message>,
+            _tools: Option<Vec<mchact_core::llm_types::ToolDefinition>>,
+        ) -> Result<mchact_core::llm_types::MessagesResponse, MchactError> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
-                return Ok(microclaw_core::llm_types::MessagesResponse {
+                return Ok(mchact_core::llm_types::MessagesResponse {
                     content: vec![ResponseContentBlock::ToolUse {
                         id: "tool_send_1".into(),
                         name: "send_message".into(),
@@ -2483,7 +2483,7 @@ mod tests {
                     usage: None,
                 });
             }
-            Ok(microclaw_core::llm_types::MessagesResponse {
+            Ok(mchact_core::llm_types::MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "final reply".into(),
                 }],
@@ -2543,7 +2543,7 @@ mod tests {
     }
 
     fn test_state_with_config(llm: Box<dyn LlmProvider>, mut cfg: Config) -> Arc<AppState> {
-        let dir = std::env::temp_dir().join(format!("microclaw_webtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_webtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         cfg.data_dir = dir.to_string_lossy().to_string();
         cfg.working_dir = dir.join("tmp").to_string_lossy().to_string();
@@ -4182,7 +4182,7 @@ mod tests {
                 "0 0 8 * * *",
                 "2099-01-01T08:00:00Z",
             )?;
-            Ok::<(), microclaw_core::error::MicroClawError>(())
+            Ok::<(), mchact_core::error::MchactError>(())
         })
         .await
         .unwrap();
@@ -4210,7 +4210,7 @@ mod tests {
         let (session, messages, tasks_len) = call_blocking(db, move |d| {
             Ok::<
                 (Option<(String, String)>, Vec<StoredMessage>, usize),
-                microclaw_core::error::MicroClawError,
+                mchact_core::error::MchactError,
             >((
                 d.load_session(4242)?,
                 d.get_recent_messages(4242, 10)?,
@@ -4231,7 +4231,7 @@ mod tests {
     async fn test_web_send_plugin_slash_command() {
         let mut cfg = test_config_template();
         let plugin_dir =
-            std::env::temp_dir().join(format!("microclaw_web_plugin_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_web_plugin_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
             plugin_dir.join("webplug.yaml"),
@@ -4606,7 +4606,7 @@ commands:
         cfg.a2a.enabled = true;
         cfg.a2a.agent_name = Some("Planner".into());
         cfg.a2a.agent_description = Some("Plans work".into());
-        cfg.a2a.public_base_url = Some("https://microclaw.example.com".into());
+        cfg.a2a.public_base_url = Some("https://mchact.example.com".into());
         let app = build_router(test_web_state_from_app_state(
             test_state_with_config(Box::new(DummyLlm), cfg),
             WebLimits::default(),
@@ -4629,7 +4629,7 @@ commands:
         );
         assert_eq!(
             v.pointer("/endpoints/message").and_then(|x| x.as_str()),
-            Some("https://microclaw.example.com/api/a2a/message")
+            Some("https://mchact.example.com/api/a2a/message")
         );
     }
 
@@ -5101,7 +5101,7 @@ commands:
             .header("authorization", "Bearer ws-list-secret")
             .header("content-type", "application/json")
             .body(Body::from(
-                r#"{"session_key":"chatclaw:microclaw:456","sender_name":"u","message":"seed"}"#,
+                r#"{"session_key":"chatclaw:mchact:456","sender_name":"u","message":"seed"}"#,
             ))
             .unwrap();
         app.clone().oneshot(req2).await.unwrap();
@@ -5133,7 +5133,7 @@ commands:
                 "id": "list-1",
                 "method": "sessions.list",
                 "params": {
-                    "agentId": "chatclaw:microclaw"
+                    "agentId": "chatclaw:mchact"
                 }
             })
             .to_string(),
@@ -5161,15 +5161,15 @@ commands:
         assert_eq!(sessions.len(), 1);
         assert_eq!(
             sessions[0].get("key").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
         assert_eq!(
             sessions[0].get("sessionKey").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
         assert_eq!(
             sessions[0].get("session_key").and_then(|v| v.as_str()),
-            Some("chatclaw:microclaw:456")
+            Some("chatclaw:mchact:456")
         );
 
         // Test with search term

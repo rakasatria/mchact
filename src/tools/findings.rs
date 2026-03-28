@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, Database};
 
 fn extract_runtime_ids(input: &serde_json::Value) -> Option<(String, String)> {
     let meta = input.get("__subagent_runtime")?;
@@ -173,7 +173,7 @@ mod tests {
 
     fn make_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_findings_{}",
+            "mchact_findings_{}",
             uuid::Uuid::new_v4()
         ));
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())

@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::Database;
 use serde_json::json;
 
 use super::{Tool, ToolResult};

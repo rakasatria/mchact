@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use microclaw_tools::web_content_validation::WebContentValidationConfig;
-use microclaw_tools::web_fetch::WebFetchUrlValidationConfig;
+use mchact_tools::web_content_validation::WebContentValidationConfig;
+use mchact_tools::web_fetch::WebFetchUrlValidationConfig;
 use serde_json::json;
 
 use super::{schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 pub struct WebFetchTool {
     default_timeout_secs: u64,
@@ -64,7 +64,7 @@ impl Tool for WebFetchTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(self.default_timeout_secs);
 
-        match microclaw_tools::web_fetch::fetch_url_with_timeout_and_validation(
+        match mchact_tools::web_fetch::fetch_url_with_timeout_and_validation(
             url,
             timeout_secs,
             self.validation,

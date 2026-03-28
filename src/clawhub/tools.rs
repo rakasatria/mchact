@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::llm_types::ToolDefinition;
 use crate::tools::{schema_object, Tool, ToolResult};
 use async_trait::async_trait;
-use microclaw_clawhub::install::InstallOptions;
+use mchact_clawhub::install::InstallOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -120,7 +120,7 @@ impl Tool for ClawHubInstallTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "clawhub_install".to_string(),
-            description: "Install a skill from ClawHub into ~/.microclaw/skills/ (or configured skills dir). Use this instead of running clawdhub CLI commands - this is the built-in way to install ClawHub skills."
+            description: "Install a skill from ClawHub into ~/.mchact/skills/ (or configured skills dir). Use this instead of running clawdhub CLI commands - this is the built-in way to install ClawHub skills."
                 .to_string(),
             input_schema: schema_object(
                 serde_json::json!({
@@ -179,7 +179,7 @@ impl Tool for ClawHubInstallTool {
                         return ToolResult::error(msg);
                     }
                     if result.requires_restart {
-                        msg.push_str("\nRestart MicroClaw or run /reload-skills to activate.");
+                        msg.push_str("\nRestart mchact or run /reload-skills to activate.");
                     }
                     return ToolResult::success(msg);
                 }

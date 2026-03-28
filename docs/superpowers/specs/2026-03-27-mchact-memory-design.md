@@ -2,11 +2,11 @@
 
 **Date:** 2026-03-27
 **Status:** Draft
-**Scope:** New crate `crates/mchact-memory/` + integration into existing microclaw runtime
+**Scope:** New crate `crates/mchact-memory/` + integration into existing mchact runtime
 
 ## Problem
 
-MicroClaw's memory system has three fundamental gaps compared to Honcho and Hermes:
+mchact's memory system has three fundamental gaps compared to Honcho and Hermes:
 
 1. **Flat memory model.** Three categories (PROFILE/KNOWLEDGE/EVENT) with no reasoning depth. No distinction between direct facts, logical inferences, discovered patterns, or contradictions. The reflector extracts facts but cannot reason about them.
 
@@ -16,7 +16,7 @@ MicroClaw's memory system has three fundamental gaps compared to Honcho and Herm
 
 ## Solution
 
-A new Rust crate `mchact-memory` that implements Honcho's observation hierarchy, Hermes' production patterns, and microclaw's existing infrastructure — behind a single `ObservationStore` trait with two interchangeable drivers: SQLite (sqlite-vec + FTS5) and PostgreSQL (pgvector + tsvector).
+A new Rust crate `mchact-memory` that implements Honcho's observation hierarchy, Hermes' production patterns, and mchact's existing infrastructure — behind a single `ObservationStore` trait with two interchangeable drivers: SQLite (sqlite-vec + FTS5) and PostgreSQL (pgvector + tsvector).
 
 Both drivers implement the **full feature set**. No degraded mode. Config picks the driver.
 
@@ -120,7 +120,7 @@ CREATE TABLE observations (
 
 **Source attribution DAG:** `source_ids` is a JSON array of observation IDs that served as premises. Forms a directed acyclic graph. `trace_reasoning(obs_id)` traverses the DAG to show how a conclusion was reached.
 
-**Confidence scoring (preserved from microclaw):**
+**Confidence scoring (preserved from mchact):**
 - Explicit remember: 0.95
 - Deriver extraction (explicit level): 0.85
 - Deriver extraction (deductive level): 0.70
@@ -146,7 +146,7 @@ CREATE INDEX idx_obs_embedding ON observations
     USING hnsw (embedding vector_cosine_ops);
 ```
 
-Embedding dimension configurable via `memory.embedding_dim` (default 1536 for OpenAI text-embedding-3-small). Both drivers use the same configured dimension. Embedding provider reuses microclaw's existing `embedding_provider` / `embedding_api_key` / `embedding_model` config.
+Embedding dimension configurable via `memory.embedding_dim` (default 1536 for OpenAI text-embedding-3-small). Both drivers use the same configured dimension. Embedding provider reuses mchact's existing `embedding_provider` / `embedding_api_key` / `embedding_model` config.
 
 ### Keyword Search Index
 
@@ -185,7 +185,7 @@ CREATE TABLE observation_queue (
 
 ### MoA Findings
 
-Moved from microclaw-storage into mchact-memory.
+Moved from mchact-storage into mchact-memory.
 
 ```sql
 CREATE TABLE findings (
@@ -327,7 +327,7 @@ Replaces the current reflector loop. Extracts multi-level observations from conv
 
 1. Dequeue batch of messages for same `(chat_id, observed_peer)`.
 2. Resolve peers: auto-create from `(channel, external_user_id)` if new.
-3. Call LLM (via microclaw's existing provider, using auxiliary/cheap model if configured) with deriver prompt:
+3. Call LLM (via mchact's existing provider, using auxiliary/cheap model if configured) with deriver prompt:
    ```
    Extract observations from this conversation segment.
    Output JSON array:
@@ -452,7 +452,7 @@ When MoA orchestration completes, valuable findings can be promoted to long-term
 
 ## Migration: Legacy Memories to Observations
 
-One-time migration when upgrading from microclaw flat memory.
+One-time migration when upgrading from mchact flat memory.
 
 **Script (migration.rs):**
 
@@ -519,12 +519,12 @@ crates/mchact-memory/
 | `memory_injection_logs` table | `injection_logs` table |
 | `memories` table | `observations` table |
 | `memory_supersede_edges` table | `observations.source_ids` (DAG) |
-| `subagent_findings` in microclaw-storage | `findings` in mchact-memory |
+| `subagent_findings` in mchact-storage | `findings` in mchact-memory |
 | AGENTS.md file memory | Peer cards |
 
 ### Unchanged
 
-- `messages` table and FTS5 index (microclaw-storage) — stays in SQLite
+- `messages` table and FTS5 index (mchact-storage) — stays in SQLite
 - `sessions` table — stays in SQLite
 - Auth / API keys — stays in SQLite
 - Scheduled tasks — stays in SQLite

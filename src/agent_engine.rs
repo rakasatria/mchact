@@ -11,13 +11,13 @@ use crate::memory_service::{build_db_memory_context, maybe_handle_explicit_memor
 use crate::run_control;
 use crate::runtime::AppState;
 use crate::tools::ToolAuthContext;
-use microclaw_core::llm_types::{
+use mchact_core::llm_types::{
     ContentBlock, ImageSource, Message, MessageContent, ResponseContentBlock,
 };
-use microclaw_observability::traces::{
+use mchact_observability::traces::{
     kv, kv_int, new_span_id, new_trace_id, now_unix_nano, SpanData,
 };
-use microclaw_storage::db::{call_blocking, SessionSettings, StoredMessage};
+use mchact_storage::db::{call_blocking, SessionSettings, StoredMessage};
 use opentelemetry_proto::tonic::trace::v1::Status;
 use opentelemetry_semantic_conventions::attribute::{
     GEN_AI_OPERATION_NAME, GEN_AI_REQUEST_MODEL, GEN_AI_SYSTEM, GEN_AI_USAGE_INPUT_TOKENS,
@@ -156,14 +156,14 @@ fn with_high_risk_approval_marker(input: &Value) -> Value {
     let mut approved_input = input.clone();
     if let Some(obj) = approved_input.as_object_mut() {
         obj.insert(
-            "__microclaw_high_risk_approved".to_string(),
+            "__mchact_high_risk_approved".to_string(),
             Value::Bool(true),
         );
         return approved_input;
     }
     serde_json::json!({
-        "__microclaw_high_risk_approved": true,
-        "__microclaw_original_input": input,
+        "__mchact_high_risk_approved": true,
+        "__mchact_original_input": input,
     })
 }
 
@@ -534,7 +534,7 @@ pub(crate) async fn process_with_agent_impl(
     if let Some(exp) = &state.trace_exporter {
         let mut attrs = vec![
             kv(GEN_AI_OPERATION_NAME, "agent_run"),
-            kv(GEN_AI_SYSTEM, "microclaw"),
+            kv(GEN_AI_SYSTEM, "mchact"),
             kv_int("chat_id", context.chat_id),
             kv("channel", context.caller_channel),
             kv(USER_ID, &format!("{}", context.chat_id)),
@@ -546,8 +546,8 @@ pub(crate) async fn process_with_agent_impl(
                 "gen_ai.usage.total_tokens",
                 metrics.input_tokens + metrics.output_tokens,
             ),
-            kv_int("microclaw.tool_calls", metrics.tool_calls),
-            kv_int("microclaw.tool_errors", metrics.tool_errors),
+            kv_int("mchact.tool_calls", metrics.tool_calls),
+            kv_int("mchact.tool_errors", metrics.tool_errors),
         ];
 
         let (status, error_msg) = match &result {
@@ -2014,7 +2014,7 @@ You have access to the following capabilities:
 - Spawn and manage asynchronous sub-agent runs (`sessions_spawn`, `subagents_list`, `subagents_info`, `subagents_kill`)
 - Run depth-2 orchestration template with structured merge (`subagents_orchestrate`)
 - Activate agent skills (`activate_skill`) for specialized tasks
-- Install skills from repos (`sync_skills`, `clawhub_install`, `clawhub_search`) — use these instead of manually writing SKILL.md files. Skills go in ~/.microclaw/skills/ (or configured skills dir).
+- Install skills from repos (`sync_skills`, `clawhub_install`, `clawhub_search`) — use these instead of manually writing SKILL.md files. Skills go in ~/.mchact/skills/ (or configured skills dir).
 - Plan and track tasks with a todo list (`todo_read`, `todo_write`) — use this to break down complex tasks into steps, track progress, and stay organized
 
 IMPORTANT: When you need to run a shell command, execute it using the `bash` tool. Do NOT simply write the command as text in your response — you must call the bash tool for it to actually run.
@@ -2451,14 +2451,14 @@ mod tests {
     use crate::skills::SkillManager;
     use crate::tools::ToolRegistry;
     use crate::web::WebAdapter;
-    use microclaw_channels::channel::ConversationKind;
-    use microclaw_channels::channel_adapter::ChannelAdapter;
-    use microclaw_channels::channel_adapter::ChannelRegistry;
-    use microclaw_core::error::MicroClawError;
-    use microclaw_core::llm_types::{
+    use mchact_channels::channel::ConversationKind;
+    use mchact_channels::channel_adapter::ChannelAdapter;
+    use mchact_channels::channel_adapter::ChannelRegistry;
+    use mchact_core::error::MchactError;
+    use mchact_core::llm_types::{
         Message, MessagesResponse, ResponseContentBlock, ToolDefinition,
     };
-    use microclaw_storage::db::{Database, StoredMessage};
+    use mchact_storage::db::{Database, StoredMessage};
     use serde_json::json;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -2473,7 +2473,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             Ok(MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
                     text: "ok".to_string(),
@@ -2495,7 +2495,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -2507,7 +2507,7 @@ mod tests {
                 });
             }
             let saw_guard = messages.iter().any(|m| match &m.content {
-                microclaw_core::llm_types::MessageContent::Text(t) => {
+                mchact_core::llm_types::MessageContent::Text(t) => {
                     t.contains("[runtime_guard]: Your previous reply had no user-visible text.")
                 }
                 _ => false,
@@ -2537,7 +2537,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -2558,9 +2558,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3077,7 +3077,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3100,9 +3100,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3140,7 +3140,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3160,9 +3160,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3199,7 +3199,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3230,7 +3230,7 @@ mod tests {
             _system: &str,
             messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             let idx = self.calls.fetch_add(1, Ordering::SeqCst);
             if idx == 0 {
                 return Ok(MessagesResponse {
@@ -3250,9 +3250,9 @@ mod tests {
                 if msg.role != "user" {
                     continue;
                 }
-                if let microclaw_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
+                if let mchact_core::llm_types::MessageContent::Blocks(blocks) = &msg.content {
                     for block in blocks {
-                        if let microclaw_core::llm_types::ContentBlock::ToolResult {
+                        if let mchact_core::llm_types::ContentBlock::ToolResult {
                             content,
                             is_error,
                             ..
@@ -3287,7 +3287,7 @@ mod tests {
             _system: &str,
             _messages: Vec<Message>,
             _tools: Option<Vec<ToolDefinition>>,
-        ) -> Result<MessagesResponse, MicroClawError> {
+        ) -> Result<MessagesResponse, MchactError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(MessagesResponse {
                 content: vec![ResponseContentBlock::Text {
@@ -3593,7 +3593,7 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].role, "user");
         match &out[0].content {
-            microclaw_core::llm_types::MessageContent::Text(t) => {
+            mchact_core::llm_types::MessageContent::Text(t) => {
                 assert!(t.contains("你好"));
                 assert!(!t.contains("/skills"));
             }

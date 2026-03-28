@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 use crate::config::WorkingDirIsolation;
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 use super::{schema_object, Tool, ToolResult};
 
@@ -69,7 +69,7 @@ impl Tool for ReadFileTool {
         let resolved_path = super::resolve_tool_path(&working_dir, path);
         let resolved_path_str = resolved_path.to_string_lossy().to_string();
 
-        if let Err(msg) = microclaw_tools::path_guard::check_path(&resolved_path_str) {
+        if let Err(msg) = mchact_tools::path_guard::check_path(&resolved_path_str) {
             return ToolResult::error(msg);
         }
 
@@ -123,7 +123,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_success() {
-        let dir = std::env::temp_dir().join(format!("microclaw_rf_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_rf_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("test.txt");
         std::fs::write(&file, "line1\nline2\nline3\nline4\nline5").unwrap();
@@ -141,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_with_offset_and_limit() {
-        let dir = std::env::temp_dir().join(format!("microclaw_rf2_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_rf2_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("test.txt");
         std::fs::write(&file, "a\nb\nc\nd\ne").unwrap();
@@ -177,7 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_resolves_relative_to_working_dir() {
-        let root = std::env::temp_dir().join(format!("microclaw_rf3_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_rf3_{}", uuid::Uuid::new_v4()));
         let work = root.join("workspace");
         let shared = work.join("shared");
         std::fs::create_dir_all(&shared).unwrap();

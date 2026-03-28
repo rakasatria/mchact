@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
+use mchact_core::llm_types::ToolDefinition;
 
 pub struct WebSearchTool {
     default_timeout_secs: u64,
@@ -53,7 +53,7 @@ impl Tool for WebSearchTool {
         };
         let timeout_secs = resolve_timeout_secs(&input, self.default_timeout_secs);
 
-        match microclaw_tools::web_search::search_ddg_with_timeout(&query, timeout_secs).await {
+        match mchact_tools::web_search::search_ddg_with_timeout(&query, timeout_secs).await {
             Ok(results) => {
                 if results.is_empty() {
                     ToolResult::success("No results found.".into())

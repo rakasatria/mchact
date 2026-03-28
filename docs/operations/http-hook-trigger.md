@@ -1,6 +1,6 @@
 # HTTP Hook Trigger
 
-This document describes the dedicated webhook-style HTTP trigger surface for MicroClaw automation.
+This document describes the dedicated webhook-style HTTP trigger surface for mchact automation.
 
 ## Scope
 
@@ -21,7 +21,7 @@ Supported headers:
 
 - `Authorization: Bearer <token>` (recommended)
 - `x-openclaw-token: <token>`
-- `x-microclaw-hook-token: <token>`
+- `x-mchact-hook-token: <token>`
 
 If `hooks_token` is missing, the endpoint returns `503`.
 
@@ -89,14 +89,14 @@ Behavior:
 
 ```sh
 curl -sS http://127.0.0.1:10961/hooks/agent \
-  -H "Authorization: Bearer $MICROCLAW_HOOKS_TOKEN" \
+  -H "Authorization: Bearer $MCHACT_HOOKS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize inbox","name":"Email"}'
 ```
 
 ```sh
 curl -sS http://127.0.0.1:10961/hooks/wake \
-  -H "Authorization: Bearer $MICROCLAW_HOOKS_TOKEN" \
+  -H "Authorization: Bearer $MCHACT_HOOKS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"New email received","mode":"next-heartbeat"}'
 ```

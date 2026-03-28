@@ -1,11 +1,15 @@
 pub mod a2a;
+pub mod batch;
+pub mod batch_worker;
 pub mod acp;
 pub mod acp_subagent;
 pub mod agent_engine;
 pub mod channels;
 pub mod compressor;
 pub mod distributions;
+pub mod export;
 pub mod parsers;
+pub mod train_pipeline;
 pub mod chat_commands;
 pub mod clawhub;
 pub mod codex_auth;

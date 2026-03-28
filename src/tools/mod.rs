@@ -22,6 +22,7 @@ pub mod sync_skills;
 pub mod text_to_speech;
 pub mod time_math;
 pub mod todo;
+pub mod training;
 pub mod video_generate;
 pub mod web_fetch;
 pub mod web_search;
@@ -32,16 +33,16 @@ use std::{path::PathBuf, time::Instant};
 
 use crate::config::Config;
 use crate::memory_backend::MemoryBackend;
-use microclaw_channels::channel_adapter::ChannelRegistry;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-pub use microclaw_tools::runtime::{
+use mchact_channels::channel_adapter::ChannelRegistry;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::Database;
+pub use mchact_tools::runtime::{
     auth_context_from_input, authorize_chat_access, resolve_tool_path, resolve_tool_working_dir,
     schema_object, tool_execution_policy, tool_risk, validate_execution_policy, Tool,
     ToolAuthContext, ToolResult, ToolRisk,
 };
-use microclaw_tools::runtime::{inject_auth_context, require_high_risk_approval};
-use microclaw_tools::sandbox::{ExtraMount, SandboxMode, SandboxRouter};
+use mchact_tools::runtime::{inject_auth_context, require_high_risk_approval};
+use mchact_tools::sandbox::{ExtraMount, SandboxMode, SandboxRouter};
 
 pub struct ToolRegistry {
     config: Config,
@@ -273,6 +274,10 @@ impl ToolRegistry {
                 db.clone(),
                 channel_registry.clone(),
             )),
+            Box::new(training::BatchGenerateTool),
+            Box::new(training::ExportTrajectoriesTool),
+            Box::new(training::CompressTrajectoriesTool),
+            Box::new(training::TrainPipelineTool),
         ];
 
         // Add ClawHub tools if enabled
@@ -593,7 +598,7 @@ mod tests {
     #[test]
     fn test_auth_context_from_input() {
         let input = json!({
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "telegram",
                 "caller_chat_id": 123,
                 "control_chat_ids": [123, 999]
@@ -609,7 +614,7 @@ mod tests {
     #[test]
     fn test_authorize_chat_access_denied() {
         let input = json!({
-            "__microclaw_auth": {
+            "__mchact_auth": {
                 "caller_channel": "telegram",
                 "caller_chat_id": 100,
                 "control_chat_ids": []
@@ -625,7 +630,7 @@ mod tests {
             std::path::Path::new("/tmp/work"),
             WorkingDirIsolation::Shared,
             &json!({
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 123,
                     "control_chat_ids": []
@@ -641,7 +646,7 @@ mod tests {
             std::path::Path::new("/tmp/work"),
             WorkingDirIsolation::Chat,
             &json!({
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "discord",
                     "caller_chat_id": -100123,
                     "control_chat_ids": []
@@ -738,7 +743,7 @@ mod tests {
         let approved = registry
             .execute_with_auth(
                 "bash",
-                json!({"__microclaw_high_risk_approved": true}),
+                json!({"__mchact_high_risk_approved": true}),
                 &auth,
             )
             .await;
@@ -771,7 +776,7 @@ mod tests {
         let approved = registry
             .execute_with_auth(
                 "bash",
-                json!({"__microclaw_high_risk_approved": true}),
+                json!({"__mchact_high_risk_approved": true}),
                 &auth,
             )
             .await;
@@ -857,7 +862,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dynamic_plugin_tool_executes_without_restart() {
-        let root = std::env::temp_dir().join(format!("microclaw_plugin_{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("mchact_plugin_{}", uuid::Uuid::new_v4()));
         let plugins_dir = root.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         let manifest = plugins_dir.join("demo.yaml");

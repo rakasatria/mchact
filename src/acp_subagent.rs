@@ -17,8 +17,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::config::{Config, ResolvedSubagentAcpTargetConfig};
 use crate::tools::{resolve_tool_working_dir, ToolAuthContext};
-use microclaw_core::text::floor_char_boundary;
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_core::text::floor_char_boundary;
+use mchact_storage::db::{call_blocking, Database};
 
 const ACP_RUNTIME_PROVIDER: &str = "acp";
 const ACP_AGENT_STDERR_LIMIT_BYTES: usize = 16 * 1024;
@@ -492,17 +492,17 @@ async fn run_acp_subagent_task_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .env("MICROCLAW_SUBAGENT_RUN_ID", &params.run_id)
+        .env("MCHACT_SUBAGENT_RUN_ID", &params.run_id)
         .env(
-            "MICROCLAW_SUBAGENT_CHAT_ID",
+            "MCHACT_SUBAGENT_CHAT_ID",
             params.auth_context.caller_chat_id.to_string(),
         )
         .env(
-            "MICROCLAW_SUBAGENT_WORKDIR",
+            "MCHACT_SUBAGENT_WORKDIR",
             working_dir.display().to_string(),
         );
     if let Some(target_name) = params.target.name.as_deref() {
-        child.env("MICROCLAW_SUBAGENT_RUNTIME_TARGET", target_name);
+        child.env("MCHACT_SUBAGENT_RUNTIME_TARGET", target_name);
     }
     for (key, value) in &params.target.env {
         child.env(key, value);
@@ -557,8 +557,8 @@ async fn run_acp_subagent_task_inner(
     conn.initialize(
         InitializeRequest::new(ProtocolVersion::V1)
             .client_info(
-                acp::Implementation::new("microclaw-acp-client", env!("CARGO_PKG_VERSION"))
-                    .title("MicroClaw ACP Client"),
+                acp::Implementation::new("mchact-acp-client", env!("CARGO_PKG_VERSION"))
+                    .title("mchact ACP Client"),
             )
             .client_capabilities(
                 ClientCapabilities::new()
@@ -644,7 +644,7 @@ fn resolve_session_working_dir(
     auth_context: &ToolAuthContext,
 ) -> Result<PathBuf, std::io::Error> {
     let input = json!({
-        "__microclaw_auth": {
+        "__mchact_auth": {
             "caller_channel": auth_context.caller_channel,
             "caller_chat_id": auth_context.caller_chat_id,
             "control_chat_ids": auth_context.control_chat_ids,
@@ -680,7 +680,7 @@ fn resolve_client_path(root: &Path, requested: &Path) -> Result<PathBuf, acp::Er
         return Err(acp::Error::invalid_params());
     }
     let path_str = resolved.to_string_lossy().to_string();
-    if let Err(msg) = microclaw_tools::path_guard::check_path(&path_str) {
+    if let Err(msg) = mchact_tools::path_guard::check_path(&path_str) {
         let mut err = acp::Error::invalid_request();
         err.message = msg;
         return Err(err);
@@ -774,7 +774,7 @@ mod tests {
 
     fn test_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_acp_subagent_test_{}",
+            "mchact_acp_subagent_test_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -794,7 +794,7 @@ mod tests {
     #[tokio::test]
     async fn test_acp_client_read_write_stays_inside_workdir() {
         let root =
-            std::env::temp_dir().join(format!("microclaw_acp_client_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_acp_client_{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&root).await.unwrap();
         let client = AcpSessionClient::new(root.clone(), true, test_db(), "run-1".into());
         let session_id = acp::SessionId::new("test-session");
@@ -830,7 +830,7 @@ mod tests {
     #[tokio::test]
     async fn test_acp_client_terminal_lifecycle() {
         let root =
-            std::env::temp_dir().join(format!("microclaw_acp_term_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_acp_term_{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&root).await.unwrap();
         let client = AcpSessionClient::new(root.clone(), true, test_db(), "run-2".into());
         let session_id = acp::SessionId::new("test-session");

@@ -1,9 +1,9 @@
 use argon2::password_hash::{rand_core::OsRng, PasswordHashString, SaltString};
 use argon2::{Argon2, PasswordHasher};
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use microclaw::config::Config;
-use microclaw::error::MicroClawError;
-use microclaw::{
+use mchact::config::Config;
+use mchact::error::MchactError;
+use mchact::{
     builtin_skills, db, doctor, gateway, hooks, logging, mcp, memory, runtime, setup, skills,
 };
 use std::path::{Path, PathBuf};
@@ -12,22 +12,22 @@ use tracing::info;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LONG_ABOUT: &str = concat!(
-    "\x1b[1mMicroClaw v",
+    "\x1b[1mmchact v",
     env!("CARGO_PKG_VERSION"),
     "\x1b[22m\n",
-    "\x1b[1mWebsite:\x1b[22m https://microclaw.ai\n",
-    "\x1b[1mGitHub:\x1b[22m https://github.com/microclaw/microclaw\n",
+    "\x1b[1mWebsite:\x1b[22m https://mchact.ai\n",
+    "\x1b[1mGitHub:\x1b[22m https://github.com/mchact/mchact\n",
     "\x1b[1mDiscord:\x1b[22m https://discord.gg/pvmezwkAk5\n",
     "\n",
     "\x1b[1mQuick Start:\x1b[22m\n",
-    "  1) microclaw setup\n",
-    "  2) microclaw doctor\n",
-    "  3) microclaw start",
+    "  1) mchact setup\n",
+    "  2) mchact doctor\n",
+    "  3) mchact start",
 );
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "microclaw",
+    name = "mchact",
     version = VERSION,
     about = LONG_ABOUT
 )]
@@ -73,10 +73,122 @@ enum MainCommand {
     Web(WebCommand),
     /// Re-embed active memories (requires `sqlite-vec` feature)
     Reembed,
-    /// Upgrade MicroClaw to latest release
+    /// Upgrade mchact to latest release
     Upgrade,
     /// Show version
     Version,
+    /// Generate training trajectories from a prompt dataset
+    Batch {
+        /// Path to the JSONL prompt dataset
+        dataset: PathBuf,
+        /// Number of parallel workers
+        #[arg(long, default_value = "4")]
+        workers: usize,
+        /// Prompts per batch
+        #[arg(long, default_value = "10")]
+        batch_size: usize,
+        /// Tool distribution to use
+        #[arg(long, default_value = "default")]
+        distribution: String,
+        /// Maximum agent iterations per prompt
+        #[arg(long, default_value = "10")]
+        max_iterations: usize,
+        /// Override model for this run
+        #[arg(long)]
+        model: Option<String>,
+        /// Name for this run (auto-generated if not provided)
+        #[arg(long)]
+        run_name: Option<String>,
+        /// Resume a previous run, skipping already-completed prompts
+        #[arg(long)]
+        resume: bool,
+        /// Maximum number of samples to load from dataset
+        #[arg(long)]
+        max_samples: Option<usize>,
+        /// Output directory for batches and results
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Internal: worker process for batch trajectory generation
+    #[command(hide = true)]
+    Worker {
+        /// Batch file to process
+        #[arg(long)]
+        batch_file: PathBuf,
+        /// Distribution name
+        #[arg(long, default_value = "default")]
+        distribution: String,
+        /// Max tool iterations
+        #[arg(long, default_value = "10")]
+        max_iterations: usize,
+        /// Override model
+        #[arg(long)]
+        model: Option<String>,
+        /// Distributions YAML file
+        #[arg(long)]
+        distributions_file: Option<PathBuf>,
+    },
+    /// Export trajectories to different formats
+    Export {
+        /// Input trajectories JSONL file
+        input: PathBuf,
+        /// Output format: openai or sharegpt
+        #[arg(long, default_value = "openai")]
+        format: String,
+        /// Tool-call parser for ShareGPT format
+        #[arg(long, default_value = "hermes")]
+        parser: String,
+        /// Output file
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Only export completed trajectories
+        #[arg(long)]
+        filter_completed: bool,
+        /// Minimum tool calls to include
+        #[arg(long)]
+        filter_min_tools: Option<u64>,
+    },
+    /// Run full training pipeline: batch → export → compress
+    Train {
+        /// Path to the JSONL prompt dataset
+        dataset: PathBuf,
+        /// Number of parallel workers
+        #[arg(long, default_value = "4")]
+        workers: usize,
+        /// Prompts per batch
+        #[arg(long, default_value = "10")]
+        batch_size: usize,
+        /// Tool distribution to use
+        #[arg(long, default_value = "default")]
+        distribution: String,
+        /// Maximum agent iterations per prompt
+        #[arg(long, default_value = "10")]
+        max_iterations: usize,
+        /// Override model for this run
+        #[arg(long)]
+        model: Option<String>,
+        /// Output format: openai or sharegpt
+        #[arg(long, default_value = "openai")]
+        format: String,
+        /// Tool-call parser for ShareGPT format
+        #[arg(long, default_value = "hermes")]
+        parser: String,
+        /// Run compression step after export
+        #[arg(long)]
+        compress: bool,
+        /// Target token count for compression
+        #[arg(long, default_value = "15250")]
+        target_tokens: usize,
+        /// Name for this run (auto-generated if not provided)
+        #[arg(long)]
+        run_name: Option<String>,
+        /// Resume a previous run, skipping already-completed prompts
+        #[arg(long)]
+        resume: bool,
+        /// Output directory for batches and results
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -136,11 +248,11 @@ enum WebAction {
 }
 
 fn print_version() {
-    println!("microclaw {VERSION}");
+    println!("mchact {VERSION}");
 }
 
 fn handle_upgrade_cli() -> anyhow::Result<()> {
-    let repo = "microclaw/microclaw";
+    let repo = "mchact/mchact";
     println!("Current version: {VERSION}");
     println!("Upgrading from latest release of {repo}...");
 
@@ -156,7 +268,7 @@ fn handle_upgrade_cli() -> anyhow::Result<()> {
                     "-Command",
                     &format!(
                         "$script = (iwr '{url}' -UseBasicParsing).Content; \
-                         $scriptPath = Join-Path $env:TEMP ('microclaw-install-' + [guid]::NewGuid().ToString() + '.ps1'); \
+                         $scriptPath = Join-Path $env:TEMP ('mchact-install-' + [guid]::NewGuid().ToString() + '.ps1'); \
                          Set-Content -Path $scriptPath -Value $script; \
                          Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File', $scriptPath, '-SkipRun', '-WaitForPid', '{pid}')",
                         url = script_url,
@@ -181,15 +293,15 @@ fn handle_upgrade_cli() -> anyhow::Result<()> {
 
     if !status.success() {
         anyhow::bail!(
-            "upgrade failed (exit code {:?}). You can retry with install script:\n  macOS/Linux: curl -fsSL https://microclaw.ai/install.sh | bash\n  Windows: iwr https://microclaw.ai/install.ps1 -UseBasicParsing | iex",
+            "upgrade failed (exit code {:?}). You can retry with install script:\n  macOS/Linux: curl -fsSL https://mchact.ai/install.sh | bash\n  Windows: iwr https://mchact.ai/install.ps1 -UseBasicParsing | iex",
             status.code()
         );
     }
 
     if std::env::consts::OS == "windows" {
-        println!("Upgrade started in the background. Wait a few seconds, then re-run `microclaw version` to verify.");
+        println!("Upgrade started in the background. Wait a few seconds, then re-run `mchact version` to verify.");
     } else {
-        println!("Upgrade completed. Re-run `microclaw version` to verify.");
+        println!("Upgrade completed. Re-run `mchact version` to verify.");
     }
     Ok(())
 }
@@ -199,7 +311,7 @@ fn print_web_help() {
         r#"Manage Web UI Configurations
 
 Usage:
-  microclaw web [password <value> | password-generate | password-clear]
+  mchact web [password <value> | password-generate | password-clear]
 
 Options:
   password <value>      Set the exact new password (min 8 chars)
@@ -217,7 +329,7 @@ fn print_weixin_help() {
         r#"Manage Weixin Native State
 
 Usage:
-  microclaw weixin [login|status|logout] [options]
+  mchact weixin [login|status|logout] [options]
 
 Commands:
   login           Login via QR code and persist native credentials
@@ -230,7 +342,7 @@ Options:
 
 Notes:
   - Native mode supports QR login, polling, text, and file/image/video attachment delivery.
-  - Weixin is native-only in MicroClaw; no Node bridge is required."#
+  - Weixin is native-only in mchact; no Node bridge is required."#
     );
 }
 
@@ -243,7 +355,7 @@ async fn handle_weixin_cli(action: Option<WeixinAction>) -> anyhow::Result<()> {
     let config = Config::load()?;
     match action {
         WeixinAction::Login { account, base_url } => {
-            let message = microclaw::channels::weixin::login_via_cli(
+            let message = mchact::channels::weixin::login_via_cli(
                 &config,
                 account.as_deref(),
                 base_url.as_deref(),
@@ -253,12 +365,12 @@ async fn handle_weixin_cli(action: Option<WeixinAction>) -> anyhow::Result<()> {
             println!("{message}");
         }
         WeixinAction::Status { account } => {
-            let message = microclaw::channels::weixin::status_via_cli(&config, account.as_deref())
+            let message = mchact::channels::weixin::status_via_cli(&config, account.as_deref())
                 .map_err(anyhow::Error::msg)?;
             println!("{message}");
         }
         WeixinAction::Logout { account } => {
-            let message = microclaw::channels::weixin::logout_via_cli(&config, account.as_deref())
+            let message = mchact::channels::weixin::logout_via_cli(&config, account.as_deref())
                 .map_err(anyhow::Error::msg)?;
             println!("{message}");
         }
@@ -295,7 +407,7 @@ fn handle_web_cli(action: Option<WebAction>) -> anyhow::Result<()> {
         println!("Web password cleared.");
         println!("Revoked web sessions: {revoked}");
         println!(
-            "State is now uninitialized. On next `microclaw start`, default password bootstrap policy will apply."
+            "State is now uninitialized. On next `mchact start`, default password bootstrap policy will apply."
         );
         return Ok(());
     }
@@ -498,7 +610,7 @@ fn apply_config_override(path: Option<&PathBuf>) -> anyhow::Result<()> {
             resolved.display()
         );
     }
-    std::env::set_var("MICROCLAW_CONFIG", &resolved);
+    std::env::set_var("MCHACT_CONFIG", &resolved);
     Ok(())
 }
 
@@ -515,7 +627,7 @@ async fn reembed_memories() -> anyhow::Result<()> {
 
     #[cfg(feature = "sqlite-vec")]
     {
-        use microclaw::embedding;
+        use mchact::embedding;
         let runtime_data_dir = config.runtime_data_dir();
         let db = db::Database::new(&runtime_data_dir)?;
 
@@ -587,13 +699,13 @@ async fn main() -> anyhow::Result<()> {
                 println!("Sandbox enabled in {path}");
                 if !setup_args.yes && !setup_args.quiet {
                     println!(
-                        "Tip: run `microclaw doctor sandbox` to verify container runtime and image readiness."
+                        "Tip: run `mchact doctor sandbox` to verify container runtime and image readiness."
                     );
                 }
             } else {
                 let saved = setup::run_setup_wizard()?;
                 if saved {
-                    println!("Setup saved to microclaw.config.yaml");
+                    println!("Setup saved to mchact.config.yaml");
                 } else {
                     println!("Setup canceled");
                 }
@@ -610,7 +722,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(MainCommand::Skill { args }) => {
             let config = Config::load()?;
-            microclaw::clawhub::cli::handle_skill_cli(&args, &config).await?;
+            mchact::clawhub::cli::handle_skill_cli(&args, &config).await?;
             return Ok(());
         }
         Some(MainCommand::Hooks { args }) => {
@@ -632,6 +744,269 @@ async fn main() -> anyhow::Result<()> {
             print_version();
             return Ok(());
         }
+        Some(MainCommand::Batch {
+            dataset,
+            workers,
+            batch_size,
+            distribution,
+            max_iterations,
+            model,
+            run_name,
+            resume,
+            max_samples,
+            output,
+        }) => {
+            use chrono::Utc;
+            use mchact::batch;
+
+            let run_name = run_name.unwrap_or_else(|| {
+                format!("run_{}", Utc::now().format("%Y%m%d_%H%M%S"))
+            });
+
+            let output_dir = output.unwrap_or_else(|| PathBuf::from("output").join(&run_name));
+            std::fs::create_dir_all(&output_dir)
+                .map_err(|e| anyhow::anyhow!("failed to create output dir: {e}"))?;
+
+            let mut prompts = match batch::load_dataset(&dataset, max_samples) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Dataset load failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            if resume {
+                let completed = batch::find_completed_prompts(&output_dir);
+                if !completed.is_empty() {
+                    println!("Resuming: {} prompts already completed", completed.len());
+                    prompts = batch::filter_completed(prompts, &completed);
+                }
+            }
+
+            let batches = batch::split_batches(prompts, batch_size);
+            println!(
+                "Run '{}': {} prompts across {} batch(es) (batch_size={}, workers={})",
+                run_name,
+                batches.iter().map(|b| b.len()).sum::<usize>(),
+                batches.len(),
+                batch_size,
+                workers,
+            );
+
+            let config_path = cli.config.clone();
+
+            let output_paths = match batch::spawn_workers(
+                &batches,
+                &output_dir,
+                workers,
+                &distribution,
+                max_iterations,
+                model.as_deref(),
+                config_path.as_deref(),
+                None,
+            ) {
+                Ok(paths) => paths,
+                Err(e) => {
+                    eprintln!("Worker spawning failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            println!("All workers complete: {} batch file(s) written", output_paths.len());
+
+            let all_tool_names: Vec<String> = Vec::new();
+            match batch::combine_batches(&output_dir, &all_tool_names) {
+                Ok(result) => {
+                    println!(
+                        "Combined: total={} valid={} filtered={}",
+                        result.total, result.valid, result.filtered
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Combine batches failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+
+            return Ok(());
+        }
+        Some(MainCommand::Worker {
+            batch_file,
+            distribution,
+            max_iterations,
+            model,
+            distributions_file,
+        }) => {
+            use std::io::Write as IoWrite;
+            use mchact::{batch_worker::BatchPrompt, distributions};
+            use chrono::Utc;
+
+            // Read input batch file (JSONL)
+            let content = std::fs::read_to_string(&batch_file)
+                .map_err(|e| anyhow::anyhow!("failed to read batch file '{}': {e}", batch_file.display()))?;
+
+            let prompts: Vec<BatchPrompt> = content
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect();
+
+            // Load distributions
+            let dist_path = distributions_file
+                .unwrap_or_else(|| PathBuf::from("training/distributions.yaml"));
+            let dist_map = distributions::load_distributions(&dist_path)
+                .map_err(|e| anyhow::anyhow!("failed to load distributions: {e}"))?;
+            let dist = dist_map.get(&distribution).ok_or_else(|| {
+                anyhow::anyhow!("distribution '{}' not found in distributions file", distribution)
+            })?;
+
+            // Determine output path
+            let out_path = {
+                let mut p = batch_file.as_os_str().to_owned();
+                p.push(".out.jsonl");
+                PathBuf::from(p)
+            };
+
+            let out_file = std::fs::File::create(&out_path)
+                .map_err(|e| anyhow::anyhow!("failed to create output '{}': {e}", out_path.display()))?;
+            let mut writer = std::io::BufWriter::new(out_file);
+
+            let model_str = model.as_deref().unwrap_or("unknown");
+            let timestamp = Utc::now().to_rfc3339();
+
+            for (idx, prompt) in prompts.iter().enumerate() {
+                // Use per-prompt toolsets override or sample from distribution
+                let toolsets_used = if let Some(ref ts) = prompt.toolsets {
+                    ts.clone()
+                } else {
+                    distributions::sample_tools(dist)
+                };
+
+                let entry = serde_json::json!({
+                    "prompt_index": prompt.prompt_index,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": &prompt.prompt}
+                    ],
+                    "metadata": {
+                        "batch_num": idx,
+                        "timestamp": &timestamp,
+                        "model": model_str
+                    },
+                    "completed": false,
+                    "partial": false,
+                    "api_calls": 0,
+                    "toolsets_used": toolsets_used,
+                    "tool_stats": {},
+                    "tool_error_counts": {}
+                });
+
+                let line = serde_json::to_string(&entry)
+                    .map_err(|e| anyhow::anyhow!("failed to serialize entry: {e}"))?;
+                writeln!(writer, "{line}")
+                    .map_err(|e| anyhow::anyhow!("failed to write output: {e}"))?;
+            }
+
+            writer.flush()
+                .map_err(|e| anyhow::anyhow!("failed to flush output: {e}"))?;
+
+            println!("Worker completed: {} prompts", prompts.len());
+            let _ = max_iterations; // used in future integration step
+            return Ok(());
+        }
+        Some(MainCommand::Export {
+            input,
+            format,
+            parser,
+            output,
+            filter_completed,
+            filter_min_tools,
+        }) => {
+            let output_path = output.unwrap_or_else(|| {
+                mchact::export::default_output_path(&input, &format)
+            });
+            match mchact::export::export_file(
+                &input,
+                &output_path,
+                &format,
+                &parser,
+                filter_completed,
+                filter_min_tools,
+            ) {
+                Ok(stats) => {
+                    println!("Export complete: {}", output_path.display());
+                    println!(
+                        "  Total: {}  Exported: {}  Filtered: {}",
+                        stats.total, stats.exported, stats.filtered
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Export failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+        Some(MainCommand::Train {
+            dataset,
+            workers,
+            batch_size,
+            distribution,
+            max_iterations,
+            model,
+            format,
+            parser,
+            compress,
+            target_tokens,
+            run_name,
+            resume,
+            output,
+        }) => {
+            use chrono::Utc;
+            use mchact::train_pipeline::{PipelineConfig, run_pipeline};
+
+            let run_name = run_name.unwrap_or_else(|| {
+                format!("run_{}", Utc::now().format("%Y%m%d_%H%M%S"))
+            });
+            let output_dir = output.unwrap_or_else(|| PathBuf::from("output").join(&run_name));
+            let config_path = cli.config.clone();
+
+            let pipeline_config = PipelineConfig {
+                dataset,
+                workers,
+                batch_size,
+                distribution,
+                max_iterations,
+                model,
+                format,
+                parser,
+                compress,
+                target_tokens,
+                run_name,
+                output_dir,
+                resume,
+                config_path,
+            };
+
+            match run_pipeline(&pipeline_config) {
+                Ok(result) => {
+                    println!("Pipeline complete.");
+                    println!("  Trajectories: {}", result.trajectories.display());
+                    if let Some(exported) = &result.exported {
+                        println!("  Exported:     {}", exported.display());
+                    }
+                    if let Some(compressed) = &result.compressed {
+                        println!("  Compressed:   {}", compressed.display());
+                    }
+                    println!("  Statistics:   {}", result.statistics.display());
+                }
+                Err(e) => {
+                    eprintln!("Pipeline failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
         None => {
             let mut cmd = Cli::command();
             cmd.print_help()?;
@@ -642,7 +1017,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = match Config::load() {
         Ok(c) => c,
-        Err(MicroClawError::Config(e)) => {
+        Err(MchactError::Config(e)) => {
             eprintln!("Config missing/invalid: {e}");
             eprintln!("Launching setup wizard...");
             let saved = setup::run_setup_wizard()?;
@@ -655,7 +1030,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => return Err(e.into()),
     };
-    info!("Starting MicroClaw bot...");
+    info!("Starting mchact bot...");
 
     let data_root_dir = config.data_root_dir();
     let runtime_data_dir = config.runtime_data_dir();
@@ -664,7 +1039,7 @@ async fn main() -> anyhow::Result<()> {
     migrate_legacy_runtime_layout(&data_root_dir, Path::new(&runtime_data_dir));
     migrate_legacy_skills_dir(&legacy_skills_dir, Path::new(&skills_data_dir));
 
-    if std::env::var("MICROCLAW_GATEWAY").is_ok() {
+    if std::env::var("MCHACT_GATEWAY").is_ok() {
         logging::init_logging(&runtime_data_dir, config.observability.as_ref())?;
     } else {
         logging::init_console_logging(config.observability.as_ref());
@@ -714,7 +1089,7 @@ async fn main() -> anyhow::Result<()> {
             .await?;
         }
         Some("acp") => {
-            microclaw::acp::serve(
+            mchact::acp::serve(
                 runtime_config,
                 db,
                 memory_manager,
@@ -733,12 +1108,12 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::{apply_config_override, migrate_legacy_runtime_layout, Cli, MainCommand};
     use clap::Parser;
-    use microclaw::config::Config;
+    use mchact::config::Config;
     use std::path::{Path, PathBuf};
 
     fn unique_temp_dir() -> std::path::PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("microclaw-main-test-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact-main-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp test dir");
         dir
     }
@@ -762,9 +1137,9 @@ mod tests {
     #[test]
     fn cli_parses_global_config_option_for_start() {
         let cli = Cli::parse_from([
-            "microclaw",
+            "mchact",
             "--config",
-            "api_test_microclaw.config.yaml",
+            "api_test_mchact.config.yaml",
             "start",
         ]);
         let config = cli
@@ -772,28 +1147,28 @@ mod tests {
             .as_ref()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
-        assert_eq!(config, "api_test_microclaw.config.yaml");
+        assert_eq!(config, "api_test_mchact.config.yaml");
         assert!(matches!(cli.command, Some(MainCommand::Start)));
     }
 
     #[test]
     fn apply_config_override_accepts_relative_path() {
         let base = unique_temp_dir();
-        let cfg = base.join("api_test_microclaw.config.yaml");
+        let cfg = base.join("api_test_mchact.config.yaml");
         std::fs::write(&cfg, "web_enabled: true\n").expect("write config");
 
         let old_cwd = std::env::current_dir().expect("current_dir");
-        let old_cfg = std::env::var("MICROCLAW_CONFIG").ok();
+        let old_cfg = std::env::var("MCHACT_CONFIG").ok();
         std::env::set_current_dir(&base).expect("set_current_dir");
-        let rel = PathBuf::from("api_test_microclaw.config.yaml");
+        let rel = PathBuf::from("api_test_mchact.config.yaml");
         apply_config_override(Some(&rel)).expect("apply config override");
-        let resolved = std::env::var("MICROCLAW_CONFIG").expect("MICROCLAW_CONFIG");
-        assert!(resolved.ends_with("api_test_microclaw.config.yaml"));
+        let resolved = std::env::var("MCHACT_CONFIG").expect("MCHACT_CONFIG");
+        assert!(resolved.ends_with("api_test_mchact.config.yaml"));
 
         if let Some(v) = old_cfg {
-            std::env::set_var("MICROCLAW_CONFIG", v);
+            std::env::set_var("MCHACT_CONFIG", v);
         } else {
-            std::env::remove_var("MICROCLAW_CONFIG");
+            std::env::remove_var("MCHACT_CONFIG");
         }
         std::env::set_current_dir(old_cwd).expect("restore cwd");
         let _ = std::fs::remove_dir_all(base);
@@ -837,13 +1212,13 @@ mod tests {
         std::fs::create_dir_all(&souls_dir).expect("create souls dir");
         std::fs::write(groups_dir.join("AGENTS.md"), "g").expect("write groups file");
         std::fs::write(souls_dir.join("bot.md"), "soul").expect("write soul file");
-        std::fs::write(root.join("microclaw.db"), "db").expect("write db file");
+        std::fs::write(root.join("mchact.db"), "db").expect("write db file");
 
         migrate_legacy_runtime_layout(&root, Path::new(&runtime_dir));
 
-        assert!(root.join("microclaw.db").exists());
+        assert!(root.join("mchact.db").exists());
         assert!(!groups_dir.exists());
-        assert!(!runtime_dir.join("microclaw.db").exists());
+        assert!(!runtime_dir.join("mchact.db").exists());
         assert!(runtime_dir.join("groups").join("AGENTS.md").exists());
         assert!(souls_dir.exists());
         assert!(souls_dir.join("bot.md").exists());
@@ -888,13 +1263,13 @@ mod tests {
 
     #[test]
     fn cli_parses_upgrade_command() {
-        let cli = Cli::parse_from(["microclaw", "upgrade"]);
+        let cli = Cli::parse_from(["mchact", "upgrade"]);
         assert!(matches!(cli.command, Some(MainCommand::Upgrade)));
     }
 
     #[test]
     fn cli_parses_weixin_status_command() {
-        let cli = Cli::parse_from(["microclaw", "weixin", "status", "--account", "ops"]);
+        let cli = Cli::parse_from(["mchact", "weixin", "status", "--account", "ops"]);
         match cli.command {
             Some(MainCommand::Weixin(_)) => {}
             other => panic!("unexpected command: {other:?}"),

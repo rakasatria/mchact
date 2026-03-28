@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{authorize_chat_access, schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, Database};
 
 pub struct ExportChatTool {
     db: Arc<Database>,
@@ -113,10 +113,10 @@ impl Tool for ExportChatTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use microclaw_storage::db::{Database, StoredMessage};
+    use mchact_storage::db::{Database, StoredMessage};
 
     fn test_db() -> (Arc<Database>, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("microclaw_export_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("mchact_export_{}", uuid::Uuid::new_v4()));
         let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
         (db, dir)
     }
@@ -190,7 +190,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "chat_id": 200,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": []
                 }
@@ -219,7 +219,7 @@ mod tests {
             .execute(json!({
                 "chat_id": 200,
                 "path": out_path.to_str().unwrap(),
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
                 }

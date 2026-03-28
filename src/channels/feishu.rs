@@ -18,10 +18,10 @@ use crate::chat_commands::maybe_handle_plugin_command;
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::call_blocking;
-use microclaw_storage::db::StoredMessage;
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::call_blocking;
+use mchact_storage::db::StoredMessage;
 
 type WsSink = Arc<
     tokio::sync::Mutex<
@@ -33,7 +33,7 @@ type WsSink = Arc<
         >,
     >,
 >;
-use microclaw_core::text::split_text;
+use mchact_core::text::split_text;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "feishu",

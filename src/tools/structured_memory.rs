@@ -4,9 +4,9 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::memory_backend::MemoryBackend;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_storage::db::Memory;
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::Database;
+use mchact_storage::db::Memory;
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
 
@@ -373,7 +373,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "rust",
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(!result.is_error);
@@ -398,7 +398,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "id": id,
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
@@ -414,7 +414,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "id": id,
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(result.is_error);
@@ -432,7 +432,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "limit": 10,
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
@@ -451,7 +451,7 @@ mod tests {
             .execute(json!({
                 "id": id,
                 "content": "User lives in Osaka",
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
@@ -469,7 +469,7 @@ mod tests {
             .execute(json!({
                 "id": id,
                 "content": long,
-                "__microclaw_auth": {"caller_chat_id": 100, "control_chat_ids": []}
+                "__mchact_auth": {"caller_chat_id": 100, "control_chat_ids": []}
             }))
             .await;
         assert!(result.is_error);

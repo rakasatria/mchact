@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::{call_blocking, Database, FtsSearchResult, StoredMessage};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::{call_blocking, Database, FtsSearchResult, StoredMessage};
 
 pub struct SessionSearchTool {
     db: Arc<Database>,
@@ -199,12 +199,12 @@ impl Tool for SessionSearchTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use microclaw_storage::db::{Database, StoredMessage};
+    use mchact_storage::db::{Database, StoredMessage};
     use serde_json::json;
 
     fn make_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_session_search_{}",
+            "mchact_session_search_{}",
             uuid::Uuid::new_v4()
         ));
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())
@@ -238,7 +238,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "zzznomatch",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 1,
                     "control_chat_ids": []
@@ -265,7 +265,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "deployment pipeline",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
@@ -294,7 +294,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "secret project",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 100,
                     "control_chat_ids": []
@@ -322,7 +322,7 @@ mod tests {
         let result = tool
             .execute(json!({
                 "query": "cross chat search global",
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
@@ -352,7 +352,7 @@ mod tests {
             .execute(json!({
                 "query": "unique repeatable keyword occurrence",
                 "limit": 3,
-                "__microclaw_auth": {
+                "__mchact_auth": {
                     "caller_channel": "telegram",
                     "caller_chat_id": 300,
                     "control_chat_ids": [300]

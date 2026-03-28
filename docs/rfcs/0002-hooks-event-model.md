@@ -7,7 +7,7 @@
 
 ## Context
 
-MicroClaw has risk-gating in tool runtime but lacks a general lifecycle hook system for policy injection, auditing, and extension.
+mchact has risk-gating in tool runtime but lacks a general lifecycle hook system for policy injection, auditing, and extension.
 
 ## Goals
 
@@ -75,10 +75,10 @@ Frontmatter fields:
 
 ### CLI
 
-- `microclaw hooks list`
-- `microclaw hooks info <name>`
-- `microclaw hooks enable <name>`
-- `microclaw hooks disable <name>`
+- `mchact hooks list`
+- `mchact hooks info <name>`
+- `mchact hooks enable <name>`
+- `mchact hooks disable <name>`
 
 ## Security Considerations
 

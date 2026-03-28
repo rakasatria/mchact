@@ -2,25 +2,25 @@
 
 ## What it adds
 
-MicroClaw integrates with ClawHub to search and install skill packs.
+mchact integrates with ClawHub to search and install skill packs.
 
-- CLI: `microclaw skill search|install|list|inspect|available`
+- CLI: `mchact skill search|install|list|inspect|available`
 - Agent tools: `clawhub_search`, `clawhub_install`
 - Lockfile: `clawhub.lock.json` (managed install state)
 
 ## Storage locations
 
-- Skills directory: `<data_dir>/skills` (default: `~/.microclaw/skills`)
-- Lockfile: `<data_dir>/clawhub.lock.json` (default: `~/.microclaw/clawhub.lock.json`)
-- Optional config override: `skills_dir` in `microclaw.config.yaml`
+- Skills directory: `<data_dir>/skills` (default: `~/.mchact/skills`)
+- Lockfile: `<data_dir>/clawhub.lock.json` (default: `~/.mchact/clawhub.lock.json`)
+- Optional config override: `skills_dir` in `mchact.config.yaml`
 
 Compatibility behavior:
 - Existing configured paths (`data_dir` / `skills_dir` / `working_dir`) are always respected.
-- New defaults (`~/.microclaw`, `<data_dir>/skills`, `~/.microclaw/working_dir`) are used only when fields are not configured.
+- New defaults (`~/.mchact`, `<data_dir>/skills`, `~/.mchact/working_dir`) are used only when fields are not configured.
 
 ## Config
 
-In `microclaw.config.yaml`:
+In `mchact.config.yaml`:
 
 ```yaml
 clawhub_registry: "https://clawhub.ai"

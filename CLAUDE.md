@@ -1,6 +1,6 @@
-# MicroClaw
+# mchact
 
-MicroClaw is a Rust multi-platform chat bot with a channel-agnostic core and platform adapters. It currently supports Telegram, Discord, Slack, Feishu/Lark, and Web, and can be extended to more platforms. It provides agentic tool execution, web search, scheduled tasks, and persistent memory. Inspired by [nanoclaw](https://github.com/gavrielc/nanoclaw/) (TypeScript/WhatsApp), incorporating some of its design ideas.
+mchact is a Rust multi-platform chat bot with a channel-agnostic core and platform adapters. It currently supports Telegram, Discord, Slack, Feishu/Lark, and Web, and can be extended to more platforms. It provides agentic tool execution, web search, scheduled tasks, and persistent memory. Inspired by [nanoclaw](https://github.com/gavrielc/nanoclaw/) (TypeScript/WhatsApp), incorporating some of its design ideas.
 
 ## Tech stack
 
@@ -9,16 +9,20 @@ Rust 2021, Tokio, teloxide 0.17, serenity 0.12, provider-agnostic LLM runtime (A
 ## Directory overview
 
 - `src/` -- Rust source for the bot binary
-- `web/` -- Built-in Web UI (React + Vite). Compiled to `web/dist/` and embedded into the Rust binary via `include_dir!`. This is the chat interface and settings panel served by microclaw itself at runtime.
-- `website/` -- **Separate git repository** (landing page + documentation site). Not part of the microclaw binary. Contains the public-facing marketing site and docs. Changes here have no effect on the bot.
+- `web/` -- Built-in Web UI (React + Vite). Compiled to `web/dist/` and embedded into the Rust binary via `include_dir!`. This is the chat interface and settings panel served by mchact itself at runtime.
+- `website/` -- **Separate git repository** (landing page + documentation site). Not part of the mchact binary. Contains the public-facing marketing site and docs. Changes here have no effect on the bot.
 
 ## Project layout
 
-- `crates/microclaw-core/` -- shared error/types/text modules (`error`, `llm_types`, `text`)
-- `crates/microclaw-storage/` -- SQLite DB schema/query layer + memory/usage domain modules
-- `crates/microclaw-tools/` -- tool runtime primitives (trait/auth/risk/schema/path) + sandbox
-- `crates/microclaw-channels/` -- channel abstraction and delivery boundary modules
-- `crates/microclaw-app/` -- app-level support modules (logging, builtin skills, transcribe)
+- `crates/mchact-core/` -- shared error/types/text modules (`error`, `llm_types`, `text`)
+- `crates/mchact-storage/` -- SQLite DB schema/query layer + memory/usage domain modules
+- `crates/mchact-tools/` -- tool runtime primitives (trait/auth/risk/schema/path) + sandbox
+- `crates/mchact-channels/` -- channel abstraction and delivery boundary modules
+- `crates/mchact-app/` -- app-level support modules (logging, builtin skills, transcribe)
+- `crates/mchact-observability/` -- OpenTelemetry tracing, metrics, and log export
+- `crates/mchact-clawhub/` -- skill hub client (search, install, lockfile)
+- `crates/mchact-media/` -- media processing (TTS, STT, document extraction)
+- `crates/mchact-memory/` -- structured memory backend driver
 - `src/main.rs` -- entry point, CLI
 - `src/runtime.rs` -- app wiring (`AppState`), provider/tool initialization, channel boot
 - `src/agent_engine.rs` -- shared agent loop (`process_with_agent`)
@@ -55,11 +59,11 @@ cargo run -- help
 
 ## Configuration
 
-MicroClaw uses `microclaw.config.yaml` (or `.yml`) for configuration. Override the path with `MICROCLAW_CONFIG` env var. See `microclaw.config.example.yaml` for all available fields.
+mchact uses `mchact.config.yaml` (or `.yml`) for configuration. Override the path with `MCHACT_CONFIG` env var. See `mchact.config.example.yaml` for all available fields.
 
 ## Soul (personality customization)
 
-MicroClaw supports a `SOUL.md` file that defines the bot's personality, voice, values, and working style. The file content is injected into the system prompt, replacing the default "helpful AI assistant" identity.
+mchact supports a `SOUL.md` file that defines the bot's personality, voice, values, and working style. The file content is injected into the system prompt, replacing the default "helpful AI assistant" identity.
 
 **Loading priority** (first match wins):
 1. `soul_path` in config (explicit path)
@@ -78,7 +82,7 @@ MicroClaw supports a `SOUL.md` file that defines the bot's personality, voice, v
 
 ## Database
 
-Core persistence is provided by `microclaw-storage` (`Database` wrapper over SQLite). Runtime state and observability tables are managed through versioned migrations.
+Core persistence is provided by `mchact-storage` (`Database` wrapper over SQLite). Runtime state and observability tables are managed through versioned migrations.
 
 ## Important conventions
 

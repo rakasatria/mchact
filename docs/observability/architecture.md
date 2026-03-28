@@ -1,6 +1,6 @@
 # Observability Architecture
 
-本文档描述 `microclaw-observability` crate 的架构分层、适配器扩展点和配置矩阵，目标是让后续接入 AgentOps、Arize 等平台时可以按统一方式扩展。
+本文档描述 `mchact-observability` crate 的架构分层、适配器扩展点和配置矩阵，目标是让后续接入 AgentOps、Arize 等平台时可以按统一方式扩展。
 
 ## 1. 设计目标
 
@@ -12,10 +12,10 @@
 ## 2. 分层架构
 
 ```text
-microclaw (app/runtime/agent/web)
+mchact (app/runtime/agent/web)
         |
         v
-crates/microclaw-observability
+crates/mchact-observability
   ├─ sdk.rs        (共享上下文/资源/配置解析)
   ├─ metrics.rs    (OTLP Metrics exporter + 业务指标映射)
   ├─ traces.rs     (OTLP Traces exporter + SpanData 映射)
@@ -27,7 +27,7 @@ crates/microclaw-observability
 
 ### 2.1 SDK 层（共享能力）
 
-- 文件：`crates/microclaw-observability/src/sdk.rs`
+- 文件：`crates/mchact-observability/src/sdk.rs`
 - 职责：
   - 构建共享 `OTelSdkContext`（`Resource` + `service_name`）
   - 提供统一配置读取函数：`get_trimmed` / `get_u64` / `get_bool` / `parse_headers`
@@ -49,7 +49,7 @@ crates/microclaw-observability
 
 ### 2.3 适配器层（Vendor 扩展）
 
-- 入口文件：`crates/microclaw-observability/src/adapters/mod.rs`
+- 入口文件：`crates/mchact-observability/src/adapters/mod.rs`
 - 当前定义：
   - `TraceTargetConfig { endpoint, headers }`
   - 各平台 adapter 通过 `apply(map, &mut target)` 注入 endpoint 和认证头
@@ -126,7 +126,7 @@ crates/microclaw-observability
 
 | 配置键                                       | 层级             | 类型               | 用途                             | 默认值                              | 当前支持            |
 | -------------------------------------------- | ---------------- | ------------------ | -------------------------------- | ----------------------------------- | ------------------- |
-| `observability.service_name`                 | sdk              | string             | 设置 OTel `service.name`         | `microclaw`                         | Metrics/Traces/Logs |
+| `observability.service_name`                 | sdk              | string             | 设置 OTel `service.name`         | `mchact`                         | Metrics/Traces/Logs |
 | `observability.otlp_headers`                 | sdk              | map<string,string> | 通用 OTLP header                 | 空                                  | Metrics/Traces/Logs |
 | `observability.otlp_enabled`                 | metrics          | bool               | 启用 metrics 导出                | `false`                             | ✅                   |
 | `observability.otlp_endpoint`                | metrics          | string             | Metrics OTLP endpoint            | 无                                  | ✅                   |
@@ -148,7 +148,7 @@ crates/microclaw-observability
 1. 新增 `adapters/<vendor>.rs` 并实现 `apply`
 2. 在 `adapters/mod.rs` 导出新模块
 3. 在 `traces.rs`（必要时 metrics/logs）注册 `adapter.apply(...)`
-4. 在 `microclaw.config.example.yaml` 增加配置样例
+4. 在 `mchact.config.example.yaml` 增加配置样例
 5. 在 README / docs 更新配置说明和验证步骤
 6. 通过 `cargo check` 与 `cargo clippy --all-targets --all-features -- -D warnings` 校验
 

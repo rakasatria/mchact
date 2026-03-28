@@ -139,7 +139,7 @@ export const DYNAMIC_CHANNELS: DynChannelDef[] = [
     icon: "💚",
     steps: [
       "Minimal config is enough: enable Weixin and log in once per account.",
-      "Run `microclaw weixin login` (or `microclaw weixin login --account ops`) to persist local credentials.",
+      "Run `mchact weixin login` (or `mchact weixin login --account ops`) to persist local credentials.",
       "Optional: configure webhook forwarding only if you are relaying inbound traffic externally.",
     ],
     hint: "Native polling works after login. Leave secrets blank to keep existing values unchanged.",

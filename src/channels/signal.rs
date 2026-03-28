@@ -16,9 +16,9 @@ use crate::channels::startup_guard::{
 use crate::chat_commands::{handle_chat_command, is_slash_command, unknown_command_response};
 use crate::runtime::AppState;
 use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
-use microclaw_channels::channel::ConversationKind;
-use microclaw_channels::channel_adapter::ChannelAdapter;
-use microclaw_storage::db::{call_blocking, StoredMessage};
+use mchact_channels::channel::ConversationKind;
+use mchact_channels::channel_adapter::ChannelAdapter;
+use mchact_storage::db::{call_blocking, StoredMessage};
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "signal",
@@ -26,7 +26,7 @@ pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     fields: &[
         ChannelFieldDef {
             yaml_key: "send_command",
-            label: "Signal send command (env MICROCLAW_SIGNAL_TARGET/TEXT)",
+            label: "Signal send command (env MCHACT_SIGNAL_TARGET/TEXT)",
             default: "",
             secret: false,
             required: false,
@@ -261,8 +261,8 @@ impl ChannelAdapter for SignalAdapter {
         let output = Command::new("sh")
             .arg("-lc")
             .arg(self.send_command.trim())
-            .env("MICROCLAW_SIGNAL_TARGET", external_chat_id)
-            .env("MICROCLAW_SIGNAL_TEXT", text)
+            .env("MCHACT_SIGNAL_TARGET", external_chat_id)
+            .env("MCHACT_SIGNAL_TEXT", text)
             .output()
             .map_err(|e| format!("Failed running signal send command: {e}"))?;
         if !output.status.success() {

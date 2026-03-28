@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_media::video_gen::{VideoGenParams, VideoGenRouter};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_media::video_gen::{VideoGenParams, VideoGenRouter};
 use serde_json::json;
 use std::path::PathBuf;
 

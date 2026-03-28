@@ -2,11 +2,11 @@
 
 Last reviewed: 2026-03-09
 
-This guide covers how to upstream `microclaw` to `NixOS/nixpkgs` so users get cache-backed prebuilt binaries from official Nix infrastructure.
+This guide covers how to upstream `mchact` to `NixOS/nixpkgs` so users get cache-backed prebuilt binaries from official Nix infrastructure.
 
 ## Goal
 
-- Package `microclaw` in `nixpkgs`
+- Package `mchact` in `nixpkgs`
 - Keep updates low-friction on each release
 - Ensure Linux + Darwin builds stay healthy
 
@@ -14,7 +14,7 @@ This guide covers how to upstream `microclaw` to `NixOS/nixpkgs` so users get ca
 
 1. Fork `NixOS/nixpkgs` and clone locally.
 2. Create package file:
-   - `pkgs/by-name/mi/microclaw/package.nix`
+   - `pkgs/by-name/mi/mchact/package.nix`
 3. Add entry in:
    - `pkgs/top-level/all-packages.nix`
 4. Use this baseline expression:
@@ -33,12 +33,12 @@ This guide covers how to upstream `microclaw` to `NixOS/nixpkgs` so users get ca
 }:
 
 rustPlatform.buildRustPackage rec {
-  pname = "microclaw";
+  pname = "mchact";
   version = "0.0.163";
 
   src = fetchFromGitHub {
-    owner = "microclaw";
-    repo = "microclaw";
+    owner = "mchact";
+    repo = "mchact";
     rev = "v${version}";
     hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
@@ -61,10 +61,10 @@ rustPlatform.buildRustPackage rec {
 
   meta = with lib; {
     description = "Multi-channel agent runtime for Telegram, Discord, Slack, and Web";
-    homepage = "https://github.com/microclaw/microclaw";
-    changelog = "https://github.com/microclaw/microclaw/releases/tag/v${version}";
+    homepage = "https://github.com/mchact/mchact";
+    changelog = "https://github.com/mchact/mchact/releases/tag/v${version}";
     license = licenses.mit;
-    mainProgram = "microclaw";
+    mainProgram = "mchact";
     platforms = platforms.linux ++ platforms.darwin;
     maintainers = with maintainers; [ ];
   };
@@ -84,13 +84,13 @@ When new release `vX.Y.Z` is out:
 3. Run build:
 
 ```sh
-nix build .#microclaw
+nix build .#mchact
 ```
 
 4. Copy the "got: sha256-..." values from the error output into `hash` and `cargoHash`.
 5. Rebuild until it succeeds.
 
-Automated path from the MicroClaw repo:
+Automated path from the mchact repo:
 
 ```sh
 scripts/update-nixpkgs.sh
@@ -101,7 +101,7 @@ scripts/update-nixpkgs.sh
 - Verify executable:
 
 ```sh
-result/bin/microclaw --help
+result/bin/mchact --help
 ```
 
 - Confirm no Linux-only deps are used unguarded on Darwin (`udev`, `journald`).
@@ -109,12 +109,12 @@ result/bin/microclaw --help
 ## Ongoing Maintenance Policy
 
 - Keep `flake.nix` package version aligned with `Cargo.toml`.
-- On each MicroClaw release, open/update a nixpkgs bump PR within 24h.
+- On each mchact release, open/update a nixpkgs bump PR within 24h.
 - If upstream crate graph changes break nixpkgs, keep `flake` build green first, then patch nixpkgs expression.
 
 ## Recommended PR Metadata
 
-- Title: `microclaw: init at <version>` (first) / `microclaw: <old> -> <new>` (bump)
+- Title: `mchact: init at <version>` (first) / `mchact: <old> -> <new>` (bump)
 - Include:
   - release notes link
   - local build logs for Linux/Darwin

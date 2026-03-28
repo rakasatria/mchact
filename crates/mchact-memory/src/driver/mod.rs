@@ -20,7 +20,7 @@ fn default_backend() -> String {
 }
 
 fn default_db_path() -> String {
-    "~/.microclaw/memory.db".to_string()
+    "~/.mchact/memory.db".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

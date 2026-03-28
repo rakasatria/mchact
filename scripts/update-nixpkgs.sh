@@ -9,16 +9,16 @@ Usage:
 Default behavior (no options):
   - auto-detect version from Cargo.toml
   - clone <current-gh-user>/nixpkgs into /tmp with timestamp
-  - update microclaw package hashes
+  - update mchact package hashes
   - build/verify
   - commit, push, and open PR to NixOS/nixpkgs:nixos-unstable
 
 Options:
-  --version <x.y.z>         Target microclaw version (default: from Cargo.toml)
-  --microclaw-dir <path>    MicroClaw repo root (default: current repo root)
+  --version <x.y.z>         Target mchact version (default: from Cargo.toml)
+  --mchact-dir <path>    Mchact repo root (default: current repo root)
   --nixpkgs-dir <path>      Use an existing nixpkgs checkout instead of temp clone
   --fork-owner <owner>      GitHub owner of nixpkgs fork (default: current gh user)
-  --branch <name>           Nixpkgs branch name (default: microclaw-<version>-<timestamp>)
+  --branch <name>           Nixpkgs branch name (default: mchact-<version>-<timestamp>)
   --base <branch>           Upstream base branch (default: nixos-unstable)
   --draft                   Open PR as draft
   --no-push                 Do not push
@@ -57,14 +57,14 @@ set_package_fields() {
 run_nix_build() {
   local log_file="$1"
   set +e
-  nix-build -A microclaw >"$log_file" 2>&1
+  nix-build -A mchact >"$log_file" 2>&1
   local status=$?
   set -e
   return "$status"
 }
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-MICROCLAW_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+MCHACT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION=""
 BASE_BRANCH="nixos-unstable"
 FORK_OWNER=""
@@ -77,7 +77,7 @@ DO_DRAFT=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version) VERSION="$2"; shift 2 ;;
-    --microclaw-dir) MICROCLAW_DIR="$2"; shift 2 ;;
+    --mchact-dir) MCHACT_DIR="$2"; shift 2 ;;
     --nixpkgs-dir) NIXPKGS_DIR="$2"; shift 2 ;;
     --fork-owner) FORK_OWNER="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
@@ -105,7 +105,7 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 if [ -z "$VERSION" ]; then
-  VERSION="$(grep '^version = "' "$MICROCLAW_DIR/Cargo.toml" | head -n1 | sed -E 's/version = "([^"]+)"/\1/')"
+  VERSION="$(grep '^version = "' "$MCHACT_DIR/Cargo.toml" | head -n1 | sed -E 's/version = "([^"]+)"/\1/')"
 fi
 if [ -z "$VERSION" ]; then
   echo "Failed to detect version from Cargo.toml. Pass --version explicitly." >&2
@@ -127,7 +127,7 @@ if [ -z "$NIXPKGS_DIR" ]; then
 fi
 
 if [ -z "$BRANCH" ]; then
-  BRANCH="microclaw-${VERSION}-${TIMESTAMP}"
+  BRANCH="mchact-${VERSION}-${TIMESTAMP}"
 fi
 
 cd "$NIXPKGS_DIR"
@@ -138,7 +138,7 @@ fi
 git fetch upstream "$BASE_BRANCH"
 git checkout -B "$BRANCH" "upstream/$BASE_BRANCH"
 
-PACKAGE_FILE="$NIXPKGS_DIR/pkgs/by-name/mi/microclaw/package.nix"
+PACKAGE_FILE="$NIXPKGS_DIR/pkgs/by-name/mi/mchact/package.nix"
 if [ ! -f "$PACKAGE_FILE" ]; then
   echo "Package file not found: $PACKAGE_FILE" >&2
   exit 1
@@ -147,7 +147,7 @@ fi
 OLD_VERSION="$(grep 'version = "' "$PACKAGE_FILE" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
 SRC_HASH=""
 CARGO_HASH=""
-echo "Updating microclaw package: ${OLD_VERSION} -> ${VERSION}"
+echo "Updating mchact package: ${OLD_VERSION} -> ${VERSION}"
 
 set_package_fields "$PACKAGE_FILE" "$VERSION" "lib.fakeHash" "lib.fakeHash"
 
@@ -190,8 +190,8 @@ if ! run_nix_build "$LOG3"; then
 fi
 
 BUILD_PATH="$(tail -n1 "$LOG3" | tr -d '\r')"
-if [ -x "$BUILD_PATH/bin/microclaw" ]; then
-  "$BUILD_PATH/bin/microclaw" --help >/dev/null
+if [ -x "$BUILD_PATH/bin/mchact" ]; then
+  "$BUILD_PATH/bin/mchact" --help >/dev/null
 fi
 
 git add "$PACKAGE_FILE"
@@ -201,7 +201,7 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "microclaw: ${OLD_VERSION} -> ${VERSION}"
+git commit -m "mchact: ${OLD_VERSION} -> ${VERSION}"
 echo "Committed on branch: $BRANCH"
 
 if $DO_PUSH; then
@@ -218,21 +218,21 @@ if $DO_PR; then
   fi
   cat > "$PR_BODY" <<EOF
 ## Summary
-- microclaw: ${OLD_VERSION} -> ${VERSION}
+- mchact: ${OLD_VERSION} -> ${VERSION}
 
 ## Build / test
-- nix-build -A microclaw
-- result/bin/microclaw --help
+- nix-build -A mchact
+- result/bin/mchact --help
 
 ## Upstream release
-- https://github.com/microclaw/microclaw/releases/tag/v${VERSION}
+- https://github.com/mchact/mchact/releases/tag/v${VERSION}
 EOF
   if $DO_DRAFT; then
     gh pr create \
       --repo NixOS/nixpkgs \
       --base "$BASE_BRANCH" \
       --head "${FORK_OWNER}:${BRANCH}" \
-      --title "microclaw: ${OLD_VERSION} -> ${VERSION}" \
+      --title "mchact: ${OLD_VERSION} -> ${VERSION}" \
       --body-file "$PR_BODY" \
       --draft
   else
@@ -240,7 +240,7 @@ EOF
       --repo NixOS/nixpkgs \
       --base "$BASE_BRANCH" \
       --head "${FORK_OWNER}:${BRANCH}" \
-      --title "microclaw: ${OLD_VERSION} -> ${VERSION}" \
+      --title "mchact: ${OLD_VERSION} -> ${VERSION}" \
       --body-file "$PR_BODY"
   fi
 else

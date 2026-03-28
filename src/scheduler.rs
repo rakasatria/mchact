@@ -9,12 +9,12 @@ use crate::agent_engine::process_with_agent;
 use crate::agent_engine::AgentRequestContext;
 use crate::memory_service::apply_reflector_extractions;
 use crate::runtime::AppState;
-use microclaw_channels::channel::{
+use mchact_channels::channel::{
     deliver_and_store_bot_message, get_chat_routing, ChatRouting, ConversationKind,
 };
-use microclaw_core::llm_types::{Message, MessageContent, ResponseContentBlock};
-use microclaw_core::text::floor_char_boundary;
-use microclaw_storage::db::call_blocking;
+use mchact_core::llm_types::{Message, MessageContent, ResponseContentBlock};
+use mchact_core::text::floor_char_boundary;
+use mchact_storage::db::call_blocking;
 
 pub fn spawn_scheduler(state: Arc<AppState>) {
     tokio::spawn(async move {

@@ -1,0 +1,419 @@
+<h2>mchact-memory: One Model, Two Drivers</h2>
+<p class="subtitle">Full Honcho observation model — identical on both SQLite and PostgreSQL</p>
+
+<div class="section">
+  <h3>Architecture</h3>
+  <div class="mockup">
+    <div class="mockup-header">Same schema, same logic, different driver</div>
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.6;padding:20px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+┌──────────────────────────────────────────────────────┐
+│              mchact application layer                 │
+│  agent_engine / deriver / dreamer / tools / scheduler│
+└──────────────────────┬───────────────────────────────┘
+                       │
+            ┌──────────▼──────────┐
+            │   ObservationStore  │  ◄── One trait, full features
+            │   (async trait)     │      on BOTH backends
+            │                     │
+            │  ALL features:      │
+            │  • observations     │  (explicit/deductive/inductive/contradiction)
+            │  • peers            │  (observer/observed, user/agent)
+            │  • peer cards       │  (durable biographical facts)
+            │  • hybrid search    │  (vector + keyword + RRF merge)
+            │  • source DAG       │  (reasoning chain traversal)
+            │  • deriver queue    │  (async observation extraction)
+            │  • dreamer          │  (offline consolidation)
+            │  • MoA findings     │  (sub-agent collaboration)
+            └─────┬─────────┬────┘
+                  │         │
+        ┌─────────▼──┐  ┌──▼───────────┐
+        │  SQLite     │  │  PostgreSQL   │
+        │  Driver     │  │  Driver       │
+        │             │  │               │
+        │ rusqlite    │  │ sqlx          │
+        │ sqlite-vec  │  │ pgvector      │
+        │ FTS5        │  │ tsvector+GIN  │
+        │             │  │               │
+        │ SAME tables │  │ SAME tables   │
+        │ SAME logic  │  │ SAME logic    │
+        │ FULL model  │  │ FULL model    │
+        └─────────────┘  └───────────────┘
+
+Config:
+  memory:
+    backend: "sqlite"     # or "postgres"
+    # SQLite options
+    db_path: "./mchact.data/memory.db"
+    # PostgreSQL options
+    # database_url: "postgres://..."
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Identical Schema on Both Backends</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">SQLite (rusqlite + sqlite-vec + FTS5)</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:11px;line-height:1.5;padding:16px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+<strong style="color:#4ade80;">-- peers</strong>
+CREATE TABLE peers (
+  id INTEGER PRIMARY KEY,
+  workspace TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'user',
+  peer_card TEXT,  -- JSON array, max 40 facts
+  metadata TEXT,   -- JSON
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(workspace, name)
+);
+
+<strong style="color:#4ade80;">-- observations (replaces memories)</strong>
+CREATE TABLE observations (
+  id INTEGER PRIMARY KEY,
+  workspace TEXT NOT NULL DEFAULT 'default',
+  observer_peer_id INTEGER NOT NULL,
+  observed_peer_id INTEGER NOT NULL,
+  chat_id INTEGER,
+  level TEXT NOT NULL,  -- explicit/deductive/
+                        -- inductive/contradiction
+  content TEXT NOT NULL,
+  category TEXT,
+  confidence REAL DEFAULT 0.8,
+  source TEXT DEFAULT 'deriver',
+  source_ids TEXT,      -- JSON array (DAG)
+  message_ids TEXT,     -- JSON array
+  times_derived INTEGER DEFAULT 0,
+  is_archived INTEGER DEFAULT 0,
+  archived_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (observer_peer_id)
+    REFERENCES peers(id),
+  FOREIGN KEY (observed_peer_id)
+    REFERENCES peers(id)
+);
+
+<strong style="color:#4ade80;">-- vector search</strong>
+CREATE VIRTUAL TABLE observation_vec
+  USING vec0(embedding float[1536]);
+
+<strong style="color:#4ade80;">-- keyword search</strong>
+CREATE VIRTUAL TABLE observations_fts
+  USING fts5(content, content='observations',
+  content_rowid='id');
+-- + auto-sync triggers
+
+<strong style="color:#4ade80;">-- task queue</strong>
+CREATE TABLE observation_queue (
+  id INTEGER PRIMARY KEY,
+  task_type TEXT NOT NULL,
+  workspace TEXT DEFAULT 'default',
+  chat_id INTEGER,
+  observer_peer_id INTEGER,
+  observed_peer_id INTEGER,
+  payload TEXT,
+  processed INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL,
+  processed_at TEXT
+);
+
+<strong style="color:#4ade80;">-- MoA findings</strong>
+CREATE TABLE findings (
+  id INTEGER PRIMARY KEY,
+  orchestration_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  finding TEXT NOT NULL,
+  category TEXT DEFAULT 'general',
+  created_at TEXT NOT NULL
+);
+
+<strong style="color:#4ade80;">-- observability</strong>
+CREATE TABLE dreamer_runs (...);
+CREATE TABLE deriver_runs (...);
+CREATE TABLE injection_logs (...);
+</pre>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">PostgreSQL (sqlx + pgvector + tsvector)</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:11px;line-height:1.5;padding:16px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+<strong style="color:#4ade80;">-- peers</strong>
+CREATE TABLE peers (
+  id BIGSERIAL PRIMARY KEY,
+  workspace TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'user',
+  peer_card JSONB,  -- array, max 40 facts
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  UNIQUE(workspace, name)
+);
+
+<strong style="color:#4ade80;">-- observations (replaces memories)</strong>
+CREATE TABLE observations (
+  id BIGSERIAL PRIMARY KEY,
+  workspace TEXT NOT NULL DEFAULT 'default',
+  observer_peer_id BIGINT NOT NULL
+    REFERENCES peers(id),
+  observed_peer_id BIGINT NOT NULL
+    REFERENCES peers(id),
+  chat_id BIGINT,
+  level TEXT NOT NULL,  -- explicit/deductive/
+                        -- inductive/contradiction
+  content TEXT NOT NULL,
+  category TEXT,
+  confidence REAL DEFAULT 0.8,
+  source TEXT DEFAULT 'deriver',
+  source_ids JSONB,     -- array (DAG)
+  message_ids JSONB,    -- array
+  times_derived INTEGER DEFAULT 0,
+  is_archived BOOLEAN DEFAULT FALSE,
+  archived_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  <strong style="color:#4ade80;">-- native vector column</strong>
+  embedding vector(1536),
+  <strong style="color:#4ade80;">-- native FTS column</strong>
+  tsv tsvector GENERATED ALWAYS AS (
+    to_tsvector('english', content)
+  ) STORED
+);
+
+<strong style="color:#4ade80;">-- vector search (HNSW)</strong>
+CREATE INDEX idx_obs_embedding
+  ON observations
+  USING hnsw (embedding vector_cosine_ops);
+
+<strong style="color:#4ade80;">-- keyword search (GIN)</strong>
+CREATE INDEX idx_obs_tsv
+  ON observations USING GIN (tsv);
+
+<strong style="color:#4ade80;">-- task queue</strong>
+CREATE TABLE observation_queue (
+  id BIGSERIAL PRIMARY KEY,
+  task_type TEXT NOT NULL,
+  workspace TEXT DEFAULT 'default',
+  chat_id BIGINT,
+  observer_peer_id BIGINT,
+  observed_peer_id BIGINT,
+  payload JSONB,
+  processed BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL,
+  processed_at TIMESTAMPTZ
+);
+
+<strong style="color:#4ade80;">-- MoA findings</strong>
+CREATE TABLE findings (
+  id BIGSERIAL PRIMARY KEY,
+  orchestration_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  finding TEXT NOT NULL,
+  category TEXT DEFAULT 'general',
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+<strong style="color:#4ade80;">-- observability</strong>
+CREATE TABLE dreamer_runs (...);
+CREATE TABLE deriver_runs (...);
+CREATE TABLE injection_logs (...);
+</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>How Hybrid Search Works on Each Driver</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">SQLite: FTS5 + sqlite-vec + RRF</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;padding:16px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+hybrid_search(query, peer_id, limit):
+
+<strong style="color:#4ade80;">1. Keyword arm (FTS5):</strong>
+  SELECT o.id, observations_fts.rank
+  FROM observations_fts
+  JOIN observations o
+    ON o.id = observations_fts.rowid
+  WHERE observations_fts MATCH ?1
+    AND o.is_archived = 0
+  ORDER BY observations_fts.rank
+  LIMIT 20
+
+<strong style="color:#4ade80;">2. Semantic arm (sqlite-vec):</strong>
+  -- embed query via LLM provider
+  query_vec = embed(query)
+
+  SELECT rowid, distance
+  FROM observation_vec
+  WHERE rowid IN (
+    SELECT id FROM observations
+    WHERE is_archived = 0
+  )
+  ORDER BY distance
+  LIMIT 20
+
+<strong style="color:#4ade80;">3. RRF merge (in Rust):</strong>
+  k = 60
+  for each result:
+    rrf_score = 1/(k + rank_keyword)
+              + 1/(k + rank_semantic)
+  sort by rrf_score DESC
+  return top N
+</pre>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">PostgreSQL: tsvector + pgvector + RRF</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;padding:16px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+hybrid_search(query, peer_id, limit):
+
+<strong style="color:#4ade80;">1. Keyword arm (tsvector):</strong>
+  SELECT id,
+    ts_rank(tsv, plainto_tsquery($1)) AS r
+  FROM observations
+  WHERE tsv @@ plainto_tsquery($1)
+    AND is_archived = FALSE
+  ORDER BY r DESC
+  LIMIT 20
+
+<strong style="color:#4ade80;">2. Semantic arm (pgvector):</strong>
+  -- embed query via LLM provider
+  query_vec = embed(query)
+
+  SELECT id,
+    embedding <=> $1 AS distance
+  FROM observations
+  WHERE is_archived = FALSE
+  ORDER BY distance
+  LIMIT 20
+
+<strong style="color:#4ade80;">3. RRF merge (in Rust):</strong>
+  k = 60
+  for each result:
+    rrf_score = 1/(k + rank_keyword)
+              + 1/(k + rank_semantic)
+  sort by rrf_score DESC
+  return top N
+
+  <em style="color:#999;">-- Same Rust RRF logic, different SQL</em>
+</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Data Migration: Full Cutover</h3>
+  <div class="mockup">
+    <div class="mockup-header">All agent knowledge state moves to mchact-memory</div>
+    <div class="mockup-body" style="padding:20px;font-size:13px;line-height:1.7;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:2px solid #444;text-align:left;">
+            <th style="padding:8px;">Data</th>
+            <th style="padding:8px;">Before (microclaw-storage SQLite)</th>
+            <th style="padding:8px;">After (mchact-memory, either driver)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Flat memories</td>
+            <td style="padding:8px;"><code>memories</code> table</td>
+            <td style="padding:8px;"><code>observations</code> (level=explicit)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Memory vectors</td>
+            <td style="padding:8px;">sqlite-vec (optional)</td>
+            <td style="padding:8px;"><code>observation_vec</code> or <code>embedding</code> column</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Supersede edges</td>
+            <td style="padding:8px;"><code>memory_supersede_edges</code></td>
+            <td style="padding:8px;"><code>observations.source_ids</code> (DAG)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Reflector runs</td>
+            <td style="padding:8px;"><code>memory_reflector_runs</code></td>
+            <td style="padding:8px;"><code>deriver_runs</code></td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Injection logs</td>
+            <td style="padding:8px;"><code>memory_injection_logs</code></td>
+            <td style="padding:8px;"><code>injection_logs</code></td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">MoA findings</td>
+            <td style="padding:8px;"><code>subagent_findings</code> (old SQLite)</td>
+            <td style="padding:8px;"><code>findings</code> (in mchact-memory)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Peers</td>
+            <td style="padding:8px;"><em>N/A</em> (chat_id only)</td>
+            <td style="padding:8px;"><code>peers</code> (new)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">Peer cards</td>
+            <td style="padding:8px;"><em>N/A</em> (AGENTS.md)</td>
+            <td style="padding:8px;"><code>peers.peer_card</code> (new)</td>
+          </tr>
+          <tr style="border-bottom:1px solid #333;">
+            <td style="padding:8px;">File memory</td>
+            <td style="padding:8px;">AGENTS.md files</td>
+            <td style="padding:8px;"><span style="color:#facc15;">Deprecated</span> — peer cards replace this</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:16px;"><strong>Fallback if memory DB unavailable:</strong> No memory at all. Agent works without context — same as a fresh session. No silent degradation, no partial state.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Crate Structure (Final)</h3>
+  <div class="mockup">
+    <div class="mockup-header">crates/mchact-memory/</div>
+    <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.5;padding:20px;background:#1a1a2e;color:#e0e0e0;">
+<pre style="margin:0;white-space:pre;">
+crates/mchact-memory/
+├── Cargo.toml
+│   features:
+│     default = ["sqlite"]
+│     sqlite  = ["rusqlite", "sqlite-vec"]
+│     postgres = ["sqlx", "pgvector"]
+│
+├── src/
+│   ├── lib.rs              # ObservationStore trait + public API
+│   ├── types.rs            # Observation, Peer, PeerCard, Level, etc.
+│   │
+│   ├── driver/
+│   │   ├── mod.rs          # Driver selection from config
+│   │   ├── sqlite.rs       # impl ObservationStore for SqliteDriver
+│   │   │                   #   rusqlite + sqlite-vec + FTS5
+│   │   └── postgres.rs     # impl ObservationStore for PgDriver
+│   │                       #   sqlx + pgvector + tsvector
+│   │
+│   ├── search.rs           # RRF hybrid merge (shared logic)
+│   ├── deriver.rs          # Multi-level observation extraction
+│   ├── dreamer.rs          # Offline consolidation + induction
+│   ├── dag.rs              # Source attribution traversal
+│   ├── quality.rs          # Quality gates + normalization
+│   ├── injection.rs        # Build memory context for prompts
+│   ├── queue.rs            # Background task processing
+│   ├── migration.rs        # Legacy memories → observations
+│   └── schema/
+│       ├── sqlite.sql      # SQLite DDL
+│       └── postgres.sql    # PostgreSQL DDL
+</pre>
+    </div>
+  </div>
+</div>

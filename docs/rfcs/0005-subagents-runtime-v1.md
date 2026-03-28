@@ -7,7 +7,7 @@
 
 ## Context
 
-MicroClaw had a `sub_agent` tool that embedded a mini agent loop inside one tool call. It worked for quick delegation but lacked lifecycle controls, observability, and robust orchestration semantics.
+mchact had a `sub_agent` tool that embedded a mini agent loop inside one tool call. It worked for quick delegation but lacked lifecycle controls, observability, and robust orchestration semantics.
 
 OpenClaw and Spacebot both show stronger patterns:
 - session-native spawn primitives
@@ -96,7 +96,7 @@ subagents:
 ### Compared to OpenClaw docs baseline
 
 - Matches core lifecycle controls (`spawn/list/info/kill`) and non-blocking spawn semantics.
-- Adds direct DB-backed run records in MicroClaw runtime for simpler local introspection.
+- Adds direct DB-backed run records in mchact runtime for simpler local introspection.
 
 ### Compared to Spacebot patterns
 

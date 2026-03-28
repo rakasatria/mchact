@@ -2,7 +2,7 @@
 
 ## Project overview
 
-MicroClaw is a Rust multi-channel agent runtime for Telegram, Discord, and Web.
+mchact is a Rust multi-channel agent runtime for Telegram, Discord, and Web.
 It shares one channel-agnostic agent loop (`src/agent_engine.rs`) and one provider-agnostic LLM layer (`src/llm.rs`), with channel adapters for ingress/egress.
 
 Core capabilities:
@@ -50,15 +50,15 @@ Main orchestration files in `src/`:
 - `tools/*.rs`: built-in tool implementations and registry assembly
 
 Modularized crates in `crates/`:
-- `microclaw-core`: shared error/types/text (`error`, `llm_types`, `text`)
-- `microclaw-storage`: SQLite DB, memory domain, usage report assembly
-- `microclaw-tools`: tool runtime primitives, sandbox, path guards, web/todo helpers
-- `microclaw-channels`: channel abstractions (`channel`, `channel_adapter`, delivery boundary)
-- `microclaw-app`: app-level support modules (logging, builtin skills, transcribe)
+- `mchact-core`: shared error/types/text (`error`, `llm_types`, `text`)
+- `mchact-storage`: SQLite DB, memory domain, usage report assembly
+- `mchact-tools`: tool runtime primitives, sandbox, path guards, web/todo helpers
+- `mchact-channels`: channel abstractions (`channel`, `channel_adapter`, delivery boundary)
+- `mchact-app`: app-level support modules (logging, builtin skills, transcribe)
 
 ## Tool system
 
-`src/tools/mod.rs` assembles built-in tools, while shared runtime primitives live in `microclaw-tools::runtime`:
+`src/tools/mod.rs` assembles built-in tools, while shared runtime primitives live in `mchact-tools::runtime`:
 - `Tool` trait (`name`, `definition`, `execute`)
 - `ToolRegistry` dispatch and auth context injection
 - risk/approval gate for high-risk tools in sensitive contexts
@@ -74,10 +74,10 @@ node scripts/generate_docs_artifacts.mjs
 
 ## Skills Storage
 
-- Default skills dir: `<data_dir>/skills` (default `data_dir` is `~/.microclaw`)
-- Config override: `skills_dir` in `microclaw.config.yaml` (e.g. `~/.microclaw/skills`)
+- Default skills dir: `<data_dir>/skills` (default `data_dir` is `~/.mchact`)
+- Config override: `skills_dir` in `mchact.config.yaml` (e.g. `~/.mchact/skills`)
 - Compatibility policy: existing configured `data_dir` / `skills_dir` / `working_dir` keep working; new defaults apply only when unset
-- ClawHub lockfile: `~/.microclaw/clawhub.lock.json`
+- ClawHub lockfile: `~/.mchact/clawhub.lock.json`
 
 ## Agent loop (high level)
 
@@ -115,7 +115,7 @@ Surfaces:
 
 ## Database
 
-`microclaw-storage::db` includes:
+`mchact-storage::db` includes:
 - schema creation + schema-version migrations (`db_meta`, `schema_migrations`)
 - chat/message/session/task persistence
 - structured memory CRUD + archive/supersede
@@ -182,4 +182,4 @@ node scripts/generate_docs_artifacts.mjs --check
 
 ## Collaboration conventions
 
-- For the separate `website` repository (`microclaw.github.io`), do not open a PR by default; commit/push directly unless explicitly requested otherwise.
+- For the separate `website` repository (`mchact.github.io`), do not open a PR by default; commit/push directly unless explicitly requested otherwise.

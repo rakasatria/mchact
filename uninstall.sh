@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN_NAME="microclaw"
+BIN_NAME="mchact"
 
 log() {
   printf '%s\n' "$*"
@@ -29,8 +29,8 @@ detect_os() {
 resolve_targets() {
   local out=()
 
-  if [ -n "${MICROCLAW_INSTALL_DIR:-}" ]; then
-    out+=("${MICROCLAW_INSTALL_DIR%/}/$BIN_NAME")
+  if [ -n "${MCHACT_INSTALL_DIR:-}" ]; then
+    out+=("${MCHACT_INSTALL_DIR%/}/$BIN_NAME")
   fi
 
   if need_cmd "$BIN_NAME"; then
@@ -104,8 +104,8 @@ main() {
   log ""
   log "$BIN_NAME has been removed."
   log "Optional cleanup (not removed automatically):"
-  log "  rm -rf ~/.microclaw/runtime"
-  log "  rm -f ./microclaw.config.yaml ./microclaw.config.yml"
+  log "  rm -rf ~/.mchact/runtime"
+  log "  rm -f ./mchact.config.yaml ./mchact.config.yml"
 }
 
 main "$@"

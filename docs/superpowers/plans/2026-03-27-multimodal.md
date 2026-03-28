@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add document intelligence, TTS, STT, image generation, video generation, vision routing, frontend media components, setup wizard, and web UI settings to MicroClaw.
+**Goal:** Add document intelligence, TTS, STT, image generation, video generation, vision routing, frontend media components, setup wizard, and web UI settings to mchact.
 
-**Architecture:** New `crates/microclaw-media/` crate with provider router pattern (trait + multiple implementations per capability). Feature flags control compilation. Tools registered conditionally based on `*_enabled` config toggles. Frontend adds media rendering components and composer attachments.
+**Architecture:** New `crates/mchact-media/` crate with provider router pattern (trait + multiple implementations per capability). Feature flags control compilation. Tools registered conditionally based on `*_enabled` config toggles. Frontend adds media rendering components and composer attachments.
 
 **Tech Stack:** Rust 2021, kreuzberg (documents), msedge-tts (TTS), whisper-rs (STT), reqwest (all cloud APIs), opus+ogg (audio encoding), React 18 + TypeScript + Tailwind (frontend).
 
@@ -16,7 +16,7 @@
 
 ## File Structure
 
-### New crate: `crates/microclaw-media/`
+### New crate: `crates/mchact-media/`
 | File | Responsibility |
 |------|---------------|
 | `Cargo.toml` | Crate config with feature flags |
@@ -58,12 +58,12 @@
 ### Modified files
 | File | What changes |
 |------|-------------|
-| `Cargo.toml` (root) | Add microclaw-media to workspace + deps |
-| `crates/microclaw-storage/src/db.rs` | Migration v21, DocumentExtraction struct + CRUD |
+| `Cargo.toml` (root) | Add mchact-media to workspace + deps |
+| `crates/mchact-storage/src/db.rs` | Migration v21, DocumentExtraction struct + CRUD |
 | `src/config.rs` | All multimodal config fields with `*_enabled` toggles |
 | `src/tools/mod.rs` | Register 4 new tools conditionally |
 | `src/agent_engine.rs` | Vision routing check |
-| `crates/microclaw-channels/src/channel_adapter.rs` | Add send_voice(), send_video() |
+| `crates/mchact-channels/src/channel_adapter.rs` | Add send_voice(), send_video() |
 | `src/channels/telegram.rs` | Implement send_voice/video, use shared STT |
 | `src/channels/discord.rs` | Implement send_voice/video, add voice transcription |
 | `src/web.rs` | /api/upload, /api/media/{id}, media SSE events |
@@ -80,22 +80,22 @@
 ### Task 1: Media Crate Scaffold + Error Types
 
 **Files:**
-- Create: `crates/microclaw-media/Cargo.toml`
-- Create: `crates/microclaw-media/src/lib.rs`
+- Create: `crates/mchact-media/Cargo.toml`
+- Create: `crates/mchact-media/src/lib.rs`
 - Modify: `Cargo.toml` (root workspace)
 
 - [ ] **Step 1: Create crate directory**
 
 ```bash
-mkdir -p crates/microclaw-media/src
+mkdir -p crates/mchact-media/src
 ```
 
 - [ ] **Step 2: Create Cargo.toml**
 
 ```toml
-# crates/microclaw-media/Cargo.toml
+# crates/mchact-media/Cargo.toml
 [package]
-name = "microclaw-media"
+name = "mchact-media"
 version = "0.1.0"
 edition = "2021"
 
@@ -133,7 +133,7 @@ kreuzberg = { version = "4.6", features = ["pdf", "office", "html"], optional = 
 - [ ] **Step 3: Create lib.rs with error type and module stubs**
 
 ```rust
-// crates/microclaw-media/src/lib.rs
+// crates/mchact-media/src/lib.rs
 
 pub mod documents;
 pub mod image_gen;
@@ -188,43 +188,43 @@ pub enum AudioFormat {
 
 Create each module file with just a comment:
 ```rust
-// crates/microclaw-media/src/tts.rs (and all other .rs files)
+// crates/mchact-media/src/tts.rs (and all other .rs files)
 // TODO: implement in subsequent tasks
 ```
 
 - [ ] **Step 5: Add to root workspace**
 
-In root `Cargo.toml`, add `"crates/microclaw-media"` to the workspace members list (line 2-11):
+In root `Cargo.toml`, add `"crates/mchact-media"` to the workspace members list (line 2-11):
 ```toml
 [workspace]
 members = [
     ".",
-    "crates/microclaw-core",
-    "crates/microclaw-clawhub",
-    "crates/microclaw-storage",
-    "crates/microclaw-tools",
-    "crates/microclaw-channels",
-    "crates/microclaw-app",
-    "crates/microclaw-observability",
-    "crates/microclaw-media",
+    "crates/mchact-core",
+    "crates/mchact-clawhub",
+    "crates/mchact-storage",
+    "crates/mchact-tools",
+    "crates/mchact-channels",
+    "crates/mchact-app",
+    "crates/mchact-observability",
+    "crates/mchact-media",
 ]
 ```
 
 Also add the dependency to the main `[dependencies]` section:
 ```toml
-microclaw-media = { version = "0.1.0", path = "crates/microclaw-media" }
+mchact-media = { version = "0.1.0", path = "crates/mchact-media" }
 ```
 
 - [ ] **Step 6: Build to verify**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-media`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-media`
 Expected: Compiles with no errors (stubs only).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/microclaw-media/ Cargo.toml
-git commit -m "feat: scaffold microclaw-media crate with error types and module stubs"
+git add crates/mchact-media/ Cargo.toml
+git commit -m "feat: scaffold mchact-media crate with error types and module stubs"
 ```
 
 ---
@@ -348,7 +348,7 @@ git commit -m "feat(config): add multimodal config fields with enable/disable to
 ### Task 3: Document Extraction Storage (Migration v21 + DB Methods)
 
 **Files:**
-- Modify: `crates/microclaw-storage/src/db.rs`
+- Modify: `crates/mchact-storage/src/db.rs`
 
 - [ ] **Step 1: Add DocumentExtraction struct**
 
@@ -415,7 +415,7 @@ Add to `impl Database`:
         &self,
         chat_id: i64,
         file_hash: &str,
-    ) -> Result<Option<DocumentExtraction>, MicroClawError> {
+    ) -> Result<Option<DocumentExtraction>, mchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
@@ -449,7 +449,7 @@ Add to `impl Database`:
         mime_type: Option<&str>,
         file_size: i64,
         extracted_text: &str,
-    ) -> Result<i64, MicroClawError> {
+    ) -> Result<i64, mchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let char_count = extracted_text.len() as i64;
@@ -467,7 +467,7 @@ Add to `impl Database`:
         chat_id: Option<i64>,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<DocumentExtraction>, MicroClawError> {
+    ) -> Result<Vec<DocumentExtraction>, mchactError> {
         let conn = self.lock_conn();
         let pattern = format!("%{}%", query.replace('%', "\\%"));
         let mut stmt = conn.prepare(
@@ -505,7 +505,7 @@ Add to `impl Database`:
         &self,
         chat_id: i64,
         limit: usize,
-    ) -> Result<Vec<DocumentExtraction>, MicroClawError> {
+    ) -> Result<Vec<DocumentExtraction>, mchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
@@ -538,13 +538,13 @@ Add to `impl Database`:
 
 - [ ] **Step 5: Build to verify**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-storage`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-storage`
 Expected: Compiles.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/microclaw-storage/src/db.rs
+git add crates/mchact-storage/src/db.rs
 git commit -m "feat(storage): add migration v21 with document_extractions table and CRUD"
 ```
 
@@ -553,16 +553,16 @@ git commit -m "feat(storage): add migration v21 with document_extractions table 
 ### Task 4: TTS Provider Trait + Edge TTS + OpenAI TTS
 
 **Files:**
-- Create: `crates/microclaw-media/src/tts.rs`
-- Create: `crates/microclaw-media/src/tts_edge.rs`
-- Create: `crates/microclaw-media/src/tts_openai.rs`
-- Create: `crates/microclaw-media/src/tts_elevenlabs.rs`
-- Update: `crates/microclaw-media/src/lib.rs`
+- Create: `crates/mchact-media/src/tts.rs`
+- Create: `crates/mchact-media/src/tts_edge.rs`
+- Create: `crates/mchact-media/src/tts_openai.rs`
+- Create: `crates/mchact-media/src/tts_elevenlabs.rs`
+- Update: `crates/mchact-media/src/lib.rs`
 
 - [ ] **Step 1: Create tts.rs with trait and router**
 
 ```rust
-// crates/microclaw-media/src/tts.rs
+// crates/mchact-media/src/tts.rs
 
 use async_trait::async_trait;
 use crate::{AudioFormat, MediaError};
@@ -623,7 +623,7 @@ impl TtsRouter {
 - [ ] **Step 2: Create tts_edge.rs**
 
 ```rust
-// crates/microclaw-media/src/tts_edge.rs
+// crates/mchact-media/src/tts_edge.rs
 
 use async_trait::async_trait;
 use crate::tts::{TtsOutput, TtsProvider, VoiceInfo};
@@ -682,7 +682,7 @@ impl TtsProvider for EdgeTtsProvider {
 - [ ] **Step 3: Create tts_openai.rs**
 
 ```rust
-// crates/microclaw-media/src/tts_openai.rs
+// crates/mchact-media/src/tts_openai.rs
 
 use async_trait::async_trait;
 use crate::tts::{TtsOutput, TtsProvider, VoiceInfo};
@@ -754,7 +754,7 @@ impl TtsProvider for OpenAiTtsProvider {
 - [ ] **Step 4: Create tts_elevenlabs.rs**
 
 ```rust
-// crates/microclaw-media/src/tts_elevenlabs.rs
+// crates/mchact-media/src/tts_elevenlabs.rs
 
 use async_trait::async_trait;
 use crate::tts::{TtsOutput, TtsProvider, VoiceInfo};
@@ -819,13 +819,13 @@ impl TtsProvider for ElevenLabsTtsProvider {
 
 - [ ] **Step 5: Build TTS modules**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-media --features tts`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-media --features tts`
 Expected: Compiles.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/microclaw-media/src/tts.rs crates/microclaw-media/src/tts_edge.rs crates/microclaw-media/src/tts_openai.rs crates/microclaw-media/src/tts_elevenlabs.rs
+git add crates/mchact-media/src/tts.rs crates/mchact-media/src/tts_edge.rs crates/mchact-media/src/tts_openai.rs crates/mchact-media/src/tts_elevenlabs.rs
 git commit -m "feat(media): add TTS provider trait + Edge TTS, OpenAI TTS, ElevenLabs providers"
 ```
 
@@ -834,14 +834,14 @@ git commit -m "feat(media): add TTS provider trait + Edge TTS, OpenAI TTS, Eleve
 ### Task 5: STT Provider Trait + OpenAI + whisper-rs
 
 **Files:**
-- Create: `crates/microclaw-media/src/stt.rs`
-- Create: `crates/microclaw-media/src/stt_openai.rs`
-- Create: `crates/microclaw-media/src/stt_whisper.rs`
+- Create: `crates/mchact-media/src/stt.rs`
+- Create: `crates/mchact-media/src/stt_openai.rs`
+- Create: `crates/mchact-media/src/stt_whisper.rs`
 
 - [ ] **Step 1: Create stt.rs with trait and router**
 
 ```rust
-// crates/microclaw-media/src/stt.rs
+// crates/mchact-media/src/stt.rs
 
 use async_trait::async_trait;
 use crate::MediaError;
@@ -881,7 +881,7 @@ impl SttRouter {
 - [ ] **Step 2: Create stt_openai.rs**
 
 ```rust
-// crates/microclaw-media/src/stt_openai.rs
+// crates/mchact-media/src/stt_openai.rs
 
 use async_trait::async_trait;
 use crate::stt::SttProvider;
@@ -948,7 +948,7 @@ impl SttProvider for OpenAiSttProvider {
 - [ ] **Step 3: Create stt_whisper.rs**
 
 ```rust
-// crates/microclaw-media/src/stt_whisper.rs
+// crates/mchact-media/src/stt_whisper.rs
 
 #[cfg(feature = "stt-local")]
 use async_trait::async_trait;
@@ -1035,13 +1035,13 @@ impl SttProvider for WhisperLocalProvider {
 
 - [ ] **Step 4: Build**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-media`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-media`
 Expected: Compiles (whisper-rs only compiled if `stt-local` feature enabled).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/microclaw-media/src/stt.rs crates/microclaw-media/src/stt_openai.rs crates/microclaw-media/src/stt_whisper.rs
+git add crates/mchact-media/src/stt.rs crates/mchact-media/src/stt_openai.rs crates/mchact-media/src/stt_whisper.rs
 git commit -m "feat(media): add STT provider trait + OpenAI Whisper + local whisper-rs"
 ```
 
@@ -1050,14 +1050,14 @@ git commit -m "feat(media): add STT provider trait + OpenAI Whisper + local whis
 ### Task 6: Image Generation Providers
 
 **Files:**
-- Create: `crates/microclaw-media/src/image_gen.rs`
-- Create: `crates/microclaw-media/src/image_gen_openai.rs`
-- Create: `crates/microclaw-media/src/image_gen_fal.rs`
+- Create: `crates/mchact-media/src/image_gen.rs`
+- Create: `crates/mchact-media/src/image_gen_openai.rs`
+- Create: `crates/mchact-media/src/image_gen_fal.rs`
 
 - [ ] **Step 1: Create image_gen.rs with trait and router**
 
 ```rust
-// crates/microclaw-media/src/image_gen.rs
+// crates/mchact-media/src/image_gen.rs
 
 use async_trait::async_trait;
 use crate::MediaError;
@@ -1116,7 +1116,7 @@ impl ImageGenRouter {
 - [ ] **Step 2: Create image_gen_openai.rs (DALL-E)**
 
 ```rust
-// crates/microclaw-media/src/image_gen_openai.rs
+// crates/mchact-media/src/image_gen_openai.rs
 
 use async_trait::async_trait;
 use crate::image_gen::{ImageGenProvider, ImageGenParams, ImageGenOutput, GeneratedImage};
@@ -1195,7 +1195,7 @@ impl ImageGenProvider for DalleProvider {
 - [ ] **Step 3: Create image_gen_fal.rs (FAL FLUX)**
 
 ```rust
-// crates/microclaw-media/src/image_gen_fal.rs
+// crates/mchact-media/src/image_gen_fal.rs
 
 use async_trait::async_trait;
 use crate::image_gen::{ImageGenProvider, ImageGenParams, ImageGenOutput, GeneratedImage};
@@ -1275,13 +1275,13 @@ impl ImageGenProvider for FalFluxProvider {
 
 - [ ] **Step 4: Build**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-media`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-media`
 Expected: Compiles.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/microclaw-media/src/image_gen.rs crates/microclaw-media/src/image_gen_openai.rs crates/microclaw-media/src/image_gen_fal.rs
+git add crates/mchact-media/src/image_gen.rs crates/mchact-media/src/image_gen_openai.rs crates/mchact-media/src/image_gen_fal.rs
 git commit -m "feat(media): add image generation providers — DALL-E and FAL FLUX"
 ```
 
@@ -1290,15 +1290,15 @@ git commit -m "feat(media): add image generation providers — DALL-E and FAL FL
 ### Task 7: Video Generation Providers
 
 **Files:**
-- Create: `crates/microclaw-media/src/video_gen.rs`
-- Create: `crates/microclaw-media/src/video_gen_sora.rs`
-- Create: `crates/microclaw-media/src/video_gen_fal.rs`
-- Create: `crates/microclaw-media/src/video_gen_minimax.rs`
+- Create: `crates/mchact-media/src/video_gen.rs`
+- Create: `crates/mchact-media/src/video_gen_sora.rs`
+- Create: `crates/mchact-media/src/video_gen_fal.rs`
+- Create: `crates/mchact-media/src/video_gen_minimax.rs`
 
 - [ ] **Step 1: Create video_gen.rs with trait, router, and poll_until_ready**
 
 ```rust
-// crates/microclaw-media/src/video_gen.rs
+// crates/mchact-media/src/video_gen.rs
 
 use async_trait::async_trait;
 use std::time::{Duration, Instant};
@@ -1398,7 +1398,7 @@ impl VideoGenRouter {
 - [ ] **Step 2: Create video_gen_sora.rs**
 
 ```rust
-// crates/microclaw-media/src/video_gen_sora.rs
+// crates/mchact-media/src/video_gen_sora.rs
 
 use async_trait::async_trait;
 use std::time::Duration;
@@ -1479,7 +1479,7 @@ impl VideoGenProvider for SoraProvider {
 - [ ] **Step 3: Create video_gen_fal.rs**
 
 ```rust
-// crates/microclaw-media/src/video_gen_fal.rs
+// crates/mchact-media/src/video_gen_fal.rs
 
 use async_trait::async_trait;
 use std::time::Duration;
@@ -1569,7 +1569,7 @@ impl VideoGenProvider for FalVideoProvider {
 - [ ] **Step 4: Create video_gen_minimax.rs**
 
 ```rust
-// crates/microclaw-media/src/video_gen_minimax.rs
+// crates/mchact-media/src/video_gen_minimax.rs
 
 use async_trait::async_trait;
 use std::time::Duration;
@@ -1651,13 +1651,13 @@ impl VideoGenProvider for MiniMaxProvider {
 
 - [ ] **Step 5: Build**
 
-Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p microclaw-media`
+Run: `export PATH="$HOME/.cargo/bin:$PATH" && . "$HOME/.cargo/env" 2>/dev/null && cargo build -p mchact-media`
 Expected: Compiles.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/microclaw-media/src/video_gen.rs crates/microclaw-media/src/video_gen_sora.rs crates/microclaw-media/src/video_gen_fal.rs crates/microclaw-media/src/video_gen_minimax.rs
+git add crates/mchact-media/src/video_gen.rs crates/mchact-media/src/video_gen_sora.rs crates/mchact-media/src/video_gen_fal.rs crates/mchact-media/src/video_gen_minimax.rs
 git commit -m "feat(media): add video generation providers — Sora 2, FAL, MiniMax Hailuo"
 ```
 
@@ -1666,14 +1666,14 @@ git commit -m "feat(media): add video generation providers — Sora 2, FAL, Mini
 ### Task 8: Document Extraction Module + Tool
 
 **Files:**
-- Create: `crates/microclaw-media/src/documents.rs`
+- Create: `crates/mchact-media/src/documents.rs`
 - Create: `src/tools/read_document.rs`
 - Modify: `src/tools/mod.rs`
 
 - [ ] **Step 1: Create documents.rs**
 
 ```rust
-// crates/microclaw-media/src/documents.rs
+// crates/mchact-media/src/documents.rs
 
 use crate::MediaError;
 use sha2::{Sha256, Digest};
@@ -1710,9 +1710,9 @@ pub async fn extract_text(_file_path: &str) -> Result<String, MediaError> {
 
 use std::sync::Arc;
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_storage::db::Database;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_storage::db::Database;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct ReadDocumentTool {
@@ -1846,12 +1846,12 @@ impl Tool for ReadDocumentTool {
 
         // Mode: Extract from file path
         if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
-            match microclaw_media::documents::extract_text(file_path).await {
+            match mchact_media::documents::extract_text(file_path).await {
                 Ok(text) => {
                     // Store extraction in DB if we have chat context
                     if let Some(chat_id) = caller_chat_id {
                         let file_bytes = tokio::fs::read(file_path).await.unwrap_or_default();
-                        let file_hash = microclaw_media::documents::compute_file_hash(&file_bytes);
+                        let file_hash = mchact_media::documents::compute_file_hash(&file_bytes);
                         let filename = std::path::Path::new(file_path)
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -1906,7 +1906,7 @@ Expected: Compiles.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/microclaw-media/src/documents.rs src/tools/read_document.rs src/tools/mod.rs
+git add crates/mchact-media/src/documents.rs src/tools/read_document.rs src/tools/mod.rs
 git commit -m "feat(tools): add read_document tool with kreuzberg extraction and per-chat storage"
 ```
 
@@ -1926,8 +1926,8 @@ git commit -m "feat(tools): add read_document tool with kreuzberg extraction and
 // src/tools/text_to_speech.rs
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct TextToSpeechTool {
@@ -1974,7 +1974,7 @@ impl Tool for TextToSpeechTool {
         };
         let voice = input.get("voice").and_then(|v| v.as_str()).unwrap_or(&self.tts_voice);
 
-        let router = match microclaw_media::tts::TtsRouter::new(
+        let router = match mchact_media::tts::TtsRouter::new(
             &self.tts_provider,
             self.tts_api_key.as_deref(),
             voice,
@@ -1986,10 +1986,10 @@ impl Tool for TextToSpeechTool {
         match router.synthesize(text, voice).await {
             Ok(output) => {
                 let ext = match output.format {
-                    microclaw_media::AudioFormat::Mp3 => "mp3",
-                    microclaw_media::AudioFormat::Wav => "wav",
-                    microclaw_media::AudioFormat::Opus => "opus",
-                    microclaw_media::AudioFormat::Ogg => "ogg",
+                    mchact_media::AudioFormat::Mp3 => "mp3",
+                    mchact_media::AudioFormat::Wav => "wav",
+                    mchact_media::AudioFormat::Opus => "opus",
+                    mchact_media::AudioFormat::Ogg => "ogg",
                 };
                 let dir = std::path::Path::new(&self.data_dir).join("media");
                 let _ = std::fs::create_dir_all(&dir);
@@ -2012,8 +2012,8 @@ impl Tool for TextToSpeechTool {
 // src/tools/image_generate.rs
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct ImageGenerateTool {
@@ -2067,13 +2067,13 @@ impl Tool for ImageGenerateTool {
             _ => return ToolResult::error("Missing or empty 'prompt'".into()),
         };
 
-        let params = microclaw_media::image_gen::ImageGenParams {
+        let params = mchact_media::image_gen::ImageGenParams {
             size: input.get("size").and_then(|v| v.as_str()).map(String::from).or(Some(self.default_size.clone())),
             quality: input.get("quality").and_then(|v| v.as_str()).map(String::from).or(Some(self.default_quality.clone())),
             n: Some(1),
         };
 
-        let router = match microclaw_media::image_gen::ImageGenRouter::new(
+        let router = match mchact_media::image_gen::ImageGenRouter::new(
             &self.provider, self.api_key.as_deref(), self.fal_key.as_deref(),
         ) {
             Ok(r) => r,
@@ -2107,8 +2107,8 @@ impl Tool for ImageGenerateTool {
 // src/tools/video_generate.rs
 
 use async_trait::async_trait;
-use microclaw_core::llm_types::ToolDefinition;
-use microclaw_tools::runtime::{Tool, ToolResult};
+use mchact_core::llm_types::ToolDefinition;
+use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct VideoGenerateTool {
@@ -2161,12 +2161,12 @@ impl Tool for VideoGenerateTool {
             _ => return ToolResult::error("Missing or empty 'prompt'".into()),
         };
 
-        let params = microclaw_media::video_gen::VideoGenParams {
+        let params = mchact_media::video_gen::VideoGenParams {
             duration_secs: input.get("duration").and_then(|v| v.as_u64()).map(|d| d as u32),
             resolution: None,
         };
 
-        let router = match microclaw_media::video_gen::VideoGenRouter::new(
+        let router = match mchact_media::video_gen::VideoGenRouter::new(
             &self.provider,
             self.api_key.as_deref(),
             self.fal_model.as_deref(),
@@ -2328,7 +2328,7 @@ git commit -m "feat: add vision provider routing with OpenRouter fallback"
 ### Task 11: Channel Adapter — send_voice() and send_video()
 
 **Files:**
-- Modify: `crates/microclaw-channels/src/channel_adapter.rs`
+- Modify: `crates/mchact-channels/src/channel_adapter.rs`
 - Modify: `src/channels/telegram.rs`
 - Modify: `src/channels/discord.rs`
 
@@ -2367,7 +2367,7 @@ In `src/channels/telegram.rs`, override `send_voice` to use `bot.send_voice()` f
 - [ ] **Step 3: Build and commit**
 
 ```bash
-git add crates/microclaw-channels/src/channel_adapter.rs src/channels/telegram.rs src/channels/discord.rs
+git add crates/mchact-channels/src/channel_adapter.rs src/channels/telegram.rs src/channels/discord.rs
 git commit -m "feat(channels): add send_voice() and send_video() to ChannelAdapter trait"
 ```
 
@@ -2657,7 +2657,7 @@ Expected: Clean build.
 
 - [ ] **Step 4: Verify config example**
 
-Update `microclaw.config.example.yaml` with all new multimodal fields.
+Update `mchact.config.example.yaml` with all new multimodal fields.
 
 - [ ] **Step 5: Final commit**
 

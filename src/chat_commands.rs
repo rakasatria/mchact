@@ -8,10 +8,10 @@ use crate::config::{
 use crate::http_client::llm_user_agent;
 use crate::run_control;
 use crate::runtime::AppState;
-use microclaw_core::llm_types::Message;
-use microclaw_storage::db::{call_blocking, Database};
-use microclaw_storage::usage::build_usage_report;
-use microclaw_tools::todo_store::clear_todos;
+use mchact_core::llm_types::Message;
+use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::usage::build_usage_report;
+use mchact_tools::todo_store::clear_todos;
 use serde::Deserialize;
 use tracing::warn;
 
@@ -60,7 +60,7 @@ enum PersistedOverride<'a> {
 fn config_path_for_save() -> Result<PathBuf, String> {
     match Config::resolve_config_path() {
         Ok(Some(path)) => Ok(path),
-        Ok(None) => Ok(PathBuf::from("./microclaw.config.yaml")),
+        Ok(None) => Ok(PathBuf::from("./mchact.config.yaml")),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -197,9 +197,9 @@ pub async fn handle_chat_command(
 
     if trimmed == "/start" {
         if let Some(id) = sender_id.map(str::trim).filter(|v| !v.is_empty()) {
-            return Some(format!("Hello MicroClaw :) Your ID: {id}"));
+            return Some(format!("Hello mchact :) Your ID: {id}"));
         }
-        return Some("Hello MicroClaw :)".to_string());
+        return Some("Hello mchact :)".to_string());
     }
 
     if trimmed == "/providers" {
@@ -1062,14 +1062,14 @@ mod tests {
     async fn provider_command_persists_override_for_default_account_channel() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_provider_persist_{}",
+            "mchact_chat_commands_provider_persist_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1124,7 +1124,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 
@@ -1133,14 +1133,14 @@ channels:
     async fn model_command_persists_override_for_default_account_channel() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_model_persist_{}",
+            "mchact_chat_commands_model_persist_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1181,7 +1181,7 @@ channels:
             "Model switched for this channel to: cloudflare / @cf/zai-org/glm-4.7-flash"
         );
 
-        let saved = fs::read_to_string(temp.join("microclaw.config.yaml")).unwrap();
+        let saved = fs::read_to_string(temp.join("mchact.config.yaml")).unwrap();
         assert!(
             saved.contains("model: '@cf/zai-org/glm-4.7-flash'")
                 || saved.contains("model: \"@cf/zai-org/glm-4.7-flash\"")
@@ -1201,7 +1201,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 
@@ -1210,14 +1210,14 @@ channels:
     async fn model_command_persists_override_only_for_current_bot_account() {
         let _guard = env_lock();
         let temp = std::env::temp_dir().join(format!(
-            "microclaw_chat_commands_model_bot_scope_{}",
+            "mchact_chat_commands_model_bot_scope_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         fs::create_dir_all(&temp).unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp).unwrap();
         fs::write(
-            temp.join("microclaw.config.yaml"),
+            temp.join("mchact.config.yaml"),
             r#"
 bot_username: bot
 api_key: key
@@ -1283,7 +1283,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
-        let _ = fs::remove_file(temp.join("microclaw.config.yaml"));
+        let _ = fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = fs::remove_dir_all(&temp);
     }
 

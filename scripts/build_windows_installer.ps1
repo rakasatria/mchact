@@ -132,7 +132,7 @@ function Copy-Artifact {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$issPath = Join-Path $repoRoot 'packaging\windows\microclaw.iss'
+$issPath = Join-Path $repoRoot 'packaging\windows\mchact.iss'
 $cargoTomlPath = Join-Path $repoRoot 'Cargo.toml'
 $version = Get-PackageVersion -CargoTomlPath $cargoTomlPath
 $appArchitecture = Get-AppArchitecture -TargetTriple $Target
@@ -147,13 +147,13 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 $StageDir = [System.IO.Path]::GetFullPath($StageDir)
 $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
 if ([string]::IsNullOrWhiteSpace($OutputBaseFilename)) {
-  $OutputBaseFilename = "microclaw-$version-$appArchitecture-setup"
+  $OutputBaseFilename = "mchact-$version-$appArchitecture-setup"
 }
 
 $binaryPath = if ([string]::IsNullOrWhiteSpace($Target)) {
-  Join-Path $repoRoot "target\$Configuration\microclaw.exe"
+  Join-Path $repoRoot "target\$Configuration\mchact.exe"
 } else {
-  Join-Path $repoRoot "target\$Target\$Configuration\microclaw.exe"
+  Join-Path $repoRoot "target\$Target\$Configuration\mchact.exe"
 }
 
 if (-not $SkipBuild) {
@@ -168,7 +168,7 @@ if (-not $SkipBuild) {
     $cargoArgs += @('--features', ($Features -join ','))
   }
 
-  Write-Host "Building microclaw.exe with cargo $($cargoArgs -join ' ')"
+  Write-Host "Building mchact.exe with cargo $($cargoArgs -join ' ')"
   & cargo @cargoArgs
   if ($LASTEXITCODE -ne 0) {
     throw "cargo build failed with exit code $LASTEXITCODE"
@@ -187,11 +187,11 @@ $examplesDir = Join-Path $StageDir 'examples'
 New-Item -ItemType Directory -Force -Path $examplesDir | Out-Null
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-Copy-Artifact -SourcePath $binaryPath -DestinationPath (Join-Path $StageDir 'microclaw.exe')
+Copy-Artifact -SourcePath $binaryPath -DestinationPath (Join-Path $StageDir 'mchact.exe')
 Copy-Artifact -SourcePath (Join-Path $repoRoot 'LICENSE') -DestinationPath (Join-Path $StageDir 'LICENSE.txt')
 Copy-Artifact -SourcePath (Join-Path $repoRoot 'README.md') -DestinationPath (Join-Path $StageDir 'README.md')
 Copy-Artifact -SourcePath (Join-Path $repoRoot 'README_CN.md') -DestinationPath (Join-Path $StageDir 'README_CN.md')
-Copy-Artifact -SourcePath (Join-Path $repoRoot 'microclaw.config.example.yaml') -DestinationPath (Join-Path $examplesDir 'microclaw.config.example.yaml')
+Copy-Artifact -SourcePath (Join-Path $repoRoot 'mchact.config.example.yaml') -DestinationPath (Join-Path $examplesDir 'mchact.config.example.yaml')
 
 Get-ChildItem -Path $repoRoot -Filter 'mcp*.example.json' | ForEach-Object {
   Copy-Artifact -SourcePath $_.FullName -DestinationPath (Join-Path $examplesDir $_.Name)

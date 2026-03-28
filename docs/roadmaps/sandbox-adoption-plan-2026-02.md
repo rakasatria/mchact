@@ -18,7 +18,7 @@ Deliver security posture improvements without increasing default onboarding fric
 - mount allowlist visibility check
 
 2. setup fast path:
-- `microclaw setup --enable-sandbox` updates config directly
+- `mchact setup --enable-sandbox` updates config directly
 - setup wizard default remains sandbox disabled
 
 3. execution policy engine:

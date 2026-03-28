@@ -227,7 +227,7 @@ impl SkillManager {
                     .reason
                     .unwrap_or_else(|| "unknown availability failure".to_string());
                 return Err(format!(
-                    "Skill '{name}' is currently unavailable: {reason}\nRun `microclaw skill available --all` for full diagnostics."
+                    "Skill '{name}' is currently unavailable: {reason}\nRun `mchact skill available --all` for full diagnostics."
                 ));
             }
             let skill_md = skill.meta.dir_path.join("SKILL.md");
@@ -708,7 +708,7 @@ Instructions.
     #[test]
     fn test_build_skills_catalog_empty() {
         let dir =
-            std::env::temp_dir().join(format!("microclaw_skills_test_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("mchact_skills_test_{}", uuid::Uuid::new_v4()));
         let sm = SkillManager::new(dir.to_str().unwrap());
         let catalog = sm.build_skills_catalog();
         assert!(catalog.is_empty());
@@ -718,7 +718,7 @@ Instructions.
     #[test]
     fn test_build_skills_catalog_sorted_and_truncated() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_sorted_{}",
+            "mchact_skills_catalog_sorted_{}",
             uuid::Uuid::new_v4()
         ));
         let long_desc = "z".repeat(MAX_SKILL_DESCRIPTION_CHARS + 32);
@@ -754,7 +754,7 @@ ok
     #[test]
     fn test_build_skills_catalog_applies_item_cap() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_cap_{}",
+            "mchact_skills_catalog_cap_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -782,7 +782,7 @@ ok
     #[test]
     fn test_build_skills_catalog_enters_compact_mode_when_many_skills() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_catalog_compact_mode_{}",
+            "mchact_skills_catalog_compact_mode_{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -809,7 +809,7 @@ ok
     #[test]
     fn test_list_skills_formatted_all_includes_unavailable_reasons() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_all_test_{}",
+            "mchact_skills_all_test_{}",
             uuid::Uuid::new_v4()
         ));
         let available = dir.join("available");
@@ -851,7 +851,7 @@ nope
     #[test]
     fn test_load_skill_checked_unavailable_has_diagnostic_hint() {
         let dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_unavailable_test_{}",
+            "mchact_skills_unavailable_test_{}",
             uuid::Uuid::new_v4()
         ));
         let unavailable = dir.join("bad");
@@ -893,7 +893,7 @@ Use this skill to interact with Outline.
     #[test]
     fn test_disable_skill_is_runtime_scoped() {
         let base_dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_runtime_scoped_{}",
+            "mchact_skills_runtime_scoped_{}",
             uuid::Uuid::new_v4()
         ));
         let runtime_a = base_dir.join("runtime-a");
@@ -940,7 +940,7 @@ Use this skill.
     #[test]
     fn test_set_enabled_missing_skill_returns_error() {
         let base_dir = std::env::temp_dir().join(format!(
-            "microclaw_skills_enable_missing_{}",
+            "mchact_skills_enable_missing_{}",
             uuid::Uuid::new_v4()
         ));
         let runtime = base_dir.join("runtime");

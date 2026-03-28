@@ -1,14 +1,14 @@
 # mchact
 
-**mchact** is a fork of [MicroClaw](https://github.com/microclaw/microclaw) — a Rust-based multi-platform agentic chat runtime. This fork focuses on building and integrating three companion projects:
+**mchact** is a fork of [mchact](https://github.com/mchact/mchact) — a Rust-based multi-platform agentic chat runtime. This fork focuses on building and integrating three companion projects:
 
-- **microclaw** — the core agentic chat engine (this codebase)
+- **mchact** — the core agentic chat engine (this codebase)
 - **hermes-agent** — autonomous agent orchestration layer
 - **clawteam** — multi-agent collaboration framework
 
-## What is MicroClaw?
+## What is mchact?
 
-MicroClaw is a channel-agnostic AI chat bot written in Rust. It connects to multiple chat platforms through a single agentic loop, executes tools, manages sessions, and provides persistent memory — all from one binary.
+mchact is a channel-agnostic AI chat bot written in Rust. It connects to multiple chat platforms through a single agentic loop, executes tools, manages sessions, and provides persistent memory — all from one binary.
 
 ### Supported Channels
 
@@ -54,28 +54,28 @@ Provider-agnostic runtime supporting Anthropic, OpenAI, OpenRouter, Ollama, Deep
 
 ## Project Focus
 
-This repository (**mchact**) serves as the integration workspace where microclaw, hermes-agent, and clawteam converge:
+This repository (**mchact**) serves as the integration workspace where mchact, hermes-agent, and clawteam converge:
 
-### microclaw (core engine)
+### mchact (core engine)
 The upstream agentic chat runtime. Handles LLM communication, tool execution, session management, and channel adapters. This is the foundation everything else builds on.
 
 ### hermes-agent (orchestration)
-Autonomous agent orchestration layer. Hermes manages agent lifecycles, task delegation, and inter-agent communication. It builds on microclaw's sub-agent and A2A capabilities to coordinate complex multi-step workflows.
+Autonomous agent orchestration layer. Hermes manages agent lifecycles, task delegation, and inter-agent communication. It builds on mchact's sub-agent and A2A capabilities to coordinate complex multi-step workflows.
 
 ### clawteam (collaboration)
-Multi-agent collaboration framework. ClawTeam enables teams of specialized agents to work together — planning, executing, reviewing, and iterating — as a coordinated unit. It leverages hermes-agent for orchestration and microclaw for execution.
+Multi-agent collaboration framework. ClawTeam enables teams of specialized agents to work together — planning, executing, reviewing, and iterating — as a coordinated unit. It leverages hermes-agent for orchestration and mchact for execution.
 
 ## Architecture
 
 ```
 crates/
-  microclaw-core/        Shared types, errors, text utilities
-  microclaw-storage/     SQLite persistence, memory domain, usage reports
-  microclaw-tools/       Tool runtime primitives, sandbox, path guards
-  microclaw-channels/    Channel abstraction and delivery boundary
-  microclaw-clawhub/     ClawHub registry client, install, lockfile
-  microclaw-app/         App-level support (logging, skills, transcribe)
-  microclaw-observability/ OTLP metrics/traces/logs export
+  mchact-core/        Shared types, errors, text utilities
+  mchact-storage/     SQLite persistence, memory domain, usage reports
+  mchact-tools/       Tool runtime primitives, sandbox, path guards
+  mchact-channels/    Channel abstraction and delivery boundary
+  mchact-clawhub/     ClawHub registry client, install, lockfile
+  mchact-app/         App-level support (logging, skills, transcribe)
+  mchact-observability/ OTLP metrics/traces/logs export
 
 src/
   main.rs                CLI entry point (start, setup, doctor, help)
@@ -108,7 +108,7 @@ cargo run -- doctor
 
 ### Configuration
 
-Copy `microclaw.config.example.yaml` to `microclaw.config.yaml` and configure:
+Copy `mchact.config.example.yaml` to `mchact.config.yaml` and configure:
 - LLM provider and API key
 - Channels to enable (web, telegram, discord, etc.)
 - Data directory and working directory

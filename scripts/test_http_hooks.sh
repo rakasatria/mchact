@@ -10,18 +10,18 @@ Examples:
   scripts/test_http_hooks.sh --hooks-token my-hooks-secret
 
   scripts/test_http_hooks.sh \
-    --config api_test_microclaw.config.yaml \
+    --config api_test_mchact.config.yaml \
     --hooks-token my-hooks-secret
 
 Notes:
-  - Default config path: microclaw.config.yaml
+  - Default config path: mchact.config.yaml
   - The script starts: cargo run -- start --config <path>
   - It validates HTTP hook endpoints:
     /hooks/agent, /api/hooks/agent, /hooks/wake
 EOF
 }
 
-CONFIG_PATH="microclaw.config.yaml"
+CONFIG_PATH="mchact.config.yaml"
 HOOKS_TOKEN=""
 BASE_URL="http://127.0.0.1:10961"
 
@@ -81,7 +81,7 @@ if command -v lsof >/dev/null 2>&1; then
   fi
 fi
 
-LOG_FILE="$(mktemp -t microclaw-http-hooks-log.XXXXXX)"
+LOG_FILE="$(mktemp -t mchact-http-hooks-log.XXXXXX)"
 cleanup() {
   if [[ -n "${MC_PID:-}" ]]; then
     kill "$MC_PID" >/dev/null 2>&1 || true
@@ -91,7 +91,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[1/11] Starting MicroClaw with config: $CONFIG_PATH"
+echo "[1/11] Starting Mchact with config: $CONFIG_PATH"
 cargo run -- start --config "$CONFIG_PATH" >"$LOG_FILE" 2>&1 &
 MC_PID=$!
 
@@ -99,7 +99,7 @@ echo "[2/11] Waiting for web server..."
 ready=0
 for _ in $(seq 1 90); do
   if ! kill -0 "$MC_PID" >/dev/null 2>&1; then
-    echo "MicroClaw process exited before server became ready." >&2
+    echo "Mchact process exited before server became ready." >&2
     echo "---- last logs ----" >&2
     tail -n 100 "$LOG_FILE" >&2 || true
     exit 1
@@ -160,8 +160,8 @@ post_json() {
     openclaw)
       headers+=("-H" "x-openclaw-token: $HOOKS_TOKEN")
       ;;
-    microclaw)
-      headers+=("-H" "x-microclaw-hook-token: $HOOKS_TOKEN")
+    mchact)
+      headers+=("-H" "x-mchact-hook-token: $HOOKS_TOKEN")
       ;;
     none)
       ;;
@@ -214,8 +214,8 @@ fi
 echo "[4/11] Validating compatible token headers"
 wait_for_run_id openclaw "$BASE_URL/hooks/agent" \
   '{"message":"header openclaw test","name":"api-test"}' >/dev/null
-wait_for_run_id microclaw "$BASE_URL/hooks/agent" \
-  '{"message":"header microclaw test","name":"api-test"}' >/dev/null
+wait_for_run_id mchact "$BASE_URL/hooks/agent" \
+  '{"message":"header mchact test","name":"api-test"}' >/dev/null
 
 echo "[5/11] Validating /hooks/agent and /api/hooks/agent"
 wait_for_run_id bearer "$BASE_URL/hooks/agent" \

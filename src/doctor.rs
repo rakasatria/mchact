@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::config::{Config, SandboxBackend, SandboxMode};
 use crate::mcp::McpConfig;
-use microclaw_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
+use mchact_tools::sandbox::{runtime_available_for_backend, selected_runtime_cli};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -101,7 +101,7 @@ impl DoctorReport {
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "microclaw doctor",
+    name = "mchact doctor",
     about = "Preflight diagnostics",
     long_about = "Checks PATH, shell/runtime dependencies, browser automation prerequisites, MCP command dependencies, and sandbox readiness."
 )]
@@ -440,15 +440,15 @@ fn check_config(report: &mut DoctorReport) {
             "config.file",
             "Config file",
             CheckStatus::Warn,
-            "microclaw.config.yaml not found".to_string(),
-            Some("Run `microclaw setup` to create configuration.".to_string()),
+            "mchact.config.yaml not found".to_string(),
+            Some("Run `mchact setup` to create configuration.".to_string()),
         ),
         Err(err) => report.push(
             "config.file",
             "Config file",
             CheckStatus::Fail,
             err.to_string(),
-            Some("Fix MICROCLAW_CONFIG or create a valid config file.".to_string()),
+            Some("Fix MCHACT_CONFIG or create a valid config file.".to_string()),
         ),
     }
 }
@@ -771,21 +771,21 @@ fn check_path(report: &mut DoctorReport) {
                 ),
             );
         }
-    } else if command_exists("microclaw") {
+    } else if command_exists("mchact") {
         report.push(
-            "path.microclaw",
-            "microclaw in PATH",
+            "path.mchact",
+            "mchact in PATH",
             CheckStatus::Pass,
-            "microclaw is discoverable in PATH".to_string(),
+            "mchact is discoverable in PATH".to_string(),
             None,
         );
     } else {
         report.push(
-            "path.microclaw",
-            "microclaw in PATH",
+            "path.mchact",
+            "mchact in PATH",
             CheckStatus::Warn,
-            "microclaw is not discoverable in PATH".to_string(),
-            Some("Add the microclaw binary directory to PATH.".to_string()),
+            "mchact is not discoverable in PATH".to_string(),
+            Some("Add the mchact binary directory to PATH.".to_string()),
         );
     }
 }
@@ -891,7 +891,7 @@ fn check_browser_dependency(report: &mut DoctorReport) {
 fn check_mcp_dependencies(report: &mut DoctorReport) {
     let data_root = match Config::load() {
         Ok(cfg) => cfg.data_root_dir(),
-        Err(_) => PathBuf::from("./microclaw.data"),
+        Err(_) => PathBuf::from("./mchact.data"),
     };
 
     let mcp_paths = collect_mcp_config_paths(&data_root);
@@ -1049,7 +1049,7 @@ fn check_sandbox_config(report: &mut DoctorReport) {
                 "Sandbox config",
                 CheckStatus::Warn,
                 format!("config unavailable: {err}"),
-                Some("Run `microclaw setup` first.".to_string()),
+                Some("Run `mchact setup` first.".to_string()),
             );
             return;
         }
@@ -1076,7 +1076,7 @@ fn check_sandbox_config(report: &mut DoctorReport) {
             config.sandbox.cap_add.join(","),
         ),
         if matches!(config.sandbox.mode, SandboxMode::Off) {
-            Some("Enable quickly: `microclaw setup --enable-sandbox`.".to_string())
+            Some("Enable quickly: `mchact setup --enable-sandbox`.".to_string())
         } else {
             None
         },
@@ -1277,11 +1277,11 @@ fn check_mount_allowlist(report: &mut DoctorReport) {
 }
 
 fn default_mount_allowlist_path() -> Option<PathBuf> {
-    user_home_dir().map(|h| h.join(".microclaw/sandbox-mount-allowlist.txt"))
+    user_home_dir().map(|h| h.join(".mchact/sandbox-mount-allowlist.txt"))
 }
 
 fn print_report(report: &DoctorReport) {
-    println!("MicroClaw Doctor");
+    println!("mchact Doctor");
     println!(
         "Environment: os={} arch={} wsl={}",
         report.platform, report.arch, report.in_wsl
@@ -1519,14 +1519,14 @@ mod tests {
     fn test_build_sandbox_report_has_mode_check() {
         let _guard = env_lock();
         let path = std::env::temp_dir().join(format!(
-            "microclaw_doctor_test_{}.yaml",
+            "mchact_doctor_test_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         let cfg = Config::test_defaults();
         cfg.save_yaml(path.to_string_lossy().as_ref()).unwrap();
-        std::env::set_var("MICROCLAW_CONFIG", &path);
+        std::env::set_var("MCHACT_CONFIG", &path);
         let report = build_sandbox_report();
-        std::env::remove_var("MICROCLAW_CONFIG");
+        std::env::remove_var("MCHACT_CONFIG");
         let _ = std::fs::remove_file(path);
         assert!(report.checks.iter().any(|c| c.id == "sandbox.mode"));
     }
@@ -1535,7 +1535,7 @@ mod tests {
     fn test_build_report_has_web_fetch_validation_checks() {
         let _guard = env_lock();
         let path = std::env::temp_dir().join(format!(
-            "microclaw_doctor_webfetch_{}.yaml",
+            "mchact_doctor_webfetch_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         let mut cfg = Config::test_defaults();
@@ -1544,11 +1544,11 @@ mod tests {
         cfg.web_fetch_url_validation.enabled = true;
         cfg.web_fetch_url_validation.denylist_hosts = vec!["example.com".to_string()];
         cfg.save_yaml(path.to_string_lossy().as_ref()).unwrap();
-        std::env::set_var("MICROCLAW_CONFIG", &path);
+        std::env::set_var("MCHACT_CONFIG", &path);
 
         let report = build_report();
 
-        std::env::remove_var("MICROCLAW_CONFIG");
+        std::env::remove_var("MCHACT_CONFIG");
         let _ = std::fs::remove_file(path);
 
         assert!(report
@@ -1562,18 +1562,18 @@ mod tests {
     fn test_build_report_warns_when_feed_sync_enabled_without_sources() {
         let _guard = env_lock();
         let path = std::env::temp_dir().join(format!(
-            "microclaw_doctor_feed_sync_warn_{}.yaml",
+            "mchact_doctor_feed_sync_warn_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         let mut cfg = Config::test_defaults();
         cfg.web_fetch_url_validation.feed_sync.enabled = true;
         cfg.web_fetch_url_validation.feed_sync.sources.clear();
         cfg.save_yaml(path.to_string_lossy().as_ref()).unwrap();
-        std::env::set_var("MICROCLAW_CONFIG", &path);
+        std::env::set_var("MCHACT_CONFIG", &path);
 
         let report = build_report();
 
-        std::env::remove_var("MICROCLAW_CONFIG");
+        std::env::remove_var("MCHACT_CONFIG");
         let _ = std::fs::remove_file(path);
 
         let check = report
@@ -1588,27 +1588,27 @@ mod tests {
     fn test_build_report_fails_invalid_feed_source_url() {
         let _guard = env_lock();
         let path = std::env::temp_dir().join(format!(
-            "microclaw_doctor_feed_sync_invalid_url_{}.yaml",
+            "mchact_doctor_feed_sync_invalid_url_{}.yaml",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
         let mut cfg = Config::test_defaults();
         cfg.web_fetch_url_validation.feed_sync.enabled = true;
         cfg.web_fetch_url_validation.feed_sync.fail_open = false;
         cfg.web_fetch_url_validation.feed_sync.sources =
-            vec![microclaw_tools::web_fetch::WebFetchFeedSource {
+            vec![mchact_tools::web_fetch::WebFetchFeedSource {
                 enabled: true,
-                mode: microclaw_tools::web_fetch::WebFetchFeedMode::Denylist,
+                mode: mchact_tools::web_fetch::WebFetchFeedMode::Denylist,
                 url: "notaurl".to_string(),
-                format: microclaw_tools::web_fetch::WebFetchFeedFormat::Lines,
+                format: mchact_tools::web_fetch::WebFetchFeedFormat::Lines,
                 refresh_interval_secs: 60,
                 timeout_secs: 5,
             }];
         cfg.save_yaml(path.to_string_lossy().as_ref()).unwrap();
-        std::env::set_var("MICROCLAW_CONFIG", &path);
+        std::env::set_var("MCHACT_CONFIG", &path);
 
         let report = build_report();
 
-        std::env::remove_var("MICROCLAW_CONFIG");
+        std::env::remove_var("MCHACT_CONFIG");
         let _ = std::fs::remove_file(path);
 
         let check = report

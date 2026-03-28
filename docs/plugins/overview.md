@@ -6,7 +6,7 @@ You can override the directory in config:
 ```yaml
 plugins:
   enabled: true
-  dir: "./microclaw.data/plugins"
+  dir: "./mchact.data/plugins"
 ```
 
 ## Example plugin manifest
