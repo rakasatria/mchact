@@ -179,7 +179,11 @@ Use a simple heuristic: `token_count ≈ text.len() / 4` (approximate). Exact co
     "type": "object",
     "required": ["query"],
     "properties": {
-      "knowledge_name": {"type": "string", "description": "Specific collection to search (omit to search ALL attached collections)"},
+      "knowledge_names": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Collections to search (omit to search ALL attached collections)"
+      },
       "query": {"type": "string", "description": "What to search for"},
       "max_results": {"type": "integer", "description": "Max results (default: 5)"}
     }
@@ -187,7 +191,7 @@ Use a simple heuristic: `token_count ≈ text.len() / 4` (approximate). Exact co
 }
 ```
 
-- If `knowledge_name` provided: search only that collection (must be in `knowledge_chat_access`)
+- If `knowledge_names` provided: search only those collections (each must be in `knowledge_chat_access`)
 - If omitted: search ALL collections the caller chat has access to
 - Results include `knowledge_name` per result for attribution
 - Query flow (see Section 5)
@@ -298,17 +302,17 @@ AND created_at < datetime('now', '-30 minutes')
 
 ## 5. Query Flow
 
-**`query_knowledge(query, knowledge_name=None, max_results=5)`:**
+**`query_knowledge(query, knowledge_names=None, max_results=5)`:**
 
 ```
 1. Determine scope:
-   a. If knowledge_name provided:
-      Verify access: chat_id in knowledge_chat_access for that collection
-      Get document_extraction_ids for that collection
-   b. If knowledge_name omitted:
+   a. If knowledge_names provided (array):
+      Verify access: chat_id in knowledge_chat_access for each named collection
+      Get document_extraction_ids for those collections
+   b. If knowledge_names omitted:
       Get ALL knowledge_ids the caller chat has access to (knowledge_chat_access)
       Get ALL document_extraction_ids across all accessible collections
-      Also collect knowledge_name per document_extraction_id for attribution
+   c. In both cases, collect knowledge_name per document_extraction_id for attribution
 
 2. Embed query: query_vector = embed(query_text)
 
