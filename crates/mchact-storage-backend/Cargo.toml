@@ -8,7 +8,7 @@ license = "MIT"
 default = ["local"]
 local = []
 s3 = ["aws-sdk-s3", "aws-config"]
-azure = ["azure_storage_blobs", "azure_storage"]
+azure = ["azure_storage_blobs", "azure_storage", "azure_core"]
 gcs = ["google-cloud-storage"]
 
 [dependencies]
@@ -23,6 +23,7 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-config = { version = "1", optional = true }
 azure_storage_blobs = { version = "0.21", optional = true }
 azure_storage = { version = "0.21", optional = true }
+azure_core = { version = "0.21", optional = true }
 google-cloud-storage = { version = "0.22", optional = true }
 
 [dev-dependencies]
