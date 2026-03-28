@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_media::video_gen::{VideoGenParams, VideoGenRouter};
 use serde_json::json;
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use super::{schema_object, Tool, ToolResult};
+use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 
 pub struct VideoGenerateTool {
     video_gen_provider: String,
@@ -12,7 +12,7 @@ pub struct VideoGenerateTool {
     video_gen_fal_model: Option<String>,
     video_gen_minimax_key: Option<String>,
     video_gen_timeout_secs: u64,
-    data_dir: String,
+    media_manager: Arc<crate::media_manager::MediaManager>,
 }
 
 impl VideoGenerateTool {
@@ -22,7 +22,7 @@ impl VideoGenerateTool {
         fal_model: Option<&str>,
         minimax_key: Option<&str>,
         timeout_secs: u64,
-        data_dir: &str,
+        media_manager: Arc<crate::media_manager::MediaManager>,
     ) -> Self {
         Self {
             video_gen_provider: provider.to_string(),
@@ -30,7 +30,7 @@ impl VideoGenerateTool {
             video_gen_fal_model: fal_model.map(String::from),
             video_gen_minimax_key: minimax_key.map(String::from),
             video_gen_timeout_secs: timeout_secs,
-            data_dir: data_dir.to_string(),
+            media_manager,
         }
     }
 }
@@ -104,29 +104,45 @@ impl Tool for VideoGenerateTool {
         };
 
         let filename = format!("vid_{}.{}", uuid::Uuid::new_v4(), format);
-        let media_dir = PathBuf::from(&self.data_dir).join("media");
+        let mime = format!("video/{format}");
+        let auth = auth_context_from_input(&input);
+        let chat_id = auth.map(|a| a.caller_chat_id).unwrap_or(0);
 
-        if let Err(e) = std::fs::create_dir_all(&media_dir) {
-            return ToolResult::error(format!("Failed to create media directory: {e}"));
-        }
+        let media_id = match self
+            .media_manager
+            .store_file(output.video_bytes, &filename, Some(&mime), chat_id, "video_gen")
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => return ToolResult::error(format!("Failed to store: {e}")),
+        };
 
-        let file_path = media_dir.join(&filename);
-        if let Err(e) = std::fs::write(&file_path, &output.video_bytes) {
-            return ToolResult::error(format!("Failed to save video file: {e}"));
-        }
-
-        ToolResult::success(file_path.to_string_lossy().to_string())
+        ToolResult::success(
+            serde_json::json!({"media_object_id": media_id, "type": "video"}).to_string(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
+    use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 
-    #[test]
-    fn test_definition() {
-        let tool = VideoGenerateTool::new("sora", None, None, None, 300, "/tmp/data");
+    async fn make_media_manager() -> Arc<crate::media_manager::MediaManager> {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_vid_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> =
+            Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap());
+        let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
+        Arc::new(crate::media_manager::MediaManager::new(storage, db))
+    }
+
+    #[tokio::test]
+    async fn test_definition() {
+        let tool = VideoGenerateTool::new("sora", None, None, None, 300, make_media_manager().await);
         assert_eq!(tool.name(), "video_generate");
         let def = tool.definition();
         assert_eq!(def.name, "video_generate");
@@ -139,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_missing_prompt_returns_error() {
-        let tool = VideoGenerateTool::new("sora", None, None, None, 300, "/tmp/data");
+        let tool = VideoGenerateTool::new("sora", None, None, None, 300, make_media_manager().await);
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing required parameter: prompt"));
@@ -147,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_prompt_returns_error() {
-        let tool = VideoGenerateTool::new("sora", None, None, None, 300, "/tmp/data");
+        let tool = VideoGenerateTool::new("sora", None, None, None, 300, make_media_manager().await);
         let result = tool.execute(json!({"prompt": "  "})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing required parameter: prompt"));
@@ -155,8 +171,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_provider_returns_error() {
-        let tool =
-            VideoGenerateTool::new("nonexistent_provider", None, None, None, 300, "/tmp/data");
+        let tool = VideoGenerateTool::new(
+            "nonexistent_provider",
+            None,
+            None,
+            None,
+            300,
+            make_media_manager().await,
+        );
         let result = tool
             .execute(json!({"prompt": "A cinematic short film"}))
             .await;

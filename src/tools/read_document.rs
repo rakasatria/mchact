@@ -7,16 +7,44 @@ use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database};
 
+fn mime_from_extension(path: &str) -> Option<&'static str> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    match ext.to_lowercase().as_str() {
+        "pdf" => Some("application/pdf"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "doc" => Some("application/msword"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "xls" => Some("application/vnd.ms-excel"),
+        "pptx" => Some(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ),
+        "ppt" => Some("application/vnd.ms-powerpoint"),
+        "txt" => Some("text/plain"),
+        "md" => Some("text/markdown"),
+        "csv" => Some("text/csv"),
+        _ => None,
+    }
+}
+
 pub struct ReadDocumentTool {
     db: Arc<Database>,
     control_chat_ids: Vec<i64>,
+    media_manager: Arc<crate::media_manager::MediaManager>,
 }
 
 impl ReadDocumentTool {
-    pub fn new(db: Arc<Database>, control_chat_ids: Vec<i64>) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        control_chat_ids: Vec<i64>,
+        media_manager: Arc<crate::media_manager::MediaManager>,
+    ) -> Self {
         Self {
             db,
             control_chat_ids,
+            media_manager,
         }
     }
 }
@@ -166,19 +194,42 @@ impl Tool for ReadDocumentTool {
                             .unwrap_or("unknown")
                             .to_string();
                         let file_size = file_bytes.len() as i64;
+                        let mime = mime_from_extension(file_path).map(str::to_string);
                         let db = self.db.clone();
                         let txt = text.clone();
-                        let _ = call_blocking(db, move |db| {
+                        let fname = filename.clone();
+                        let fhash = file_hash.clone();
+                        let mime_ref = mime.clone();
+                        let extraction_result = call_blocking(db, move |db| {
                             db.insert_document_extraction(
                                 chat_id,
-                                &file_hash,
-                                &filename,
-                                None,
+                                &fhash,
+                                &fname,
+                                mime_ref.as_deref(),
                                 file_size,
                                 &txt,
                             )
                         })
                         .await;
+                        if let Ok(extraction_id) = extraction_result {
+                            let store_result = self
+                                .media_manager
+                                .store_file(
+                                    file_bytes,
+                                    &filename,
+                                    mime.as_deref(),
+                                    chat_id,
+                                    "document",
+                                )
+                                .await;
+                            if let Ok(media_id) = store_result {
+                                let db2 = self.db.clone();
+                                let _ = call_blocking(db2, move |db| {
+                                    db.set_document_extraction_media_id(extraction_id, media_id)
+                                })
+                                .await;
+                            }
+                        }
                     }
                     let display = if text.len() > 50_000 {
                         format!(
@@ -204,6 +255,7 @@ impl Tool for ReadDocumentTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 
     fn make_db() -> Arc<Database> {
@@ -214,13 +266,23 @@ mod tests {
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())
     }
 
-    fn make_tool(db: Arc<Database>) -> ReadDocumentTool {
-        ReadDocumentTool::new(db, vec![100])
+    async fn make_media_manager(db: Arc<Database>) -> Arc<crate::media_manager::MediaManager> {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_doc_mm_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> =
+            Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap());
+        Arc::new(crate::media_manager::MediaManager::new(storage, db))
+    }
+
+    async fn make_tool(db: Arc<Database>) -> ReadDocumentTool {
+        let mm = make_media_manager(db.clone()).await;
+        ReadDocumentTool::new(db, vec![100], mm)
     }
 
     #[tokio::test]
     async fn test_no_params_returns_error() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("file_path"));
@@ -228,7 +290,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_empty_chat_returns_success() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool
             .execute(json!({
                 "list": true,
@@ -245,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_no_auth_returns_error() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool.execute(json!({"list": true})).await;
         assert!(result.is_error);
         assert!(result.content.contains("chat context"));
@@ -253,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_no_results() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool
             .execute(json!({
                 "query": "zzznomatch",
@@ -274,7 +336,7 @@ mod tests {
         db.insert_document_extraction(42, "abc123", "report.pdf", None, 100, "quarterly earnings report data")
             .unwrap();
 
-        let tool = make_tool(db);
+        let tool = make_tool(db.clone()).await;
         let result = tool
             .execute(json!({
                 "query": "quarterly earnings",
@@ -295,7 +357,7 @@ mod tests {
         db.insert_document_extraction(42, "hash999", "notes.docx", None, 50, "meeting notes content here")
             .unwrap();
 
-        let tool = make_tool(db);
+        let tool = make_tool(db.clone()).await;
         let result = tool
             .execute(json!({
                 "file_hash": "hash999",
@@ -313,7 +375,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve_by_hash_not_found() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool
             .execute(json!({
                 "file_hash": "nonexistent",
@@ -330,7 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve_by_hash_no_auth_returns_error() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool
             .execute(json!({"file_hash": "somehash"}))
             .await;
@@ -340,7 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_text_propagates_not_configured() {
-        let tool = make_tool(make_db());
+        let tool = make_tool(make_db()).await;
         let result = tool
             .execute(json!({
                 "file_path": "/tmp/test_nonexistent_doc.pdf",
@@ -362,7 +424,7 @@ mod tests {
         db.insert_document_extraction(55, "filehash1", "slides.pptx", None, 2048, "slide content here")
             .unwrap();
 
-        let tool = make_tool(db);
+        let tool = make_tool(db.clone()).await;
         let result = tool
             .execute(json!({
                 "list": true,
@@ -385,7 +447,7 @@ mod tests {
         db.insert_document_extraction(999, "xhash", "private.pdf", None, 100, "cross chat searchable content")
             .unwrap();
 
-        let tool = make_tool(db); // control_chat_ids = [100]
+        let tool = make_tool(db.clone()).await; // control_chat_ids = [100]
         let result = tool
             .execute(json!({
                 "query": "cross chat searchable",
@@ -407,7 +469,7 @@ mod tests {
         db.insert_document_extraction(999, "yhash", "other.pdf", None, 100, "other chat unique phrase")
             .unwrap();
 
-        let tool = make_tool(db); // control_chat_ids = [100]
+        let tool = make_tool(db.clone()).await; // control_chat_ids = [100]
         let result = tool
             .execute(json!({
                 "query": "other chat unique phrase",

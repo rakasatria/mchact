@@ -123,6 +123,17 @@ impl ToolRegistry {
             backend = sandbox_router.backend_name(),
             "Sandbox initialized"
         );
+        let local_storage: Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = config.data_dir.clone();
+            let storage = tokio::runtime::Handle::current()
+                .block_on(mchact_storage_backend::local::LocalStorage::new(&data_dir))
+                .unwrap_or_else(|e| panic!("Cannot initialize media storage at '{data_dir}': {e}"));
+            Arc::new(storage)
+        };
+        let media_manager = Arc::new(crate::media_manager::MediaManager::new(
+            local_storage,
+            db.clone(),
+        ));
         let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(
                 bash::BashTool::new_with_isolation(
@@ -315,6 +326,7 @@ impl ToolRegistry {
             tools.push(Box::new(read_document::ReadDocumentTool::new(
                 db.clone(),
                 config.control_chat_ids.clone(),
+                media_manager.clone(),
             )));
         }
 
@@ -324,7 +336,7 @@ impl ToolRegistry {
                 &config.tts_provider,
                 config.tts_api_key.as_deref().or(Some(&config.api_key)),
                 &config.tts_voice,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
@@ -336,7 +348,7 @@ impl ToolRegistry {
                 config.image_gen_fal_key.as_deref(),
                 &config.image_gen_default_size,
                 &config.image_gen_default_quality,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
@@ -348,7 +360,7 @@ impl ToolRegistry {
                 config.video_gen_fal_model.as_deref(),
                 config.video_gen_minimax_key.as_deref(),
                 config.video_gen_timeout_secs,
-                &config.data_dir,
+                media_manager.clone(),
             )));
         }
 
