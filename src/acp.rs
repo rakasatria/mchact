@@ -60,10 +60,23 @@ pub async fn serve(
         tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
     }
 
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+        mchact_storage_backend::local::LocalStorage::new(&config.data_dir)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot initialize media storage at '{}': {e}",
+                    config.data_dir
+                )
+            }),
+    );
+    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage, db.clone()));
+
     let app_state = Arc::new(AppState {
         config: config.clone(),
         channel_registry,
         db: db.clone(),
+        media_manager,
         memory,
         skills,
         hooks: Arc::new(HookManager::from_config(&config).with_db(db.clone())),

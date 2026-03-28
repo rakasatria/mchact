@@ -2686,10 +2686,24 @@ mod tests {
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(WebAdapter));
         let channel_registry = Arc::new(registry);
+        let local_storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = cfg.data_dir.clone();
+            let storage =
+                mchact_storage_backend::local::LocalStorage::new_sync(&data_dir)
+                    .unwrap_or_else(|e| {
+                        panic!("Cannot initialize media storage at '{data_dir}': {e}")
+                    });
+            std::sync::Arc::new(storage)
+        };
+        let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
+            local_storage,
+            db.clone(),
+        ));
         Arc::new(AppState {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
+            media_manager,
             memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
@@ -2728,10 +2742,24 @@ mod tests {
         cfg.web_port = 3900;
         let db = Arc::new(Database::new(runtime_dir.to_str().unwrap()).unwrap());
         let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let local_storage: std::sync::Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let data_dir = cfg.data_dir.clone();
+            let storage =
+                mchact_storage_backend::local::LocalStorage::new_sync(&data_dir)
+                    .unwrap_or_else(|e| {
+                        panic!("Cannot initialize media storage at '{data_dir}': {e}")
+                    });
+            std::sync::Arc::new(storage)
+        };
+        let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
+            local_storage,
+            db.clone(),
+        ));
         Arc::new(AppState {
             config: cfg.clone(),
             channel_registry: channel_registry.clone(),
             db: db.clone(),
+            media_manager,
             memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),

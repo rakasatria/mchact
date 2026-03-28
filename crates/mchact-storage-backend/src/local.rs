@@ -24,6 +24,15 @@ impl LocalStorage {
         Ok(Self { base_dir })
     }
 
+    /// Create a new `LocalStorage` using synchronous I/O.
+    ///
+    /// Suitable for use in tests or sync contexts where async is not available.
+    pub fn new_sync(base_dir: impl Into<PathBuf>) -> StorageResult<Self> {
+        let base_dir = base_dir.into();
+        std::fs::create_dir_all(&base_dir)?;
+        Ok(Self { base_dir })
+    }
+
     fn full_path(&self, key: &str) -> PathBuf {
         // Prevent path traversal by stripping any leading '/'
         let sanitized = key.trim_start_matches('/');

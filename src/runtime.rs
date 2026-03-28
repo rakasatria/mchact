@@ -34,6 +34,7 @@ use crate::config::Config;
 use crate::embedding::EmbeddingProvider;
 use crate::hooks::HookManager;
 use crate::llm::LlmProvider;
+use crate::media_manager::MediaManager;
 use crate::memory::MemoryManager;
 use crate::memory_backend::MemoryBackend;
 use crate::skills::SkillManager;
@@ -44,11 +45,13 @@ use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
 use mchact_storage::db::Database;
+use mchact_storage_backend::local::LocalStorage;
 
 pub struct AppState {
     pub config: Config,
     pub channel_registry: Arc<ChannelRegistry>,
     pub db: Arc<Database>,
+    pub media_manager: Arc<MediaManager>,
     pub memory: MemoryManager,
     pub skills: SkillManager,
     pub hooks: Arc<HookManager>,
@@ -464,10 +467,23 @@ pub async fn run(
     let trace_exporter = OtlpTraceExporter::from_observability(config.observability.as_ref());
     let log_exporter = OtlpLogExporter::from_observability(config.observability.as_ref());
 
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+        LocalStorage::new(&config.data_dir)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot initialize media storage at '{}': {e}",
+                    config.data_dir
+                )
+            }),
+    );
+    let media_manager = Arc::new(MediaManager::new(storage, db.clone()));
+
     let state = Arc::new(AppState {
         config,
         channel_registry,
         db,
+        media_manager,
         memory,
         skills,
         hooks,
