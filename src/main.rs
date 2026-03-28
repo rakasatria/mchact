@@ -4,9 +4,8 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use mchact::config::Config;
 use mchact::error::MchactError;
 use mchact::{
-    builtin_skills, db, doctor, gateway, hooks, logging, mcp, runtime, setup, skills,
+    builtin_skills, doctor, gateway, hooks, logging, mcp, runtime, setup, skills,
 };
-use mchact_storage::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use tracing::info;
@@ -462,7 +461,7 @@ fn generate_password() -> String {
     format!("mc-{}-{}!", &rand[..6], &rand[6..12])
 }
 
-fn handle_web_cli(action: Option<WebAction>) -> anyhow::Result<()> {
+async fn handle_web_cli(action: Option<WebAction>) -> anyhow::Result<()> {
     if action.is_none() {
         print_web_help();
         return Ok(());
@@ -471,7 +470,19 @@ fn handle_web_cli(action: Option<WebAction>) -> anyhow::Result<()> {
     if matches!(action, Some(WebAction::PasswordClear)) {
         let config = Config::load()?;
         let runtime_data_dir = config.runtime_data_dir();
-        let database = db::Database::new(&runtime_data_dir)?;
+        let driver_config = mchact_storage::driver::StorageDriverConfig {
+            backend: config.db_backend.clone(),
+            db_path: runtime_data_dir.clone(),
+            database_url: config.db_database_url.clone(),
+        };
+        let database = mchact_storage::driver::create_data_store(&driver_config)
+            .await
+            .unwrap_or_else(|| {
+                panic!(
+                    "Failed to initialize '{}' database backend",
+                    config.db_backend
+                )
+            });
         database.clear_auth_password_hash()?;
         let revoked = database.revoke_all_auth_sessions()?;
         println!("Web password cleared.");
@@ -495,7 +506,19 @@ fn handle_web_cli(action: Option<WebAction>) -> anyhow::Result<()> {
 
     let config = Config::load()?;
     let runtime_data_dir = config.runtime_data_dir();
-    let database = db::Database::new(&runtime_data_dir)?;
+    let driver_config = mchact_storage::driver::StorageDriverConfig {
+        backend: config.db_backend.clone(),
+        db_path: runtime_data_dir.clone(),
+        database_url: config.db_database_url.clone(),
+    };
+    let database = mchact_storage::driver::create_data_store(&driver_config)
+        .await
+        .unwrap_or_else(|| {
+            panic!(
+                "Failed to initialize '{}' database backend",
+                config.db_backend
+            )
+        });
     let hash = make_password_hash(&normalized)?;
     database.upsert_auth_password_hash(&hash)?;
     let revoked = database.revoke_all_auth_sessions()?;
@@ -699,7 +722,19 @@ async fn reembed_memories() -> anyhow::Result<()> {
     {
         use mchact::embedding;
         let runtime_data_dir = config.runtime_data_dir();
-        let db = db::Database::new(&runtime_data_dir)?;
+        let driver_config = mchact_storage::driver::StorageDriverConfig {
+            backend: config.db_backend.clone(),
+            db_path: runtime_data_dir.clone(),
+            database_url: config.db_database_url.clone(),
+        };
+        let db = mchact_storage::driver::create_data_store(&driver_config)
+            .await
+            .unwrap_or_else(|| {
+                panic!(
+                    "Failed to initialize '{}' database backend",
+                    config.db_backend
+                )
+            });
 
         let provider = embedding::create_provider(&config);
         let provider = match provider {
@@ -787,7 +822,7 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Some(MainCommand::Web(web)) => {
-            handle_web_cli(web.action)?;
+            handle_web_cli(web.action).await?;
             return Ok(());
         }
         Some(MainCommand::Skill { args }) => {
@@ -1139,8 +1174,19 @@ async fn main() -> anyhow::Result<()> {
         Some(MainCommand::Knowledge { action }) => {
             let config = Config::load()?;
             let runtime_data_dir = config.runtime_data_dir();
-            let database: std::sync::Arc<mchact_storage::DynDataStore> =
-                std::sync::Arc::new(db::Database::new(&runtime_data_dir)?);
+            let driver_config = mchact_storage::driver::StorageDriverConfig {
+                backend: config.db_backend.clone(),
+                db_path: runtime_data_dir.clone(),
+                database_url: config.db_database_url.clone(),
+            };
+            let database = mchact_storage::driver::create_data_store(&driver_config)
+                .await
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Failed to initialize '{}' database backend",
+                        config.db_backend
+                    )
+                });
             let km = mchact::knowledge::KnowledgeManager::new(database);
 
             match action {
