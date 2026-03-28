@@ -131,6 +131,14 @@ fn minimal_config() -> Config {
         storage_azure_account_key: None,
         storage_gcs_bucket: None,
         storage_gcs_credentials_path: None,
+        knowledge_embed_interval_mins: 5,
+        knowledge_embed_batch_size: 50,
+        knowledge_observe_interval_mins: 15,
+        knowledge_observe_batch_size: 20,
+        knowledge_autogroup_interval_mins: 60,
+        knowledge_autogroup_min_docs: 5,
+        knowledge_retry_delay_mins: 30,
+        knowledge_max_embedding_tokens: 8192,
     }
 }
 

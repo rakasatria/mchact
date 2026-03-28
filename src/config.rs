@@ -330,6 +330,30 @@ fn default_storage_backend() -> String {
 fn default_storage_cache_max_mb() -> u64 {
     1024
 }
+fn default_knowledge_embed_interval_mins() -> u64 {
+    5
+}
+fn default_knowledge_embed_batch_size() -> u64 {
+    50
+}
+fn default_knowledge_observe_interval_mins() -> u64 {
+    15
+}
+fn default_knowledge_observe_batch_size() -> u64 {
+    20
+}
+fn default_knowledge_autogroup_interval_mins() -> u64 {
+    60
+}
+fn default_knowledge_autogroup_min_docs() -> u64 {
+    5
+}
+fn default_knowledge_retry_delay_mins() -> u64 {
+    30
+}
+fn default_knowledge_max_embedding_tokens() -> u64 {
+    8192
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClawHubConfig {
@@ -977,6 +1001,23 @@ pub struct Config {
     pub storage_azure_account_key: Option<String>,
     pub storage_gcs_bucket: Option<String>,
     pub storage_gcs_credentials_path: Option<String>,
+    // Knowledge builder configuration
+    #[serde(default = "default_knowledge_embed_interval_mins")]
+    pub knowledge_embed_interval_mins: u64,
+    #[serde(default = "default_knowledge_embed_batch_size")]
+    pub knowledge_embed_batch_size: u64,
+    #[serde(default = "default_knowledge_observe_interval_mins")]
+    pub knowledge_observe_interval_mins: u64,
+    #[serde(default = "default_knowledge_observe_batch_size")]
+    pub knowledge_observe_batch_size: u64,
+    #[serde(default = "default_knowledge_autogroup_interval_mins")]
+    pub knowledge_autogroup_interval_mins: u64,
+    #[serde(default = "default_knowledge_autogroup_min_docs")]
+    pub knowledge_autogroup_min_docs: u64,
+    #[serde(default = "default_knowledge_retry_delay_mins")]
+    pub knowledge_retry_delay_mins: u64,
+    #[serde(default = "default_knowledge_max_embedding_tokens")]
+    pub knowledge_max_embedding_tokens: u64,
 }
 
 impl Config {
@@ -1473,6 +1514,14 @@ impl Config {
             storage_azure_account_key: None,
             storage_gcs_bucket: None,
             storage_gcs_credentials_path: None,
+            knowledge_embed_interval_mins: default_knowledge_embed_interval_mins(),
+            knowledge_embed_batch_size: default_knowledge_embed_batch_size(),
+            knowledge_observe_interval_mins: default_knowledge_observe_interval_mins(),
+            knowledge_observe_batch_size: default_knowledge_observe_batch_size(),
+            knowledge_autogroup_interval_mins: default_knowledge_autogroup_interval_mins(),
+            knowledge_autogroup_min_docs: default_knowledge_autogroup_min_docs(),
+            knowledge_retry_delay_mins: default_knowledge_retry_delay_mins(),
+            knowledge_max_embedding_tokens: default_knowledge_max_embedding_tokens(),
         }
     }
 
