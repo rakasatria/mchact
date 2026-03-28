@@ -456,23 +456,6 @@ pub async fn run(
     ));
 
     let observation_store = mchact_memory::driver::create_store(&config.memory).await;
-    let mut tools = ToolRegistry::new(
-        &config,
-        channel_registry.clone(),
-        db.clone(),
-        memory_backend.clone(),
-    );
-
-    for (server, tool_info) in mcp_manager.all_tools() {
-        tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
-    }
-
-    let hooks = Arc::new(HookManager::from_config(&config).with_db(db.clone()));
-    let llm_provider_overrides = config.llm_provider_overrides();
-
-    let metric_exporter = OtlpMetricExporter::from_observability(config.observability.as_ref());
-    let trace_exporter = OtlpTraceExporter::from_observability(config.observability.as_ref());
-    let log_exporter = OtlpLogExporter::from_observability(config.observability.as_ref());
 
     let storage_config = build_storage_backend_config(&config);
     apply_storage_env_overrides(&config);
@@ -487,7 +470,27 @@ pub async fn run(
             }),
     );
     let media_manager = Arc::new(MediaManager::new(storage.clone(), db.clone()));
-    let memory = MemoryManager::new(storage, "groups");
+    let memory = MemoryManager::new(storage.clone(), "groups");
+
+    let mut tools = ToolRegistry::new(
+        &config,
+        channel_registry.clone(),
+        db.clone(),
+        memory_backend.clone(),
+        storage,
+        media_manager.clone(),
+    );
+
+    for (server, tool_info) in mcp_manager.all_tools() {
+        tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
+    }
+
+    let hooks = Arc::new(HookManager::from_config(&config).with_db(db.clone()));
+    let llm_provider_overrides = config.llm_provider_overrides();
+
+    let metric_exporter = OtlpMetricExporter::from_observability(config.observability.as_ref());
+    let trace_exporter = OtlpTraceExporter::from_observability(config.observability.as_ref());
+    let log_exporter = OtlpLogExporter::from_observability(config.observability.as_ref());
 
     let state = Arc::new(AppState {
         config,
@@ -802,7 +805,7 @@ pub async fn run(
 ///
 /// Called once during single-threaded startup before any cloud SDK clients are
 /// created or background tasks are spawned.
-fn apply_storage_env_overrides(config: &crate::config::Config) {
+pub fn apply_storage_env_overrides(config: &crate::config::Config) {
     // SAFETY: called once at startup before spawning background tasks.
     unsafe {
         if let Some(ref key) = config.storage_s3_access_key_id {
@@ -833,7 +836,7 @@ fn apply_storage_env_overrides(config: &crate::config::Config) {
     }
 }
 
-fn build_storage_backend_config(config: &crate::config::Config) -> StorageBackendConfig {
+pub fn build_storage_backend_config(config: &crate::config::Config) -> StorageBackendConfig {
     let s3 = config.storage_s3_bucket.as_ref().map(|bucket| {
         mchact_storage_backend::S3Config {
             bucket: bucket.clone(),

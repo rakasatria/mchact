@@ -104,6 +104,8 @@ impl ToolRegistry {
         channel_registry: Arc<ChannelRegistry>,
         db: Arc<DynDataStore>,
         memory_backend: Arc<MemoryBackend>,
+        storage: Arc<dyn mchact_storage_backend::ObjectStorage>,
+        media_manager: Arc<crate::media_manager::MediaManager>,
     ) -> Self {
         let working_dir = PathBuf::from(&config.working_dir);
         if let Err(e) = std::fs::create_dir_all(&working_dir) {
@@ -124,15 +126,7 @@ impl ToolRegistry {
             backend = sandbox_router.backend_name(),
             "Sandbox initialized"
         );
-        let local_storage: Arc<dyn mchact_storage_backend::ObjectStorage> = {
-            let storage = mchact_storage_backend::local::LocalStorage::new_sync(&config.data_dir)
-                .unwrap_or_else(|e| panic!("Cannot initialize media storage at '{}': {e}", config.data_dir));
-            Arc::new(storage)
-        };
-        let media_manager = Arc::new(crate::media_manager::MediaManager::new(
-            local_storage.clone(),
-            db.clone(),
-        ));
+        let local_storage = storage;
         let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(
                 bash::BashTool::new_with_isolation(

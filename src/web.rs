@@ -2013,16 +2013,7 @@ async fn api_upload(
         .unwrap_or(&format!("upload.{out_ext}"))
         .to_string();
 
-    let local_storage = Arc::new(
-        mchact_storage_backend::local::LocalStorage::new(
-            state.app_state.config.data_root_dir(),
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("failed to init storage: {e}")))?,
-    );
-    let media_mgr = crate::media_manager::MediaManager::new(local_storage, state.app_state.db.clone());
-
-    let media_id = media_mgr
+    let media_id = state.app_state.media_manager
         .store_file(
             file_bytes,
             &filename_for_storage,

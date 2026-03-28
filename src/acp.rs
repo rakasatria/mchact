@@ -50,27 +50,32 @@ pub async fn serve(
         db.clone(),
         MemoryMcpClient::discover(&mcp_manager),
     ));
+    let storage_config = crate::runtime::build_storage_backend_config(&config);
+    crate::runtime::apply_storage_env_overrides(&config);
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::from(
+        mchact_storage_backend::create_storage(&storage_config)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Cannot initialize '{}' storage backend: {e}",
+                    config.storage_backend
+                )
+            }),
+    );
+    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage.clone(), db.clone()));
+
     let mut tools = ToolRegistry::new(
         &config,
         channel_registry.clone(),
         db.clone(),
         memory_backend.clone(),
+        storage.clone(),
+        media_manager.clone(),
     );
     for (server, tool_info) in mcp_manager.all_tools() {
         tools.add_tool(Box::new(crate::tools::mcp::McpTool::new(server, tool_info)));
     }
 
-    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
-        mchact_storage_backend::local::LocalStorage::new(&config.data_dir)
-            .await
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Cannot initialize media storage at '{}': {e}",
-                    config.data_dir
-                )
-            }),
-    );
-    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage.clone(), db.clone()));
     let memory = MemoryManager::new(storage, "groups");
 
     let app_state = Arc::new(AppState {
