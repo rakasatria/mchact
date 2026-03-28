@@ -324,6 +324,12 @@ fn default_skill_nudge_threshold_turns() -> u32 {
 fn default_skill_nudge_threshold_duration_secs() -> u64 {
     300
 }
+fn default_storage_backend() -> String {
+    "local".into()
+}
+fn default_storage_cache_max_mb() -> u64 {
+    1024
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClawHubConfig {
@@ -954,6 +960,23 @@ pub struct Config {
     pub skill_nudge_threshold_turns: u32,
     #[serde(default = "default_skill_nudge_threshold_duration_secs")]
     pub skill_nudge_threshold_duration_secs: u64,
+
+    // --- Storage backend ---
+    #[serde(default = "default_storage_backend")]
+    pub storage_backend: String,
+    #[serde(default = "default_storage_cache_max_mb")]
+    pub storage_cache_max_size_mb: u64,
+    pub storage_s3_bucket: Option<String>,
+    pub storage_s3_region: Option<String>,
+    pub storage_s3_endpoint: Option<String>,
+    pub storage_s3_access_key_id: Option<String>,
+    pub storage_s3_secret_access_key: Option<String>,
+    pub storage_azure_container: Option<String>,
+    pub storage_azure_connection_string: Option<String>,
+    pub storage_azure_account_name: Option<String>,
+    pub storage_azure_account_key: Option<String>,
+    pub storage_gcs_bucket: Option<String>,
+    pub storage_gcs_credentials_path: Option<String>,
 }
 
 impl Config {
@@ -1437,6 +1460,19 @@ impl Config {
             skill_nudge_threshold_tool_calls: default_skill_nudge_threshold_tool_calls(),
             skill_nudge_threshold_turns: default_skill_nudge_threshold_turns(),
             skill_nudge_threshold_duration_secs: default_skill_nudge_threshold_duration_secs(),
+            storage_backend: default_storage_backend(),
+            storage_cache_max_size_mb: default_storage_cache_max_mb(),
+            storage_s3_bucket: None,
+            storage_s3_region: None,
+            storage_s3_endpoint: None,
+            storage_s3_access_key_id: None,
+            storage_s3_secret_access_key: None,
+            storage_azure_container: None,
+            storage_azure_connection_string: None,
+            storage_azure_account_name: None,
+            storage_azure_account_key: None,
+            storage_gcs_bucket: None,
+            storage_gcs_credentials_path: None,
         }
     }
 

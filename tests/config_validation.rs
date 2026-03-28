@@ -118,6 +118,19 @@ fn minimal_config() -> Config {
         skill_nudge_threshold_tool_calls: 10,
         skill_nudge_threshold_turns: 15,
         skill_nudge_threshold_duration_secs: 300,
+        storage_backend: "local".into(),
+        storage_cache_max_size_mb: 1024,
+        storage_s3_bucket: None,
+        storage_s3_region: None,
+        storage_s3_endpoint: None,
+        storage_s3_access_key_id: None,
+        storage_s3_secret_access_key: None,
+        storage_azure_container: None,
+        storage_azure_connection_string: None,
+        storage_azure_account_name: None,
+        storage_azure_account_key: None,
+        storage_gcs_bucket: None,
+        storage_gcs_credentials_path: None,
     }
 }
 
