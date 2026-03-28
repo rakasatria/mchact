@@ -508,6 +508,7 @@ pub async fn run(
 
     crate::scheduler::spawn_scheduler(state.clone());
     crate::scheduler::spawn_reflector(state.clone());
+    crate::scheduler::spawn_knowledge_processor(state.clone());
     if state.config.subagents.announce_to_chat {
         let relay_state = state.clone();
         spawn_guarded("subagents_announce_relay".to_string(), async move {
