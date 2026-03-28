@@ -11,8 +11,16 @@ pub fn compute_file_hash(data: &[u8]) -> String {
 pub async fn extract_text(file_path: &str) -> Result<String, MediaError> {
     let path = file_path.to_string();
     tokio::task::spawn_blocking(move || {
-        kreuzberg::extract_text(&path)
-            .map_err(|e| MediaError::ProviderError(format!("kreuzberg extraction failed: {e}")))
+        let data = std::fs::read(&path)
+            .map_err(|e| MediaError::ProviderError(format!("Failed to read file: {e}")))?;
+        let mime = infer::get(&data)
+            .map(|t| t.mime_type().to_string())
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        let config = kreuzberg::ExtractionConfig::default();
+        let rt = tokio::runtime::Handle::current();
+        let result = rt.block_on(kreuzberg::extract_bytes(&data, &mime, &config))
+            .map_err(|e| MediaError::ProviderError(format!("kreuzberg extraction failed: {e}")))?;
+        Ok(result.text().to_string())
     })
     .await
     .map_err(|e| MediaError::ProviderError(format!("Task failed: {e}")))?
