@@ -163,6 +163,11 @@ impl KnowledgeManager {
         Self { db }
     }
 
+    /// Return a reference to the underlying database.
+    pub fn db(&self) -> &Arc<Database> {
+        &self.db
+    }
+
     /// Create a new knowledge collection and grant the owner chat access.
     ///
     /// Returns the new knowledge row id.

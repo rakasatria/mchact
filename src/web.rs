@@ -2167,6 +2167,261 @@ async fn api_audit_logs(
     Ok(Json(json!({"ok": true, "logs": logs})))
 }
 
+// ── Knowledge API ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeSessionQuery {
+    session_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeCreateBody {
+    name: String,
+    description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeAddDocumentBody {
+    document_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnowledgeQueryBody {
+    query: String,
+    max_results: Option<usize>,
+}
+
+/// Spawn a blocking task with an `Arc<Database>` and map the result's `String`
+/// error to `(StatusCode, String)`. This is the idiomatic pattern for
+/// `KnowledgeManager` calls (which return `Result<T, String>`).
+async fn km_blocking<T, F>(
+    db: Arc<mchact_storage::db::Database>,
+    f: F,
+) -> Result<T, (StatusCode, String)>
+where
+    T: Send + 'static,
+    F: FnOnce(&crate::knowledge::KnowledgeManager) -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || {
+        let km = crate::knowledge::KnowledgeManager::new(db);
+        f(&km)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("task join error: {e}")))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+async fn api_knowledge_list(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let stats = km_blocking(state.app_state.db.clone(), |km| km.list_all()).await?;
+    Ok(Json(json!({ "ok": true, "collections": stats })))
+}
+
+async fn api_knowledge_create(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Query(query): Query<KnowledgeSessionQuery>,
+    Json(body): Json<KnowledgeCreateBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    let name = body.name.trim().to_string();
+    let description = body.description.unwrap_or_default();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".into()));
+    }
+
+    let id = km_blocking(state.app_state.db.clone(), move |km| {
+        km.create(&name, &description, chat_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "id": id })))
+}
+
+async fn api_knowledge_get(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let (stats, doc_ids) = km_blocking(state.app_state.db.clone(), move |km| {
+        let all = km.list_all()?;
+        let collection = all
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| format!("knowledge collection '{name}' not found"))?;
+        let knowledge = km
+            .db()
+            .get_knowledge_by_name(&collection.name)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("knowledge collection '{}' not found", collection.name))?;
+        let docs = km
+            .db()
+            .list_knowledge_documents(knowledge.id)
+            .map_err(|e| e.to_string())?;
+        Ok((collection, docs))
+    })
+    .await?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "collection": stats,
+        "document_ids": doc_ids,
+    })))
+}
+
+async fn api_knowledge_delete(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query): Query<KnowledgeSessionQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| km.delete(&name, chat_id)).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn api_knowledge_add_document(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Json(body): Json<KnowledgeAddDocumentBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let chunks = km_blocking(state.app_state.db.clone(), move |km| {
+        km.add_document(&name, body.document_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "chunks_created": chunks })))
+}
+
+async fn api_knowledge_remove_document(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path((name, doc_id)): Path<(String, i64)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| {
+        km.remove_document(&name, doc_id)
+    })
+    .await?;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn api_knowledge_status(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let stats = km_blocking(state.app_state.db.clone(), move |km| {
+        km.list_all()?
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| format!("knowledge collection '{name}' not found"))
+    })
+    .await
+    .map_err(|(_, e)| (StatusCode::NOT_FOUND, e))?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "name": stats.name,
+        "chunk_count": stats.chunk_count,
+        "chunks_embedded": stats.chunks_embedded,
+        "chunks_pending": stats.chunks_pending,
+        "chunks_failed": stats.chunks_failed,
+        "observations_done": stats.observations_done,
+        "observations_pending": stats.observations_pending,
+    })))
+}
+
+async fn api_knowledge_query(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query_params): Query<KnowledgeSessionQuery>,
+    Json(body): Json<KnowledgeQueryBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Read).await?;
+
+    let session_key = normalize_session_key(query_params.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key_read(&state, &session_key).await?;
+
+    let embedding = state
+        .app_state
+        .embedding
+        .clone()
+        .ok_or_else(|| (StatusCode::SERVICE_UNAVAILABLE, "embedding provider not configured".into()))?;
+
+    let max_results = body.max_results.unwrap_or(5).clamp(1, 50);
+    let query_text = body.query;
+    if query_text.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "query is required".into()));
+    }
+
+    let km = crate::knowledge::KnowledgeManager::new(state.app_state.db.clone());
+    let result = km
+        .query(
+            Some(&[name]),
+            &query_text,
+            max_results,
+            chat_id,
+            embedding.as_ref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "query": result.query,
+        "results": result.results,
+        "collections_searched": result.collections_searched,
+        "total_chunks_searched": result.total_chunks_searched,
+    })))
+}
+
+async fn api_knowledge_attach(
+    headers: HeaderMap,
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Query(query): Query<KnowledgeSessionQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    metrics_http_inc(&state).await;
+    require_scope(&state, &headers, AuthScope::Write).await?;
+
+    let session_key = normalize_session_key(query.session_key.as_deref());
+    let chat_id = resolve_chat_id_for_session_key(&state, &session_key).await?;
+
+    km_blocking(state.app_state.db.clone(), move |km| km.attach(&name, chat_id)).await?;
+    Ok(Json(json!({ "ok": true, "chat_id": chat_id })))
+}
+
 pub async fn start_web_server(state: Arc<AppState>) {
     let limits = WebLimits::from_config(&state.config);
     let flush_interval = metrics_flush_interval(&state.config);
@@ -2351,6 +2606,25 @@ fn build_router(web_state: WebState) -> Router {
         )
         .route("/api/upload", post(api_upload))
         .route("/api/media/:id", get(api_media))
+        .route(
+            "/api/knowledge",
+            get(api_knowledge_list).post(api_knowledge_create),
+        )
+        .route(
+            "/api/knowledge/:name",
+            get(api_knowledge_get).delete(api_knowledge_delete),
+        )
+        .route(
+            "/api/knowledge/:name/documents",
+            post(api_knowledge_add_document),
+        )
+        .route(
+            "/api/knowledge/:name/documents/:id",
+            axum::routing::delete(api_knowledge_remove_document),
+        )
+        .route("/api/knowledge/:name/status", get(api_knowledge_status))
+        .route("/api/knowledge/:name/query", post(api_knowledge_query))
+        .route("/api/knowledge/:name/attach", post(api_knowledge_attach))
         .with_state(web_state)
 }
 
