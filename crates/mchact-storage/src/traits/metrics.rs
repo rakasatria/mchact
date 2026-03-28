@@ -19,6 +19,7 @@ pub trait MetricsStore {
         before_ts_ms: i64,
     ) -> Result<usize, MchactError>;
 
+    #[allow(clippy::too_many_arguments)]
     fn log_llm_usage(
         &self,
         chat_id: i64,

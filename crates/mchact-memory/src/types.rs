@@ -23,7 +23,7 @@ impl ObservationLevel {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "explicit" => Some(ObservationLevel::Explicit),
             "deductive" => Some(ObservationLevel::Deductive),
@@ -52,7 +52,7 @@ impl PeerKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "user" => Some(PeerKind::User),
             "agent" => Some(PeerKind::Agent),
@@ -157,7 +157,7 @@ pub struct ObservationUpdate {
 // SearchScope
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchScope {
     pub workspace: String,
     pub observer_peer_id: Option<i64>,
@@ -165,19 +165,6 @@ pub struct SearchScope {
     pub chat_id: Option<String>,
     pub min_confidence: Option<f64>,
     pub include_archived: bool,
-}
-
-impl Default for SearchScope {
-    fn default() -> Self {
-        Self {
-            workspace: String::new(),
-            observer_peer_id: None,
-            observed_peer_id: None,
-            chat_id: None,
-            min_confidence: None,
-            include_archived: false,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

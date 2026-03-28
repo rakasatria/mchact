@@ -3,6 +3,7 @@ use mchact_core::error::MchactError;
 use crate::db::types::MediaObject;
 
 pub trait MediaObjectStore {
+    #[allow(clippy::too_many_arguments)]
     fn insert_media_object(
         &self,
         key: &str,

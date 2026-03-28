@@ -324,6 +324,9 @@ fn default_skill_nudge_threshold_turns() -> u32 {
 fn default_skill_nudge_threshold_duration_secs() -> u64 {
     300
 }
+fn default_db_backend() -> String {
+    "sqlite".into()
+}
 fn default_storage_backend() -> String {
     "local".into()
 }
@@ -985,6 +988,11 @@ pub struct Config {
     #[serde(default = "default_skill_nudge_threshold_duration_secs")]
     pub skill_nudge_threshold_duration_secs: u64,
 
+    // --- Database driver ---
+    #[serde(default = "default_db_backend")]
+    pub db_backend: String,
+    pub db_database_url: Option<String>,
+
     // --- Storage backend ---
     #[serde(default = "default_storage_backend")]
     pub storage_backend: String,
@@ -1501,6 +1509,8 @@ impl Config {
             skill_nudge_threshold_tool_calls: default_skill_nudge_threshold_tool_calls(),
             skill_nudge_threshold_turns: default_skill_nudge_threshold_turns(),
             skill_nudge_threshold_duration_secs: default_skill_nudge_threshold_duration_secs(),
+            db_backend: default_db_backend(),
+            db_database_url: None,
             storage_backend: default_storage_backend(),
             storage_cache_max_size_mb: default_storage_cache_max_mb(),
             storage_s3_bucket: None,

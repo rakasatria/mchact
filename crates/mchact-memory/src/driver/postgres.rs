@@ -76,7 +76,7 @@ fn row_to_peer(row: &Row) -> Result<Peer> {
     let updated_at: DateTime<Utc> =
         row.try_get("updated_at").map_err(|e| MemoryError::Database(e.to_string()))?;
 
-    let kind = PeerKind::from_str(&kind_str).unwrap_or(PeerKind::User);
+    let kind = PeerKind::parse(&kind_str).unwrap_or(PeerKind::User);
     let peer_card: Option<Vec<String>> =
         peer_card_json.and_then(|v| serde_json::from_value(v).ok());
     let metadata = metadata_json.unwrap_or(serde_json::Value::Null);
@@ -119,7 +119,7 @@ fn row_to_observation(row: &Row) -> Result<Observation> {
     let updated_at: DateTime<Utc> =
         row.try_get("updated_at").map_err(|e| MemoryError::Database(e.to_string()))?;
 
-    let level = ObservationLevel::from_str(&level_str).unwrap_or(ObservationLevel::Explicit);
+    let level = ObservationLevel::parse(&level_str).unwrap_or(ObservationLevel::Explicit);
     let source_ids: Vec<i64> = serde_json::from_value(source_ids_json).unwrap_or_default();
     let message_ids: Vec<i64> = serde_json::from_value(message_ids_json).unwrap_or_default();
 
