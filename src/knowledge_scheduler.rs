@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use crate::embedding::EmbeddingProvider;
 use crate::knowledge::f32_vec_to_bytes;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 const MAX_EMBED_TEXT_CHARS: usize = 32000;
@@ -15,7 +15,7 @@ const MAX_EMBED_TEXT_CHARS: usize = 32000;
 ///
 /// Returns `(done, failed)` counts for the batch.
 pub async fn run_embed_job(
-    db: &Database,
+    db: &DynDataStore,
     embedding: &dyn EmbeddingProvider,
     batch_size: i64,
 ) -> (i64, i64) {
@@ -94,7 +94,7 @@ pub async fn run_embed_job(
 ///
 /// Returns `(done, failed)` counts for the batch.
 pub async fn run_observe_job(
-    db: &Database,
+    db: &DynDataStore,
     observation_store: Option<&dyn mchact_memory::ObservationStore>,
     batch_size: i64,
 ) -> (i64, i64) {
@@ -184,7 +184,7 @@ pub async fn run_observe_job(
 /// which bases need attention.
 ///
 /// Returns the number of knowledge bases processed.
-pub async fn run_autogroup_job(db: &Database, min_docs: i64) -> i64 {
+pub async fn run_autogroup_job(db: &DynDataStore, min_docs: i64) -> i64 {
     let bases = match db.get_knowledge_needing_grouping(min_docs) {
         Ok(b) => b,
         Err(err) => {
@@ -248,7 +248,7 @@ pub async fn run_autogroup_job(db: &Database, min_docs: i64) -> i64 {
 /// "pending" so they are retried by the next embed job pass.
 ///
 /// Returns the number of chunks reset.
-pub fn reset_failed_chunks(db: &Database, older_than_mins: i64) -> i64 {
+pub fn reset_failed_chunks(db: &DynDataStore, older_than_mins: i64) -> i64 {
     match db.reset_failed_chunks(older_than_mins) {
         Ok(count) => {
             if count > 0 {
@@ -295,7 +295,7 @@ pub fn spawn_knowledge_processor(state: Arc<crate::runtime::AppState>) {
             loop {
                 ticker.tick().await;
                 if let Some(embedding) = state.embedding.as_deref() {
-                    run_embed_job(&state.db, embedding, embed_batch).await;
+                    run_embed_job(&*state.db, embedding, embed_batch).await;
                 }
             }
         });
@@ -316,7 +316,7 @@ pub fn spawn_knowledge_processor(state: Arc<crate::runtime::AppState>) {
             loop {
                 ticker.tick().await;
                 let obs_ref = state.observation_store.as_deref();
-                run_observe_job(&state.db, obs_ref, observe_batch).await;
+                run_observe_job(&*state.db, obs_ref, observe_batch).await;
             }
         });
     }
@@ -335,7 +335,7 @@ pub fn spawn_knowledge_processor(state: Arc<crate::runtime::AppState>) {
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 ticker.tick().await;
-                run_autogroup_job(&state.db, min_docs).await;
+                run_autogroup_job(&*state.db, min_docs).await;
             }
         });
     }
@@ -350,7 +350,7 @@ pub fn spawn_knowledge_processor(state: Arc<crate::runtime::AppState>) {
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 ticker.tick().await;
-                reset_failed_chunks(&state.db, retry_delay);
+                reset_failed_chunks(&*state.db, retry_delay);
             }
         });
     }

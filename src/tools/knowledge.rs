@@ -5,7 +5,8 @@ use serde_json::json;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 // ── CreateKnowledgeTool ────────────────────────────────────────────────────────
@@ -79,11 +80,11 @@ impl Tool for CreateKnowledgeTool {
 
 pub struct AddDocumentToKnowledgeTool {
     knowledge_manager: Arc<crate::knowledge::KnowledgeManager>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl AddDocumentToKnowledgeTool {
-    pub fn new(knowledge_manager: Arc<crate::knowledge::KnowledgeManager>, db: Arc<Database>) -> Self {
+    pub fn new(knowledge_manager: Arc<crate::knowledge::KnowledgeManager>, db: Arc<DynDataStore>) -> Self {
         Self { knowledge_manager, db }
     }
 }

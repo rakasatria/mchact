@@ -1,4 +1,5 @@
-use mchact_storage::db::{Database, MediaObject};
+use mchact_storage::db::MediaObject;
+use mchact_storage::DynDataStore;
 use mchact_storage_backend::ObjectStorage;
 use mchact_storage::prelude::*;
 use sha2::{Digest, Sha256};
@@ -7,11 +8,11 @@ use uuid::Uuid;
 
 pub struct MediaManager {
     storage: Arc<dyn ObjectStorage>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl MediaManager {
-    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<Database>) -> Self {
+    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<DynDataStore>) -> Self {
         Self { storage, db }
     }
 

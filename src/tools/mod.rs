@@ -39,7 +39,7 @@ use crate::config::Config;
 use crate::memory_backend::MemoryBackend;
 use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 pub use mchact_tools::runtime::{
     auth_context_from_input, authorize_chat_access, resolve_tool_path, resolve_tool_working_dir,
     schema_object, tool_execution_policy, tool_risk, validate_execution_policy, Tool,
@@ -102,7 +102,7 @@ impl ToolRegistry {
     pub fn new(
         config: &Config,
         channel_registry: Arc<ChannelRegistry>,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         memory_backend: Arc<MemoryBackend>,
     ) -> Self {
         let working_dir = PathBuf::from(&config.working_dir);
@@ -404,7 +404,7 @@ impl ToolRegistry {
     /// When `allow_session_tools` is true, orchestration tools are exposed for depth-limited child spawning.
     pub fn new_sub_agent(
         config: &Config,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         channel_registry: Option<Arc<ChannelRegistry>>,
         allow_session_tools: bool,
     ) -> Self {

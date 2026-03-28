@@ -3,9 +3,9 @@ use std::sync::Arc;
 use chrono::SecondsFormat;
 
 use crate::db::{
-    call_blocking, Database, LlmModelUsageSummary, LlmUsageSummary, MemoryObservabilitySummary,
+    call_blocking, LlmModelUsageSummary, LlmUsageSummary, MemoryObservabilitySummary,
 };
-use crate::traits::{MemoryDbStore, MetricsStore};
+use crate::DynDataStore;
 
 fn fmt_int(v: i64) -> String {
     let neg = v < 0;
@@ -85,7 +85,7 @@ fn block_lines(
 }
 
 async fn query_summary(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: Option<i64>,
     since: Option<String>,
 ) -> Result<LlmUsageSummary, String> {
@@ -97,7 +97,7 @@ async fn query_summary(
 }
 
 async fn query_by_model(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: Option<i64>,
     since: Option<String>,
 ) -> Result<Vec<LlmModelUsageSummary>, String> {
@@ -109,7 +109,7 @@ async fn query_by_model(
 }
 
 async fn query_memory_summary(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: Option<i64>,
 ) -> Result<MemoryObservabilitySummary, String> {
     call_blocking(db, move |d| d.get_memory_observability_summary(chat_id))
@@ -117,7 +117,7 @@ async fn query_memory_summary(
         .map_err(|e| e.to_string())
 }
 
-pub async fn build_usage_report(db: Arc<Database>, chat_id: i64) -> Result<String, String> {
+pub async fn build_usage_report(db: Arc<DynDataStore>, chat_id: i64) -> Result<String, String> {
     let now = chrono::Utc::now();
     let since_24h = (now - chrono::Duration::hours(24)).to_rfc3339();
     let since_7d = (now - chrono::Duration::days(7)).to_rfc3339();

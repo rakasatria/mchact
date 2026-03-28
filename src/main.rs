@@ -1139,7 +1139,8 @@ async fn main() -> anyhow::Result<()> {
         Some(MainCommand::Knowledge { action }) => {
             let config = Config::load()?;
             let runtime_data_dir = config.runtime_data_dir();
-            let database = std::sync::Arc::new(db::Database::new(&runtime_data_dir)?);
+            let database: std::sync::Arc<mchact_storage::DynDataStore> =
+                std::sync::Arc::new(db::Database::new(&runtime_data_dir)?);
             let km = mchact::knowledge::KnowledgeManager::new(database);
 
             match action {
@@ -1394,8 +1395,20 @@ async fn main() -> anyhow::Result<()> {
 
     builtin_skills::ensure_builtin_skills(Path::new(&skills_data_dir))?;
 
-    let db = db::Database::new(&runtime_data_dir)?;
-    info!("Database initialized");
+    let driver_config = mchact_storage::driver::StorageDriverConfig {
+        backend: config.db_backend.clone(),
+        db_path: runtime_data_dir.clone(),
+        database_url: config.db_database_url.clone(),
+    };
+    let db = mchact_storage::driver::create_data_store(&driver_config)
+        .await
+        .unwrap_or_else(|| {
+            panic!(
+                "Failed to initialize '{}' database backend",
+                config.db_backend
+            )
+        });
+    info!("Database initialized (backend={})", config.db_backend);
 
     let skill_manager =
         skills::SkillManager::from_skills_and_runtime(&skills_data_dir, &runtime_data_dir);

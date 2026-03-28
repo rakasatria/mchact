@@ -5,17 +5,18 @@ use serde_json::json;
 
 use super::{authorize_chat_access, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 use mchact_storage_backend::ObjectStorage;
 
 pub struct ExportChatTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     storage: Arc<dyn ObjectStorage>,
 }
 
 impl ExportChatTool {
-    pub fn new(db: Arc<Database>, storage: Arc<dyn ObjectStorage>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, storage: Arc<dyn ObjectStorage>) -> Self {
         ExportChatTool { db, storage }
     }
 }

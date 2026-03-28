@@ -3099,6 +3099,10 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
+                .expect("local storage"),
+        );
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3114,6 +3118,7 @@ weixin:
 
         let text = enrich_weixin_inbound_text(
             &cfg,
+            &storage,
             &runtime,
             "alice@im.wechat",
             "wx-msg-1",
@@ -3164,6 +3169,10 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
+                .expect("local storage"),
+        );
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3179,6 +3188,7 @@ weixin:
 
         let text = enrich_weixin_inbound_text(
             &cfg,
+            &storage,
             &runtime,
             "alice@im.wechat",
             "wx-msg-2",

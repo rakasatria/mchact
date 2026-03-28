@@ -18,7 +18,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::config::{Config, ResolvedSubagentAcpTargetConfig};
 use crate::tools::{resolve_tool_working_dir, ToolAuthContext};
 use mchact_core::text::floor_char_boundary;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 const ACP_RUNTIME_PROVIDER: &str = "acp";
@@ -28,7 +29,7 @@ const ACP_CANCEL_POLL_MS: u64 = 350;
 
 pub struct AcpSubagentTaskParams {
     pub config: Config,
-    pub db: Arc<Database>,
+    pub db: Arc<DynDataStore>,
     pub auth_context: ToolAuthContext,
     pub run_id: String,
     pub task: String,
@@ -113,14 +114,14 @@ impl TerminalSession {
 struct AcpSessionClient {
     working_dir: PathBuf,
     auto_approve: bool,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     run_id: String,
     transcript: Arc<Mutex<TranscriptState>>,
     terminals: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
 }
 
 impl AcpSessionClient {
-    fn new(working_dir: PathBuf, auto_approve: bool, db: Arc<Database>, run_id: String) -> Self {
+    fn new(working_dir: PathBuf, auto_approve: bool, db: Arc<DynDataStore>, run_id: String) -> Self {
         Self {
             working_dir,
             auto_approve,
@@ -772,6 +773,7 @@ fn internal_error(err: impl std::fmt::Display) -> acp::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
 
     fn test_db() -> Arc<Database> {
         let dir = std::env::temp_dir().join(format!(

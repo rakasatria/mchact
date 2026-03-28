@@ -6,16 +6,17 @@ use serde_json::json;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database, FtsSearchResult, StoredMessage};
+use mchact_storage::db::{call_blocking, FtsSearchResult, StoredMessage};
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 pub struct SessionSearchTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 
 impl SessionSearchTool {
-    pub fn new(db: Arc<Database>, control_chat_ids: Vec<i64>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, control_chat_ids: Vec<i64>) -> Self {
         Self {
             db,
             control_chat_ids,

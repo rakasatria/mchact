@@ -5,7 +5,8 @@ use serde_json::json;
 
 use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 fn mime_from_extension(path: &str) -> Option<&'static str> {
@@ -31,14 +32,14 @@ fn mime_from_extension(path: &str) -> Option<&'static str> {
 }
 
 pub struct ReadDocumentTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
     media_manager: Arc<crate::media_manager::MediaManager>,
 }
 
 impl ReadDocumentTool {
     pub fn new(
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         control_chat_ids: Vec<i64>,
         media_manager: Arc<crate::media_manager::MediaManager>,
     ) -> Self {
@@ -256,6 +257,7 @@ impl Tool for ReadDocumentTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
     use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 
@@ -267,7 +269,7 @@ mod tests {
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())
     }
 
-    async fn make_media_manager(db: Arc<Database>) -> Arc<crate::media_manager::MediaManager> {
+    async fn make_media_manager(db: Arc<DynDataStore>) -> Arc<crate::media_manager::MediaManager> {
         let dir = std::env::temp_dir()
             .join(format!("mchact_doc_mm_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -276,7 +278,7 @@ mod tests {
         Arc::new(crate::media_manager::MediaManager::new(storage, db))
     }
 
-    async fn make_tool(db: Arc<Database>) -> ReadDocumentTool {
+    async fn make_tool(db: Arc<DynDataStore>) -> ReadDocumentTool {
         let mm = make_media_manager(db.clone()).await;
         ReadDocumentTool::new(db, vec![100], mm)
     }

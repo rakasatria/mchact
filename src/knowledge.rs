@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use mchact_storage::db::{Database, Knowledge};
+use mchact_storage::db::Knowledge;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 use crate::embedding::EmbeddingProvider;
@@ -156,16 +157,16 @@ pub struct KnowledgeResult {
 // ── KnowledgeManager ──────────────────────────────────────────────────────────
 
 pub struct KnowledgeManager {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl KnowledgeManager {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 
     /// Return a reference to the underlying database.
-    pub fn db(&self) -> &Arc<Database> {
+    pub fn db(&self) -> &Arc<DynDataStore> {
         &self.db
     }
 

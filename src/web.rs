@@ -2172,11 +2172,11 @@ struct KnowledgeQueryBody {
     max_results: Option<usize>,
 }
 
-/// Spawn a blocking task with an `Arc<Database>` and map the result's `String`
+/// Spawn a blocking task with an `Arc<DynDataStore>` and map the result's `String`
 /// error to `(StatusCode, String)`. This is the idiomatic pattern for
 /// `KnowledgeManager` calls (which return `Result<T, String>`).
 async fn km_blocking<T, F>(
-    db: Arc<mchact_storage::db::Database>,
+    db: Arc<mchact_storage::DynDataStore>,
     f: F,
 ) -> Result<T, (StatusCode, String)>
 where

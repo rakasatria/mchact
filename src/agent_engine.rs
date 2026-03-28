@@ -2506,6 +2506,7 @@ mod tests {
         Message, MessagesResponse, ResponseContentBlock, ToolDefinition,
     };
     use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
     use serde_json::json;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -2784,7 +2785,7 @@ mod tests {
         })
     }
 
-    fn store_user_message(db: &Database, chat_id: i64, text: &str) {
+    fn store_user_message(db: &dyn mchact_storage::DataStore, chat_id: i64, text: &str) {
         let msg = StoredMessage {
             id: format!("msg-{}", uuid::Uuid::new_v4()),
             chat_id,
@@ -2806,8 +2807,9 @@ mod tests {
         db.insert_memory(Some(100), "short memory three", "EVENT")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
-        let context = build_db_memory_context(&memory_backend, &db, None, 100, "short", 20).await;
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
+        let context = build_db_memory_context(&memory_backend, &dyn_db, None, 100, "short", 20).await;
         assert!(context.contains("<structured_memories>"));
         assert!(context.contains("(+"));
         assert!(context.contains("memories omitted"));
@@ -2824,9 +2826,10 @@ mod tests {
         db.insert_memory(Some(100), "user likes coffee", "PROFILE")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
         let context =
-            build_db_memory_context(&memory_backend, &db, None, 100, "likes", 10_000).await;
+            build_db_memory_context(&memory_backend, &dyn_db, None, 100, "likes", 10_000).await;
         assert!(context.contains("user likes rust"));
         assert!(context.contains("user likes coffee"));
         assert!(!context.contains("memories omitted"));
@@ -2842,9 +2845,10 @@ mod tests {
         db.insert_memory(Some(100), "User prefers Rust and tea", "PROFILE")
             .unwrap();
 
-        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(db.clone()));
+        let dyn_db: Arc<mchact_storage::DynDataStore> = db;
+        let memory_backend = Arc::new(crate::memory_backend::MemoryBackend::local_only(dyn_db.clone()));
         let context =
-            build_db_memory_context(&memory_backend, &db, None, 100, "喜欢 咖啡", 10_000).await;
+            build_db_memory_context(&memory_backend, &dyn_db, None, 100, "喜欢 咖啡", 10_000).await;
         let first_line = context
             .lines()
             .find(|line| line.starts_with('['))
@@ -2892,7 +2896,7 @@ mod tests {
                 )
                 .unwrap();
 
-            store_user_message(&state.db, chat_id, message);
+            store_user_message(&*state.db, chat_id, message);
             let reply = process_with_agent(
                 &state,
                 AgentRequestContext {
@@ -2947,7 +2951,7 @@ mod tests {
             .unwrap();
 
         store_user_message(
-            &state.db,
+            &*state.db,
             chat_id,
             "Remember that production database port is 5433",
         );
@@ -2969,7 +2973,7 @@ mod tests {
         );
 
         store_user_message(
-            &state.db,
+            &*state.db,
             chat_id,
             "Remember that db port for primary cluster is 6432",
         );
@@ -3021,7 +3025,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "empty-retry-chat", Some("empty"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "hello");
+        store_user_message(&*state.db, chat_id, "hello");
 
         let reply = process_with_agent(
             &state,
@@ -3071,7 +3075,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "approval-retry-chat", Some("approval"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "run bash");
+        store_user_message(&*state.db, chat_id, "run bash");
 
         let reply = process_with_agent(
             &state,
@@ -3388,7 +3392,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "approval-confirm-chat", Some("approval"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "run bash");
+        store_user_message(&*state.db, chat_id, "run bash");
 
         let reply = process_with_agent(
             &state,
@@ -3426,7 +3430,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "failed-tool-note-chat", Some("failed"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "build this repo");
+        store_user_message(&*state.db, chat_id, "build this repo");
 
         let reply = process_with_agent(
             &state,
@@ -3474,7 +3478,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("feishu", "chat-feishu-1", Some("feishu"), "feishu_dm")
             .unwrap();
-        store_user_message(&state.db, chat_id, "send the archive");
+        store_user_message(&*state.db, chat_id, "send the archive");
 
         let reply = process_with_agent(
             &state,
@@ -3517,7 +3521,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "empty-tool-name-chat", Some("empty-tool"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "search latest news");
+        store_user_message(&*state.db, chat_id, "search latest news");
 
         let reply = process_with_agent(
             &state,
@@ -3556,7 +3560,7 @@ mod tests {
             .db
             .resolve_or_create_chat_id("web", "tool-use-without-calls-chat", Some("tool"), "web")
             .unwrap();
-        store_user_message(&state.db, chat_id, "weather?");
+        store_user_message(&*state.db, chat_id, "weather?");
 
         let reply = process_with_agent(
             &state,
@@ -3857,7 +3861,7 @@ timeout_ms: 1000
 
         let state = test_state_with_base_dir(&base_dir);
         let chat_id = 90001_i64;
-        store_user_message(&state.db, chat_id, "hello");
+        store_user_message(&*state.db, chat_id, "hello");
 
         let reply = process_with_agent(
             &state,

@@ -139,6 +139,8 @@ fn minimal_config() -> Config {
         knowledge_autogroup_min_docs: 5,
         knowledge_retry_delay_mins: 30,
         knowledge_max_embedding_tokens: 8192,
+        db_backend: "sqlite".into(),
+        db_database_url: None,
     }
 }
 

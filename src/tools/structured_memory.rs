@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::memory_backend::MemoryBackend;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_storage::db::Memory;
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
@@ -17,7 +17,7 @@ pub struct StructuredMemorySearchTool {
 }
 
 impl StructuredMemorySearchTool {
-    pub fn new(db: Arc<Database>, memory_backend: Arc<MemoryBackend>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, memory_backend: Arc<MemoryBackend>) -> Self {
         let _ = db;
         Self { memory_backend }
     }
@@ -162,7 +162,7 @@ pub struct StructuredMemoryDeleteTool {
 }
 
 impl StructuredMemoryDeleteTool {
-    pub fn new(db: Arc<Database>, memory_backend: Arc<MemoryBackend>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, memory_backend: Arc<MemoryBackend>) -> Self {
         let _ = db;
         Self { memory_backend }
     }
@@ -242,7 +242,7 @@ pub struct StructuredMemoryUpdateTool {
 }
 
 impl StructuredMemoryUpdateTool {
-    pub fn new(db: Arc<Database>, memory_backend: Arc<MemoryBackend>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, memory_backend: Arc<MemoryBackend>) -> Self {
         let _ = db;
         Self { memory_backend }
     }
@@ -350,6 +350,8 @@ impl Tool for StructuredMemoryUpdateTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
+    use mchact_storage::prelude::*;
     use serde_json::json;
 
     fn test_db() -> Arc<Database> {
@@ -358,7 +360,7 @@ mod tests {
         Arc::new(Database::new(dir.to_str().unwrap()).unwrap())
     }
 
-    fn test_backend(db: Arc<Database>) -> Arc<MemoryBackend> {
+    fn test_backend(db: Arc<DynDataStore>) -> Arc<MemoryBackend> {
         Arc::new(MemoryBackend::local_only(db))
     }
 

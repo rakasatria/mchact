@@ -5,7 +5,8 @@ use serde_json::json;
 
 use super::{schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 fn extract_runtime_ids(input: &serde_json::Value) -> Option<(String, String)> {
@@ -31,11 +32,11 @@ fn extract_runtime_ids(input: &serde_json::Value) -> Option<(String, String)> {
 // ---------------------------------------------------------------------------
 
 pub struct FindingsWriteTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsWriteTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -110,11 +111,11 @@ impl Tool for FindingsWriteTool {
 // ---------------------------------------------------------------------------
 
 pub struct FindingsReadTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsReadTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -170,6 +171,7 @@ impl Tool for FindingsReadTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage::db::Database;
     use serde_json::json;
 
     fn make_db() -> Arc<Database> {

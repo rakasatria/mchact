@@ -9,7 +9,8 @@ use crate::http_client::llm_user_agent;
 use crate::run_control;
 use crate::runtime::AppState;
 use mchact_core::llm_types::Message;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::usage::build_usage_report;
 use mchact_storage::prelude::*;
 use mchact_tools::todo_store::clear_todos;
@@ -267,7 +268,7 @@ pub async fn handle_chat_command(
 }
 
 pub async fn build_status_response(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     config: &Config,
     llm_provider_overrides: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
     llm_model_overrides: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,

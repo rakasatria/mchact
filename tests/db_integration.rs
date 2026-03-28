@@ -4,6 +4,7 @@
 //! verifying cross-table consistency and complex query patterns.
 
 use mchact::db::{Database, StoredMessage};
+use mchact_storage::prelude::*;
 
 fn test_db() -> (Database, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!("mchact_integ_{}", uuid::Uuid::new_v4()));

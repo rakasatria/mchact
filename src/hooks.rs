@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -96,7 +97,7 @@ pub struct HookManager {
     state_file: PathBuf,
     hooks: Arc<RwLock<Vec<HookDef>>>,
     state_overrides: Arc<RwLock<HashMap<String, bool>>>,
-    db: Option<Arc<Database>>,
+    db: Option<Arc<DynDataStore>>,
     enabled: bool,
     max_input_bytes: usize,
     max_output_bytes: usize,
@@ -137,7 +138,7 @@ impl HookManager {
         manager
     }
 
-    pub fn with_db(mut self, db: Arc<Database>) -> Self {
+    pub fn with_db(mut self, db: Arc<DynDataStore>) -> Self {
         self.db = Some(db);
         self
     }

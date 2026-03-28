@@ -8,7 +8,8 @@ use tracing::{info, warn};
 
 use crate::mcp::{McpManager, McpServer, McpToolInfo};
 use mchact_core::error::MchactError;
-use mchact_storage::db::{call_blocking, Database, Memory};
+use mchact_storage::db::{call_blocking, Memory};
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 #[derive(Clone)]
@@ -178,7 +179,7 @@ type ProviderBundle = (
 );
 
 impl MemoryBackend {
-    pub fn new(db: Arc<Database>, mcp: Option<MemoryMcpClient>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, mcp: Option<MemoryMcpClient>) -> Self {
         let stats = Arc::new(MemoryBackendStats::new());
         let sqlite: Arc<dyn MemoryProvider> = Arc::new(SqliteMemoryProvider::new(db.clone()));
         let (provider, primary_provider, primary_provider_name): ProviderBundle = match mcp {
@@ -205,7 +206,7 @@ impl MemoryBackend {
         }
     }
 
-    pub fn local_only(db: Arc<Database>) -> Self {
+    pub fn local_only(db: Arc<DynDataStore>) -> Self {
         Self {
             provider: Arc::new(SqliteMemoryProvider::new(db)),
             stats: Arc::new(MemoryBackendStats::new()),
@@ -548,11 +549,11 @@ fn nonzero_i64(value: i64) -> Option<i64> {
 }
 
 struct SqliteMemoryProvider {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SqliteMemoryProvider {
-    fn new(db: Arc<Database>) -> Self {
+    fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }

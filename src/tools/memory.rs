@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::memory_backend::MemoryBackend;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 use mchact_storage::memory_quality;
 use mchact_storage_backend::{ObjectStorage, StorageError};
@@ -14,11 +14,11 @@ use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool,
 
 pub struct ReadMemoryTool {
     storage: Arc<dyn ObjectStorage>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl ReadMemoryTool {
-    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<Database>) -> Self {
+    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<DynDataStore>) -> Self {
         ReadMemoryTool { storage, db }
     }
 }
@@ -38,7 +38,7 @@ fn chat_id_from_input_or_auth(input: &serde_json::Value) -> Option<i64> {
 }
 
 fn memory_channel_for_chat(
-    db: &Database,
+    db: &DynDataStore,
     input: &serde_json::Value,
     chat_id: i64,
 ) -> Result<String, String> {
@@ -54,7 +54,7 @@ fn memory_channel_for_chat(
     }
 }
 
-fn latest_sender_for_chat(db: &Database, chat_id: i64) -> Option<String> {
+fn latest_sender_for_chat(db: &DynDataStore, chat_id: i64) -> Option<String> {
     db.get_recent_messages(chat_id, 20)
         .ok()?
         .into_iter()
@@ -163,7 +163,7 @@ impl Tool for ReadMemoryTool {
                 if let Err(e) = authorize_chat_access(&input, chat_id) {
                     return ToolResult::error(e);
                 }
-                let channel = match memory_channel_for_chat(&self.db, &input, chat_id) {
+                let channel = match memory_channel_for_chat(&*self.db, &input, chat_id) {
                     Ok(v) => v,
                     Err(e) => return ToolResult::error(e),
                 };
@@ -194,14 +194,14 @@ impl Tool for ReadMemoryTool {
 
 pub struct WriteMemoryTool {
     storage: Arc<dyn ObjectStorage>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     memory_backend: Arc<MemoryBackend>,
 }
 
 impl WriteMemoryTool {
     pub fn new(
         storage: Arc<dyn ObjectStorage>,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         memory_backend: Arc<MemoryBackend>,
     ) -> Self {
         WriteMemoryTool {
@@ -278,7 +278,7 @@ impl Tool for WriteMemoryTool {
                 if let Err(e) = authorize_chat_access(&input, chat_id) {
                     return ToolResult::error(e);
                 }
-                let channel = match memory_channel_for_chat(&self.db, &input, chat_id) {
+                let channel = match memory_channel_for_chat(&*self.db, &input, chat_id) {
                     Ok(v) => v,
                     Err(e) => return ToolResult::error(e),
                 };
@@ -292,7 +292,7 @@ impl Tool for WriteMemoryTool {
 
         let write_content = if scope == "chat" {
             let chat_id = memory_chat_id.unwrap_or_default();
-            let sender = latest_sender_for_chat(&self.db, chat_id);
+            let sender = latest_sender_for_chat(&*self.db, chat_id);
             let existing = match self.storage.get(&key).await {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(StorageError::NotFound(_)) => String::new(),
@@ -359,7 +359,7 @@ mod tests {
         Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap())
     }
 
-    fn test_backend(db: Arc<Database>) -> Arc<MemoryBackend> {
+    fn test_backend(db: Arc<DynDataStore>) -> Arc<MemoryBackend> {
         Arc::new(MemoryBackend::local_only(db))
     }
 

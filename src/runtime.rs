@@ -44,16 +44,15 @@ use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 #[cfg(feature = "vector-search")]
 use mchact_storage::traits::MemoryDbStore;
-use mchact_storage::DataStore;
 use mchact_storage_backend::StorageBackendConfig;
 
 pub struct AppState {
     pub config: Config,
     pub channel_registry: Arc<ChannelRegistry>,
-    pub db: Arc<Database>,
+    pub db: Arc<DynDataStore>,
     pub media_manager: Arc<MediaManager>,
     pub memory: MemoryManager,
     pub skills: SkillManager,
@@ -72,7 +71,7 @@ pub struct AppState {
 
 impl AppState {
     /// Access the database through the driver-agnostic DataStore trait.
-    pub fn db_store(&self) -> &dyn DataStore {
+    pub fn db_store(&self) -> &dyn mchact_storage::DataStore {
         &*self.db
     }
 }
@@ -152,11 +151,10 @@ where
 
 pub async fn run(
     config: Config,
-    db: Database,
+    db: Arc<DynDataStore>,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
-    let db = Arc::new(db);
     let llm = crate::llm::create_provider(&config);
     let embedding = crate::embedding::create_provider(&config);
     #[cfg(feature = "vector-search")]

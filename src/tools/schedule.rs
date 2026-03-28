@@ -9,7 +9,8 @@ use super::{authorize_chat_access, schema_object, Tool, ToolResult};
 use mchact_channels::channel::enforce_channel_policy;
 use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::db::call_blocking;
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 fn compute_next_run(cron_expr: &str, tz_name: &str) -> Result<String, String> {
@@ -131,14 +132,14 @@ fn cron_human_hint(cron_expr: &str) -> Option<String> {
 
 pub struct ScheduleTaskTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     default_timezone: String,
 }
 
 impl ScheduleTaskTool {
     pub fn new(
         registry: Arc<ChannelRegistry>,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         default_timezone: String,
     ) -> Self {
         ScheduleTaskTool {
@@ -286,11 +287,11 @@ impl Tool for ScheduleTaskTool {
 
 pub struct ListTasksTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl ListTasksTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         ListTasksTool { registry, db }
     }
 }
@@ -373,11 +374,11 @@ impl Tool for ListTasksTool {
 
 pub struct PauseTaskTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl PauseTaskTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         PauseTaskTool { registry, db }
     }
 }
@@ -440,11 +441,11 @@ impl Tool for PauseTaskTool {
 
 pub struct ResumeTaskTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl ResumeTaskTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         ResumeTaskTool { registry, db }
     }
 }
@@ -507,11 +508,11 @@ impl Tool for ResumeTaskTool {
 
 pub struct CancelTaskTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl CancelTaskTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         CancelTaskTool { registry, db }
     }
 }
@@ -574,18 +575,18 @@ impl Tool for CancelTaskTool {
 
 pub struct GetTaskHistoryTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 // --- list_task_dlq ---
 
 pub struct ListTaskDlqTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl ListTaskDlqTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         ListTaskDlqTool { registry, db }
     }
 }
@@ -683,11 +684,11 @@ impl Tool for ListTaskDlqTool {
 
 pub struct ReplayTaskDlqTool {
     registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl ReplayTaskDlqTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         ReplayTaskDlqTool { registry, db }
     }
 }
@@ -809,7 +810,7 @@ impl Tool for ReplayTaskDlqTool {
 }
 
 impl GetTaskHistoryTool {
-    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<Database>) -> Self {
+    pub fn new(registry: Arc<ChannelRegistry>, db: Arc<DynDataStore>) -> Self {
         GetTaskHistoryTool { registry, db }
     }
 }

@@ -7,7 +7,8 @@ use crate::agent_engine::is_slash_command_text;
 use crate::embedding::EmbeddingProvider;
 use crate::memory_backend::MemoryBackend;
 use crate::runtime::AppState;
-use mchact_storage::db::{call_blocking, Database, Memory};
+use mchact_storage::db::{call_blocking, Memory};
+use mchact_storage::DynDataStore;
 use mchact_storage::memory_quality;
 use mchact_storage::prelude::*;
 
@@ -163,7 +164,7 @@ pub(crate) async fn upsert_memory_embedding(
 
 #[cfg(feature = "vector-search")]
 async fn upsert_memory_embedding_with_provider(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     provider: &Arc<dyn EmbeddingProvider>,
     memory_id: i64,
     content: &str,
@@ -295,7 +296,7 @@ pub(crate) async fn maybe_handle_explicit_memory_command(
 
 pub(crate) async fn build_db_memory_context(
     memory_backend: &Arc<MemoryBackend>,
-    db: &Arc<Database>,
+    db: &Arc<DynDataStore>,
     embedding: Option<&Arc<dyn EmbeddingProvider>>,
     chat_id: i64,
     query: &str,

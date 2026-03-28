@@ -20,7 +20,8 @@ use agent_client_protocol::{
 };
 use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
-use mchact_storage::db::{call_blocking, Database, StoredMessage};
+use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -35,11 +36,10 @@ const ACP_MODE_ID: &str = "chat";
 
 pub async fn serve(
     config: Config,
-    db: Database,
+    db: Arc<DynDataStore>,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
-    let db = Arc::new(db);
     let llm = llm::create_provider(&config);
     let embedding = embedding::create_provider(&config);
     let mut registry = ChannelRegistry::new();

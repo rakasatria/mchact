@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::channel_adapter::ChannelRegistry;
-use mchact_storage::db::{call_blocking, ChatStore, Database, MessageStore, StoredMessage};
+use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::DynDataStore;
 
 #[derive(Clone, Debug)]
 struct ToolAuthContext {
@@ -89,14 +90,14 @@ fn infer_channel_from_chat_type(chat_type: &str) -> Option<&'static str> {
     None
 }
 
-pub async fn get_chat_type_raw(db: Arc<Database>, chat_id: i64) -> Result<Option<String>, String> {
+pub async fn get_chat_type_raw(db: Arc<DynDataStore>, chat_id: i64) -> Result<Option<String>, String> {
     call_blocking(db, move |d| d.get_chat_type(chat_id))
         .await
         .map_err(|e| format!("Failed to read chat type for chat {chat_id}: {e}"))
 }
 
 pub async fn get_chat_channel_raw(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: i64,
 ) -> Result<Option<String>, String> {
     call_blocking(db, move |d| d.get_chat_channel(chat_id))
@@ -106,7 +107,7 @@ pub async fn get_chat_channel_raw(
 
 pub async fn get_chat_routing(
     registry: &ChannelRegistry,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: i64,
 ) -> Result<Option<ChatRouting>, String> {
     let chat_type = get_chat_type_raw(db.clone(), chat_id).await?;
@@ -134,7 +135,7 @@ pub async fn get_chat_routing(
 
 pub async fn get_required_chat_routing(
     registry: &ChannelRegistry,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: i64,
 ) -> Result<ChatRouting, String> {
     let chat_type = get_chat_type_raw(db.clone(), chat_id)
@@ -183,7 +184,7 @@ pub fn session_source_for_chat(
     chat_type.to_string()
 }
 
-pub async fn is_web_chat(registry: &ChannelRegistry, db: Arc<Database>, chat_id: i64) -> bool {
+pub async fn is_web_chat(registry: &ChannelRegistry, db: Arc<DynDataStore>, chat_id: i64) -> bool {
     get_chat_routing(registry, db, chat_id)
         .await
         .ok()
@@ -194,7 +195,7 @@ pub async fn is_web_chat(registry: &ChannelRegistry, db: Arc<Database>, chat_id:
 
 pub async fn enforce_channel_policy(
     registry: &ChannelRegistry,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     input: &serde_json::Value,
     target_chat_id: i64,
 ) -> Result<(), String> {
@@ -219,7 +220,7 @@ pub async fn enforce_channel_policy(
 
 pub async fn deliver_and_store_bot_message(
     registry: &ChannelRegistry,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     bot_username: &str,
     chat_id: i64,
     text: &str,

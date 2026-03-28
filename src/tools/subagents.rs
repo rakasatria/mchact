@@ -16,9 +16,8 @@ use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::{
     ContentBlock, Message, MessageContent, ResponseContentBlock, ToolDefinition,
 };
-use mchact_storage::db::{
-    call_blocking, CreateSubagentRunParams, Database, FinishSubagentRunParams,
-};
+use mchact_storage::db::{call_blocking, CreateSubagentRunParams, FinishSubagentRunParams};
+use mchact_storage::DynDataStore;
 use mchact_storage::prelude::*;
 
 const MAX_SUB_AGENT_ITERATIONS: usize = 16;
@@ -237,7 +236,7 @@ fn subagent_runtime(config: &Config) -> Arc<SubagentRuntime> {
 }
 
 async fn log_subagent_event(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     run_id: &str,
     event_type: &str,
     detail: Option<String>,
@@ -251,7 +250,7 @@ async fn log_subagent_event(
 }
 
 pub(crate) async fn is_cancelled(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     run_id: &str,
     local_flag: &Arc<AtomicBool>,
 ) -> Result<bool, String> {
@@ -267,7 +266,7 @@ pub(crate) async fn is_cancelled(
 
 struct RunSubAgentTaskParams {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
     auth_context: ToolAuthContext,
     run_id: String,
@@ -512,7 +511,7 @@ async fn run_sub_agent_task(
 }
 
 async fn build_announce_payload(
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     chat_id: i64,
     run_id: &str,
 ) -> Result<String, String> {
@@ -552,7 +551,7 @@ async fn build_announce_payload(
 pub async fn flush_pending_announces_once(
     config: &Config,
     channel_registry: Arc<ChannelRegistry>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     max_batch: usize,
 ) -> usize {
     let now = chrono::Utc::now().to_rfc3339();
@@ -615,12 +614,12 @@ pub async fn flush_pending_announces_once(
 
 pub struct SessionsSpawnTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SessionsSpawnTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1045,11 +1044,11 @@ impl Tool for SessionsSpawnTool {
 }
 
 pub struct SubagentsListTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsListTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1130,11 +1129,11 @@ impl Tool for SubagentsListTool {
 }
 
 pub struct SubagentsInfoTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsInfoTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1221,11 +1220,11 @@ impl Tool for SubagentsInfoTool {
 
 pub struct SubagentsKillTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsKillTool {
-    pub fn new(config: &Config, db: Arc<Database>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1341,16 +1340,16 @@ impl Tool for SubagentsKillTool {
 
 pub struct SubagentsRetryAnnouncesTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 pub struct SubagentsFocusTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsFocusTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1418,11 +1417,11 @@ impl Tool for SubagentsFocusTool {
 }
 
 pub struct SubagentsUnfocusTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsUnfocusTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1470,11 +1469,11 @@ impl Tool for SubagentsUnfocusTool {
 }
 
 pub struct SubagentsFocusedTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl SubagentsFocusedTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1523,12 +1522,12 @@ impl Tool for SubagentsFocusedTool {
 
 pub struct SubagentsSendTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SubagentsSendTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1622,17 +1621,17 @@ impl Tool for SubagentsSendTool {
 }
 
 pub struct SubagentsLogTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 pub struct SubagentsOrchestrateTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl SubagentsOrchestrateTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -1910,7 +1909,7 @@ impl Tool for SubagentsOrchestrateTool {
 }
 
 impl SubagentsLogTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1995,7 +1994,7 @@ impl Tool for SubagentsLogTool {
 }
 
 impl SubagentsRetryAnnouncesTool {
-    pub fn new(config: &Config, db: Arc<Database>, channel_registry: Arc<ChannelRegistry>) -> Self {
+    pub fn new(config: &Config, db: Arc<DynDataStore>, channel_registry: Arc<ChannelRegistry>) -> Self {
         Self {
             config: config.clone(),
             db,
@@ -2059,6 +2058,7 @@ impl Tool for SubagentsRetryAnnouncesTool {
 mod tests {
     use super::*;
     use crate::config::WorkingDirIsolation;
+    use mchact_storage::db::Database;
 
     fn test_config() -> Config {
         let mut cfg = Config::test_defaults();
