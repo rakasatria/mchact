@@ -1,7 +1,9 @@
 pub mod a2a;
 pub mod activate_skill;
+pub mod create_skill;
 pub mod bash;
 pub mod browser;
+pub mod browser_vision;
 pub mod edit_file;
 pub mod export_chat;
 pub mod findings;
@@ -134,6 +136,7 @@ impl ToolRegistry {
                 browser::BrowserTool::new(&config.data_dir)
                     .with_default_timeout_secs(config.tool_timeout_secs("browser", 30)),
             ),
+            Box::new(browser_vision::BrowserVisionTool::new(config)),
             Box::new(read_file::ReadFileTool::new_with_isolation(
                 &config.working_dir,
                 config.working_dir_isolation,
@@ -293,6 +296,9 @@ impl ToolRegistry {
             rl_manager.clone(),
         )));
         tools.push(Box::new(rl_training::RlStopTrainingTool::new(rl_manager)));
+        tools.push(Box::new(create_skill::CreateSkillTool::new(
+            &skills_data_dir,
+        )));
 
         // Add ClawHub tools if enabled
         if config.clawhub.agent_tools_enabled {
@@ -391,6 +397,7 @@ impl ToolRegistry {
                 browser::BrowserTool::new(&config.data_dir)
                     .with_default_timeout_secs(config.tool_timeout_secs("browser", 30)),
             ),
+            Box::new(browser_vision::BrowserVisionTool::new(config)),
             Box::new(read_file::ReadFileTool::new_with_isolation(
                 &config.working_dir,
                 config.working_dir_isolation,
