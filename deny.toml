@@ -7,7 +7,13 @@ version = 2
 yanked = "deny"
 # Temporary exception for the 2026-03-20 rustls-webpki advisory while the
 # upstream rustls/tokio-tungstenite/serenity dependency chain catches up.
-ignore = ["RUSTSEC-2026-0049"]
+ignore = [
+  "RUSTSEC-2026-0049",
+  # `instant` and `paste` are transitive deps of azure_core v0.21; awaiting
+  # Azure SDK upgrade to drop them.
+  "RUSTSEC-2024-0384",
+  "RUSTSEC-2024-0436",
+]
 
 [bans]
 # The current graph includes several unavoidable duplicate transitive versions

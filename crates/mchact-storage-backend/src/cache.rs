@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -86,7 +86,7 @@ fn now_epoch() -> u64 {
 /// Sanitize a key so it is safe to use as a filename component inside
 /// `cache_dir`.  Slashes become underscores; leading dots are prefixed.
 fn key_to_filename(key: &str) -> String {
-    let sanitized = key.replace('/', "__").replace('\\', "__");
+    let sanitized = key.replace(['/', '\\'], "__");
     if sanitized.starts_with('.') {
         format!("_{sanitized}")
     } else {
@@ -156,7 +156,7 @@ impl CachedStorage {
         self.cache_dir.join(META_FILE)
     }
 
-    async fn load_metadata(cache_dir: &PathBuf) -> CacheMetadata {
+    async fn load_metadata(cache_dir: &Path) -> CacheMetadata {
         let path = cache_dir.join(META_FILE);
         match tokio::fs::read(&path).await {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
