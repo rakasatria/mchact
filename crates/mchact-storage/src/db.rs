@@ -5477,6 +5477,42 @@ impl Database {
             .optional()?;
         Ok(result)
     }
+
+    // ── Knowledge Chunk Stats ─────────────────────────────────────────────────
+
+    /// Returns (total, embedded, pending, failed, obs_done, obs_pending) chunk
+    /// counts for all document_chunks belonging to documents in the given
+    /// knowledge collection.
+    pub fn get_knowledge_chunk_stats(
+        &self,
+        knowledge_id: i64,
+    ) -> Result<(i64, i64, i64, i64, i64, i64), MchactError> {
+        let conn = self.lock_conn();
+        let row = conn.query_row(
+            "SELECT
+                COUNT(*),
+                SUM(CASE WHEN dc.embedding_status = 'done'    THEN 1 ELSE 0 END),
+                SUM(CASE WHEN dc.embedding_status = 'pending' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN dc.embedding_status = 'failed'  THEN 1 ELSE 0 END),
+                SUM(CASE WHEN dc.observation_status = 'done'    THEN 1 ELSE 0 END),
+                SUM(CASE WHEN dc.observation_status = 'pending' THEN 1 ELSE 0 END)
+             FROM document_chunks dc
+             JOIN knowledge_documents kd ON kd.document_extraction_id = dc.document_extraction_id
+             WHERE kd.knowledge_id = ?1",
+            params![knowledge_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                ))
+            },
+        )?;
+        Ok(row)
+    }
 }
 
 #[cfg(test)]
