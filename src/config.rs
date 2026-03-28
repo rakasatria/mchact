@@ -10,11 +10,11 @@ use crate::codex_auth::{
     provider_allows_empty_api_key, qwen_oauth_file_has_access_token,
 };
 use crate::plugins::PluginsConfig;
-use microclaw_core::error::MicroClawError;
-pub use microclaw_tools::sandbox::{SandboxBackend, SandboxConfig, SandboxMode, SecurityProfile};
-pub use microclaw_tools::types::WorkingDirIsolation;
-use microclaw_tools::web_content_validation::WebContentValidationConfig;
-use microclaw_tools::web_fetch::WebFetchUrlValidationConfig;
+use mchact_core::error::MchactError;
+pub use mchact_tools::sandbox::{SandboxBackend, SandboxConfig, SandboxMode, SecurityProfile};
+pub use mchact_tools::types::WorkingDirIsolation;
+use mchact_tools::web_content_validation::WebContentValidationConfig;
+use mchact_tools::web_fetch::WebFetchUrlValidationConfig;
 
 fn default_telegram_bot_token() -> String {
     String::new()
@@ -91,7 +91,7 @@ fn expand_path(path: &str) -> PathBuf {
 }
 
 fn default_data_root() -> PathBuf {
-    expand_path("~/.microclaw")
+    expand_path("~/.mchact")
 }
 
 fn default_working_dir() -> String {
@@ -110,7 +110,7 @@ fn default_sandbox_image() -> String {
     "ubuntu:25.10".into()
 }
 fn default_sandbox_container_prefix() -> String {
-    "microclaw-sandbox".into()
+    "mchact-sandbox".into()
 }
 fn default_timezone() -> String {
     "auto".into()
@@ -281,6 +281,36 @@ fn default_vision_fallback_base_url() -> String {
 }
 fn default_document_extraction_enabled() -> bool {
     true
+}
+fn default_training_workers() -> usize {
+    4
+}
+fn default_training_batch_size() -> usize {
+    10
+}
+fn default_training_max_iterations() -> usize {
+    10
+}
+fn default_training_distribution() -> String {
+    "default".into()
+}
+fn default_training_output_dir() -> String {
+    "./training-runs".into()
+}
+fn default_training_compress_target_tokens() -> usize {
+    15250
+}
+fn default_training_compress_model() -> String {
+    "google/gemini-3-flash-preview".into()
+}
+fn default_training_compress_tokenizer() -> String {
+    "moonshotai/Kimi-K2-Thinking".into()
+}
+fn default_training_environments_dir() -> String {
+    "./training/environments".into()
+}
+fn default_training_distributions_file() -> String {
+    "./training/distributions.yaml".into()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -880,6 +910,28 @@ pub struct Config {
     pub bot_username: String,
     #[serde(default)]
     pub allowed_groups: Vec<i64>,
+
+    // --- Training configuration ---
+    #[serde(default = "default_training_workers")]
+    pub training_default_workers: usize,
+    #[serde(default = "default_training_batch_size")]
+    pub training_default_batch_size: usize,
+    #[serde(default = "default_training_max_iterations")]
+    pub training_default_max_iterations: usize,
+    #[serde(default = "default_training_distribution")]
+    pub training_default_distribution: String,
+    #[serde(default = "default_training_output_dir")]
+    pub training_output_dir: String,
+    #[serde(default = "default_training_compress_target_tokens")]
+    pub training_compress_target_tokens: usize,
+    #[serde(default = "default_training_compress_model")]
+    pub training_compress_model: String,
+    #[serde(default = "default_training_compress_tokenizer")]
+    pub training_compress_tokenizer: String,
+    #[serde(default = "default_training_environments_dir")]
+    pub training_environments_dir: String,
+    #[serde(default = "default_training_distributions_file")]
+    pub training_distributions_file: String,
 }
 
 impl Config {
@@ -1367,10 +1419,10 @@ impl Config {
         root.join("runtime").to_string_lossy().to_string()
     }
 
-    /// Skills directory. Priority: MICROCLAW_SKILLS_DIR env var > skills_dir config > <data_dir>/skills
+    /// Skills directory. Priority: MCHACT_SKILLS_DIR env var > skills_dir config > <data_dir>/skills
     pub fn skills_data_dir(&self) -> String {
         // 1. Check env var first
-        if let Ok(explicit_dir) = std::env::var("MICROCLAW_SKILLS_DIR") {
+        if let Ok(explicit_dir) = std::env::var("MCHACT_SKILLS_DIR") {
             let trimmed = explicit_dir.trim();
             if !trimmed.is_empty() {
                 return expand_path(trimmed).to_string_lossy().to_string();
@@ -1408,23 +1460,23 @@ impl Config {
         self.data_root_dir().join("clawhub.lock.json")
     }
 
-    pub fn resolve_config_path() -> Result<Option<PathBuf>, MicroClawError> {
-        // 1. Check MICROCLAW_CONFIG env var for custom path
-        if let Ok(custom) = std::env::var("MICROCLAW_CONFIG") {
+    pub fn resolve_config_path() -> Result<Option<PathBuf>, MchactError> {
+        // 1. Check MCHACT_CONFIG env var for custom path
+        if let Ok(custom) = std::env::var("MCHACT_CONFIG") {
             let expanded = expand_path(&custom);
             if expanded.exists() {
                 return Ok(Some(expanded));
             }
-            return Err(MicroClawError::Config(format!(
-                "MICROCLAW_CONFIG points to non-existent file: {custom}"
+            return Err(MchactError::Config(format!(
+                "MCHACT_CONFIG points to non-existent file: {custom}"
             )));
         }
 
-        if std::path::Path::new("./microclaw.config.yaml").exists() {
-            return Ok(Some(PathBuf::from("./microclaw.config.yaml")));
+        if std::path::Path::new("./mchact.config.yaml").exists() {
+            return Ok(Some(PathBuf::from("./mchact.config.yaml")));
         }
-        if std::path::Path::new("./microclaw.config.yml").exists() {
-            return Ok(Some(PathBuf::from("./microclaw.config.yml")));
+        if std::path::Path::new("./mchact.config.yml").exists() {
+            return Ok(Some(PathBuf::from("./mchact.config.yml")));
         }
         Ok(None)
     }
@@ -1462,13 +1514,13 @@ impl Config {
     }
 
     /// Load config from YAML file.
-    pub fn load() -> Result<Self, MicroClawError> {
+    pub fn load() -> Result<Self, MchactError> {
         let yaml_path = Self::resolve_config_path()?;
 
         if let Some(path) = yaml_path {
             let path_str = path.to_string_lossy().to_string();
             let content = std::fs::read_to_string(&path)
-                .map_err(|e| MicroClawError::Config(format!("Failed to read {path_str}: {e}")))?;
+                .map_err(|e| MchactError::Config(format!("Failed to read {path_str}: {e}")))?;
             if let Ok(raw) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
                 if let Some(map) = raw.as_mapping() {
                     let old_top_level = map
@@ -1495,19 +1547,19 @@ impl Config {
                 }
             }
             let mut config: Config = serde_yaml::from_str(&content)
-                .map_err(|e| MicroClawError::Config(format!("Failed to parse {path_str}: {e}")))?;
+                .map_err(|e| MchactError::Config(format!("Failed to parse {path_str}: {e}")))?;
             config.post_deserialize()?;
             return Ok(config);
         }
 
         // No config file found at all
-        Err(MicroClawError::Config(
-            "No microclaw.config.yaml found. Run `microclaw setup` to create one.".into(),
+        Err(MchactError::Config(
+            "No mchact.config.yaml found. Run `mchact setup` to create one.".into(),
         ))
     }
 
     /// Apply post-deserialization normalization and validation.
-    pub(crate) fn post_deserialize(&mut self) -> Result<(), MicroClawError> {
+    pub(crate) fn post_deserialize(&mut self) -> Result<(), MchactError> {
         self.llm_provider = self.llm_provider.trim().to_lowercase();
 
         self.model = resolve_model_name_with_fallback(&self.llm_provider, Some(&self.model), None);
@@ -1560,7 +1612,7 @@ impl Config {
         } else {
             tz_raw
                 .parse::<chrono_tz::Tz>()
-                .map_err(|_| MicroClawError::Config(format!("Invalid timezone: {tz_raw}")))?;
+                .map_err(|_| MchactError::Config(format!("Invalid timezone: {tz_raw}")))?;
             self.timezone = tz_raw;
         }
 
@@ -1820,18 +1872,18 @@ Use operator password + API keys for Web auth."
         for price in &mut self.model_prices {
             price.model = price.model.trim().to_string();
             if price.model.is_empty() {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "model_prices entries must include non-empty model".into(),
                 ));
             }
             if !(price.input_per_million_usd.is_finite() && price.input_per_million_usd >= 0.0) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "model_prices[{}].input_per_million_usd must be >= 0",
                     price.model
                 )));
             }
             if !(price.output_per_million_usd.is_finite() && price.output_per_million_usd >= 0.0) {
-                return Err(MicroClawError::Config(format!(
+                return Err(MchactError::Config(format!(
                     "model_prices[{}].output_per_million_usd must be >= 0",
                     price.model
                 )));
@@ -1910,17 +1962,17 @@ Use operator password + API keys for Web auth."
             || has_irc
             || has_web)
         {
-            return Err(MicroClawError::Config(
+            return Err(MchactError::Config(
                 "At least one channel must be enabled and configured (via channels.<name>.enabled or legacy channel settings)".into(),
             ));
         }
         if self.api_key.is_empty() && !provider_allows_empty_api_key(&self.llm_provider) {
-            return Err(MicroClawError::Config("api_key is required".into()));
+            return Err(MchactError::Config("api_key is required".into()));
         }
         if is_openai_codex_provider(&self.llm_provider) {
             if !self.api_key.trim().is_empty() {
-                return Err(MicroClawError::Config(
-                    "openai-codex ignores microclaw.config.yaml api_key. Configure ~/.codex/auth.json or run `codex login` instead.".into(),
+                return Err(MchactError::Config(
+                    "openai-codex ignores mchact.config.yaml api_key. Configure ~/.codex/auth.json or run `codex login` instead.".into(),
                 ));
             }
             if self
@@ -1929,13 +1981,13 @@ Use operator password + API keys for Web auth."
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false)
             {
-                return Err(MicroClawError::Config(
-                    "openai-codex ignores microclaw.config.yaml llm_base_url. Configure ~/.codex/config.toml instead.".into(),
+                return Err(MchactError::Config(
+                    "openai-codex ignores mchact.config.yaml llm_base_url. Configure ~/.codex/config.toml instead.".into(),
                 ));
             }
             let has_codex_auth = codex_auth_file_has_access_token()?;
             if !has_codex_auth {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "openai-codex requires ~/.codex/auth.json (access token or OPENAI_API_KEY), or OPENAI_CODEX_ACCESS_TOKEN. Run `codex login` or update Codex config files.".into(),
                 ));
             }
@@ -1943,7 +1995,7 @@ Use operator password + API keys for Web auth."
         if is_qwen_portal_provider(&self.llm_provider) && self.api_key.trim().is_empty() {
             let has_qwen_auth = qwen_oauth_file_has_access_token()?;
             if !has_qwen_auth {
-                return Err(MicroClawError::Config(
+                return Err(MchactError::Config(
                     "qwen-portal requires api_key, or ~/.qwen/oauth_creds.json (access_token), or QWEN_PORTAL_ACCESS_TOKEN.".into(),
                 ));
             }
@@ -2136,9 +2188,9 @@ Use operator password + API keys for Web auth."
 
     /// Save config as YAML to the given path.
     #[allow(dead_code)]
-    pub fn save_yaml(&self, path: &str) -> Result<(), MicroClawError> {
+    pub fn save_yaml(&self, path: &str) -> Result<(), MchactError> {
         let content = serde_yaml::to_string(self)
-            .map_err(|e| MicroClawError::Config(format!("Failed to serialize config: {e}")))?;
+            .map_err(|e| MchactError::Config(format!("Failed to serialize config: {e}")))?;
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -2346,9 +2398,9 @@ voice_transcription_command: "whisper-mlx --file {file}"
         config.allowed_groups = vec![123, 456];
         config.control_chat_ids = vec![999];
         assert_eq!(config.model, "claude-sonnet-4-5-20250929");
-        assert!(config.data_dir.ends_with(".microclaw"));
+        assert!(config.data_dir.ends_with(".mchact"));
         assert!(std::path::PathBuf::from(&config.working_dir)
-            .ends_with(std::path::Path::new(".microclaw").join("working_dir")));
+            .ends_with(std::path::Path::new(".mchact").join("working_dir")));
         assert_eq!(config.openai_api_key.as_deref(), Some("sk-test"));
         assert_eq!(config.timezone, "US/Eastern");
         assert_eq!(config.allowed_groups, vec![123, 456]);
@@ -2372,9 +2424,9 @@ voice_transcription_command: "whisper-mlx --file {file}"
         assert_eq!(config.llm_provider, "anthropic");
         assert_eq!(config.max_tokens, 8192);
         assert_eq!(config.max_tool_iterations, 100);
-        assert!(config.data_dir.ends_with(".microclaw"));
+        assert!(config.data_dir.ends_with(".mchact"));
         assert!(std::path::PathBuf::from(&config.working_dir)
-            .ends_with(std::path::Path::new(".microclaw").join("working_dir")));
+            .ends_with(std::path::Path::new(".mchact").join("working_dir")));
         assert_eq!(config.memory_token_budget, 1500);
         assert!(matches!(
             config.working_dir_isolation,
@@ -2627,10 +2679,10 @@ channels:
     }
 
     #[test]
-    fn test_default_data_dir_uses_microclaw_home() {
+    fn test_default_data_dir_uses_mchact_home() {
         let yaml = "telegram_bot_token: tok\nbot_username: bot\napi_key: key\n";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
-        assert!(config.data_dir.ends_with(".microclaw"));
+        assert!(config.data_dir.ends_with(".mchact"));
     }
 
     #[test]
@@ -2649,7 +2701,7 @@ channels:
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         config.post_deserialize().unwrap();
         assert!(std::path::PathBuf::from(&config.working_dir)
-            .ends_with(std::path::Path::new(".microclaw").join("working_dir")));
+            .ends_with(std::path::Path::new(".mchact").join("working_dir")));
     }
 
     #[test]
@@ -2728,33 +2780,33 @@ channels:
     #[test]
     fn test_runtime_and_skills_dirs_from_root_data_dir() {
         let mut config = test_config();
-        config.data_dir = "./microclaw.data".into();
+        config.data_dir = "./mchact.data".into();
 
         let runtime = std::path::PathBuf::from(config.runtime_data_dir());
         let skills = std::path::PathBuf::from(config.skills_data_dir());
 
-        assert!(runtime.ends_with(std::path::Path::new("microclaw.data").join("runtime")));
-        assert!(skills.ends_with(std::path::Path::new("microclaw.data").join("skills")));
+        assert!(runtime.ends_with(std::path::Path::new("mchact.data").join("runtime")));
+        assert!(skills.ends_with(std::path::Path::new("mchact.data").join("skills")));
     }
 
     #[test]
     fn test_runtime_and_skills_dirs_from_runtime_data_dir() {
         let mut config = test_config();
-        config.data_dir = "./microclaw.data".into();
+        config.data_dir = "./mchact.data".into();
 
         let runtime = std::path::PathBuf::from(config.runtime_data_dir());
         let skills = std::path::PathBuf::from(config.skills_data_dir());
 
-        assert!(runtime.ends_with(std::path::Path::new("microclaw.data").join("runtime")));
-        assert!(skills.ends_with(std::path::Path::new("microclaw.data").join("skills")));
+        assert!(runtime.ends_with(std::path::Path::new("mchact.data").join("runtime")));
+        assert!(skills.ends_with(std::path::Path::new("mchact.data").join("skills")));
     }
 
     #[test]
     fn test_skills_dir_uses_config_override() {
         let mut config = test_config();
-        config.skills_dir = Some("./microclaw.data/skills".to_string());
+        config.skills_dir = Some("./mchact.data/skills".to_string());
         let skills = std::path::PathBuf::from(config.skills_data_dir());
-        assert!(skills.ends_with(std::path::Path::new("microclaw.data").join("skills")));
+        assert!(skills.ends_with(std::path::Path::new("mchact.data").join("skills")));
     }
 
     #[test]
@@ -2792,7 +2844,7 @@ channels:
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-{}",
+            "mchact-codex-auth-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -2851,8 +2903,8 @@ channels:
   irc:
     enabled: true
     server: "irc.example.com"
-    nick: "microclaw"
-    channels: "#microclaw"
+    nick: "mchact"
+    channels: "#mchact"
 "##;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         config.post_deserialize().unwrap();
@@ -2868,7 +2920,7 @@ channels:
     enabled: true
     homeserver_url: "https://matrix.example.com"
     access_token: "syt_xxx"
-    bot_user_id: "@microclaw:example.com"
+    bot_user_id: "@mchact:example.com"
 "##;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         config.post_deserialize().unwrap();
@@ -2921,7 +2973,7 @@ channels:
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-{}",
+            "mchact-codex-auth-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -2962,7 +3014,7 @@ channels:
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-missing-{}",
+            "mchact-codex-auth-missing-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -2999,7 +3051,7 @@ channels:
         std::env::remove_var("OPENAI_CODEX_ACCESS_TOKEN");
 
         let auth_dir = std::env::temp_dir().join(format!(
-            "microclaw-codex-auth-plain-key-{}",
+            "mchact-codex-auth-plain-key-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -3025,7 +3077,7 @@ channels:
         }
         let _ = std::fs::remove_dir(auth_dir);
 
-        assert!(msg.contains("ignores microclaw.config.yaml api_key"));
+        assert!(msg.contains("ignores mchact.config.yaml api_key"));
     }
 
     #[test]
@@ -3062,7 +3114,7 @@ channels:
         std::env::remove_var("QWEN_PORTAL_ACCESS_TOKEN");
 
         let qwen_dir = std::env::temp_dir().join(format!(
-            "microclaw-qwen-auth-{}",
+            "mchact-qwen-auth-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -3104,7 +3156,7 @@ channels:
         std::env::remove_var("QWEN_PORTAL_ACCESS_TOKEN");
 
         let qwen_dir = std::env::temp_dir().join(format!(
-            "microclaw-qwen-auth-missing-{}",
+            "mchact-qwen-auth-missing-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -3452,7 +3504,7 @@ discord_allowed_channels: [111, 222]
     fn test_config_save_yaml() {
         let config = test_config();
         let dir = std::env::temp_dir();
-        let path = dir.join("microclaw_test_config.yaml");
+        let path = dir.join("mchact_test_config.yaml");
         config.save_yaml(path.to_str().unwrap()).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("telegram_bot_token"));
@@ -3478,7 +3530,7 @@ discord_allowed_channels: [111, 222]
     #[test]
     fn test_post_deserialize_expands_paths() {
         let mut config = test_config();
-        config.data_dir = "~/.microclaw".into();
+        config.data_dir = "~/.mchact".into();
         config.working_dir = "~/workspace".into();
         config.skills_dir = Some("~/skills".into());
 
@@ -3486,7 +3538,7 @@ discord_allowed_channels: [111, 222]
 
         let home = PathBuf::from(shellexpand::tilde("~").as_ref());
         // Use PathBuf comparison to handle separator differences on Windows
-        assert_eq!(PathBuf::from(&config.data_dir), home.join(".microclaw"));
+        assert_eq!(PathBuf::from(&config.data_dir), home.join(".mchact"));
         assert_eq!(PathBuf::from(&config.working_dir), home.join("workspace"));
         assert_eq!(
             PathBuf::from(config.skills_dir.unwrap()),
