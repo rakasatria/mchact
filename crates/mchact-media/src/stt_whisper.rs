@@ -56,9 +56,11 @@ impl SttProvider for WhisperLocalProvider {
 
             let mut text = String::new();
             for i in 0..num_segments {
-                if let Ok(segment) = state.full_get_segment_text_lossy(i) {
-                    text.push_str(&segment);
-                    text.push(' ');
+                if let Some(segment) = state.get_segment(i) {
+                    if let Ok(s) = segment.to_str_lossy() {
+                        text.push_str(&s);
+                        text.push(' ');
+                    }
                 }
             }
 

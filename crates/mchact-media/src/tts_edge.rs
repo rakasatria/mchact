@@ -24,11 +24,19 @@ impl TtsProvider for EdgeTtsProvider {
         #[cfg(feature = "tts")]
         {
             use msedge_tts::tts::client::connect;
+            use msedge_tts::tts::SpeechConfig;
             let mut tts = connect()
                 .map_err(|e| MediaError::ProviderError(format!("Edge TTS connect failed: {e}")))?;
-            let audio = tts.synthesize(text, voice)
+            let config = SpeechConfig {
+                voice_name: voice.to_string(),
+                audio_format: "audio-24khz-48kbitrate-mono-mp3".to_string(),
+                pitch: 0,
+                rate: 0,
+                volume: 0,
+            };
+            let audio = tts.synthesize(text, &config)
                 .map_err(|e| MediaError::ProviderError(format!("Edge TTS synthesis failed: {e}")))?;
-            let audio_bytes: Vec<u8> = audio.audio_bytes.into_iter().flatten().collect();
+            let audio_bytes: Vec<u8> = audio.audio_bytes;
             Ok(TtsOutput { audio_bytes, format: AudioFormat::Mp3, duration_ms: None })
         }
         #[cfg(not(feature = "tts"))]
