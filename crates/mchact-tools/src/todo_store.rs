@@ -1,3 +1,4 @@
+use mchact_storage_backend::ObjectStorage;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -59,6 +60,51 @@ pub fn format_todos(todos: &[TodoItem]) -> String {
         out.push_str(&format!("{}. {} {}\n", i + 1, icon, item.task));
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Async ObjectStorage-backed variants
+// ---------------------------------------------------------------------------
+
+fn todo_key(channel: &str, chat_id: i64) -> String {
+    let safe = channel.replace('/', "_");
+    format!("groups/{safe}/{chat_id}/TODO.json")
+}
+
+pub async fn read_todos_async(
+    storage: &dyn ObjectStorage,
+    channel: &str,
+    chat_id: i64,
+) -> Vec<TodoItem> {
+    let key = todo_key(channel, chat_id);
+    match storage.get(&key).await {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub async fn write_todos_async(
+    storage: &dyn ObjectStorage,
+    channel: &str,
+    chat_id: i64,
+    todos: &[TodoItem],
+) -> Result<(), String> {
+    let key = todo_key(channel, chat_id);
+    let json = serde_json::to_string_pretty(todos).map_err(|e| e.to_string())?;
+    storage
+        .put(&key, json.into_bytes())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn clear_todos_async(
+    storage: &dyn ObjectStorage,
+    channel: &str,
+    chat_id: i64,
+) -> Result<bool, String> {
+    let key = todo_key(channel, chat_id);
+    storage.delete(&key).await.map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[cfg(test)]

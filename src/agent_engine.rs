@@ -735,7 +735,13 @@ async fn process_with_agent_logic(
     .await;
     let memory_context = format!("{}{}", file_memory, db_memory);
     let skills_catalog = state.skills.build_skills_catalog();
-    let soul_content = load_soul_content(&state.config, context.caller_channel, chat_id);
+    let soul_content = load_soul_content(
+        &state.config,
+        state.media_manager.storage().as_ref(),
+        context.caller_channel,
+        chat_id,
+    )
+    .await;
     let bot_username = state
         .config
         .bot_username_for_channel(context.caller_channel);
@@ -798,11 +804,12 @@ async fn process_with_agent_logic(
     if messages.len() > state.config.max_session_messages {
         let msg_count_before = messages.len();
         archive_conversation(
-            &state.config.data_dir,
+            state.media_manager.storage().as_ref(),
             context.caller_channel,
             chat_id,
             &messages,
-        );
+        )
+        .await;
         messages = compact_messages(
             state,
             context.caller_channel,
@@ -1793,99 +1800,76 @@ pub(crate) async fn load_messages_from_db(
 /// Load the SOUL.md content for personality customization.
 /// Checks in order: per-channel soul_path, explicit soul_path from config, data_dir/SOUL.md, ./SOUL.md.
 /// Also supports per-chat soul files at data_dir/groups/{chat_id}/SOUL.md.
-fn configured_soul_candidate_paths(
-    path: &str,
-    data_root_dir: &str,
-    souls_dir: &str,
-) -> Vec<std::path::PathBuf> {
-    let configured = std::path::PathBuf::from(path);
-    let mut candidates = vec![configured.clone()];
-    if !configured.is_absolute() && configured.parent().is_none() {
-        let souls_candidate = std::path::PathBuf::from(souls_dir).join(&configured);
-        if souls_candidate != configured {
-            candidates.push(souls_candidate);
+/// Build candidate storage keys for a configured soul path.
+///
+/// If the path is a bare filename (e.g. `"ops.md"`), the primary key is
+/// `souls/<filename>`.  An absolute filesystem path is stripped to its
+/// filename and also resolved under `souls/`.  A relative path with
+/// directory components (e.g. `"souls/ops.md"`) is tried as-is first,
+/// then under the `souls/` prefix if different.
+fn configured_soul_storage_keys(path: &str) -> Vec<String> {
+    let p = std::path::Path::new(path);
+    let filename = p
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(path);
+
+    let mut keys = Vec::new();
+
+    if p.is_absolute() || p.parent().is_none() || p.parent() == Some(std::path::Path::new("")) {
+        // Bare filename or absolute path -> souls/<filename>
+        keys.push(format!("souls/{filename}"));
+    } else {
+        // Relative path with directory components: try as-is, then souls/<filename>
+        let as_is = path.replace('\\', "/");
+        keys.push(as_is.clone());
+        let souls_key = format!("souls/{filename}");
+        if souls_key != as_is {
+            keys.push(souls_key);
         }
     }
-    if configured.is_relative() {
-        let data_root_candidate = std::path::PathBuf::from(data_root_dir).join(&configured);
-        if data_root_candidate != configured {
-            candidates.push(data_root_candidate);
-        }
-    }
-    candidates
+    keys
 }
 
-fn read_configured_soul_with_fallback(
+async fn read_configured_soul_with_fallback(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
     configured_path: &str,
-    data_root_dir: &str,
-    souls_dir: &str,
 ) -> Result<(String, String), String> {
     let mut errors = Vec::new();
-    for candidate in configured_soul_candidate_paths(configured_path, data_root_dir, souls_dir) {
-        let rendered = candidate.display().to_string();
-        match std::fs::read_to_string(&candidate) {
-            Ok(content) => {
+    for key in configured_soul_storage_keys(configured_path) {
+        match storage.get(&key).await {
+            Ok(bytes) => {
+                let content = String::from_utf8_lossy(&bytes).to_string();
                 if content.trim().is_empty() {
-                    errors.push(format!("{rendered}: empty file"));
+                    errors.push(format!("{key}: empty file"));
                     continue;
                 }
-                return Ok((content, rendered));
+                return Ok((content, key));
             }
-            Err(e) => errors.push(format!("{rendered}: {e}")),
+            Err(mchact_storage_backend::StorageError::NotFound(_)) => {
+                errors.push(format!("{key}: not found"));
+            }
+            Err(e) => errors.push(format!("{key}: {e}")),
         }
     }
     Err(errors.join("; "))
 }
 
-fn effective_data_root_dir(config: &crate::config::Config) -> std::path::PathBuf {
-    let data_dir = std::path::PathBuf::from(&config.data_dir);
-    let is_runtime_dir = data_dir
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v == "runtime")
-        .unwrap_or(false);
-    if is_runtime_dir {
-        data_dir.parent().unwrap_or(&data_dir).to_path_buf()
-    } else {
-        data_dir
-    }
-}
-
-fn effective_runtime_data_dir(config: &crate::config::Config) -> std::path::PathBuf {
-    let data_dir = std::path::PathBuf::from(&config.data_dir);
-    let is_runtime_dir = data_dir
-        .file_name()
-        .and_then(|v| v.to_str())
-        .map(|v| v == "runtime")
-        .unwrap_or(false);
-    if is_runtime_dir {
-        data_dir
-    } else {
-        data_dir.join("runtime")
-    }
-}
-
-pub(crate) fn load_soul_content(
+pub(crate) async fn load_soul_content(
     config: &crate::config::Config,
+    storage: &dyn mchact_storage_backend::ObjectStorage,
     caller_channel: &str,
     chat_id: i64,
 ) -> Option<String> {
-    let data_root_dir = effective_data_root_dir(config);
-    let runtime_data_dir = effective_runtime_data_dir(config);
-    let souls_dir = config.souls_data_dir();
     let mut global_soul: Option<String> = None;
 
     // 1. Per-channel/account path from config (channels.<name>.soul_path or accounts.<id>.soul_path)
     if let Some(path) = config.soul_path_for_channel(caller_channel) {
-        match read_configured_soul_with_fallback(
-            &path,
-            &data_root_dir.to_string_lossy(),
-            &souls_dir,
-        ) {
-            Ok((content, resolved_path)) => {
+        match read_configured_soul_with_fallback(storage, &path).await {
+            Ok((content, resolved_key)) => {
                 info!(
-                    "SOUL loaded from configured channel/account path; caller_channel={}, chat_id={}, configured_path={}, resolved_path={}",
-                    caller_channel, chat_id, path, resolved_path
+                    "SOUL loaded from configured channel/account path; caller_channel={}, chat_id={}, configured_path={}, resolved_key={}",
+                    caller_channel, chat_id, path, resolved_key
                 );
                 global_soul = Some(content);
             }
@@ -1901,15 +1885,11 @@ pub(crate) fn load_soul_content(
     // 2. Explicit global path from config
     if let Some(ref path) = config.soul_path {
         if global_soul.is_none() {
-            match read_configured_soul_with_fallback(
-                path,
-                &data_root_dir.to_string_lossy(),
-                &souls_dir,
-            ) {
-                Ok((content, resolved_path)) => {
+            match read_configured_soul_with_fallback(storage, path).await {
+                Ok((content, resolved_key)) => {
                     info!(
-                        "SOUL loaded from configured global path; caller_channel={}, chat_id={}, configured_path={}, resolved_path={}",
-                        caller_channel, chat_id, path, resolved_path
+                        "SOUL loaded from configured global path; caller_channel={}, chat_id={}, configured_path={}, resolved_key={}",
+                        caller_channel, chat_id, path, resolved_key
                     );
                     global_soul = Some(content);
                 }
@@ -1923,17 +1903,17 @@ pub(crate) fn load_soul_content(
         }
     }
 
-    // 3. data_dir/SOUL.md
+    // 3. SOUL.md from storage root
     if global_soul.is_none() {
-        let data_soul = data_root_dir.join("SOUL.md");
-        if let Ok(content) = std::fs::read_to_string(&data_soul) {
+        if let Ok(bytes) = storage.get("SOUL.md").await {
+            let content = String::from_utf8_lossy(&bytes).to_string();
             if !content.trim().is_empty() {
                 global_soul = Some(content);
             }
         }
     }
 
-    // 4. ./SOUL.md in current directory
+    // 4. ./SOUL.md in current directory (developer convenience, not user data)
     if global_soul.is_none() {
         if let Ok(content) = std::fs::read_to_string("SOUL.md") {
             if !content.trim().is_empty() {
@@ -1942,12 +1922,9 @@ pub(crate) fn load_soul_content(
         }
     }
 
-    // 5. Per-chat override: data_dir/runtime/groups/{chat_id}/SOUL.md
-    let chat_soul_path = runtime_data_dir
-        .join("groups")
-        .join(chat_id.to_string())
-        .join("SOUL.md");
-    if let Ok(chat_soul) = std::fs::read_to_string(&chat_soul_path) {
+    // 5. Per-chat override: groups/{chat_id}/SOUL.md in storage
+    if let Ok(bytes) = storage.get(&format!("groups/{chat_id}/SOUL.md")).await {
+        let chat_soul = String::from_utf8_lossy(&bytes).to_string();
         if !chat_soul.trim().is_empty() {
             // Per-chat soul overrides global soul entirely
             return Some(chat_soul);
@@ -2294,25 +2271,20 @@ pub(crate) fn strip_images_for_session(messages: &mut [Message]) {
 
 /// Archive the full conversation to a markdown file before compaction.
 /// Saved to `<data_dir>/groups/<channel>/<chat_id>/conversations/<timestamp>.md`.
-pub fn archive_conversation(data_dir: &str, channel: &str, chat_id: i64, messages: &[Message]) {
+pub async fn archive_conversation(
+    storage: &dyn mchact_storage_backend::ObjectStorage,
+    channel: &str,
+    chat_id: i64,
+    messages: &[Message],
+) {
     let now = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    let channel_dir = if channel.trim().is_empty() {
-        "unknown"
+    let safe_channel = if channel.trim().is_empty() {
+        "unknown".to_string()
     } else {
-        channel.trim()
+        channel.trim().replace('/', "_")
     };
-    let dir = std::path::PathBuf::from(data_dir)
-        .join("groups")
-        .join(channel_dir)
-        .join(chat_id.to_string())
-        .join("conversations");
+    let key = format!("groups/{safe_channel}/{chat_id}/conversations/{now}.md");
 
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("Failed to create conversations dir: {e}");
-        return;
-    }
-
-    let path = dir.join(format!("{now}.md"));
     let mut content = String::new();
     for msg in messages {
         let role = &msg.role;
@@ -2320,13 +2292,12 @@ pub fn archive_conversation(data_dir: &str, channel: &str, chat_id: i64, message
         content.push_str(&format!("## {role}\n\n{text}\n\n---\n\n"));
     }
 
-    if let Err(e) = std::fs::write(&path, &content) {
-        tracing::warn!("Failed to archive conversation to {}: {e}", path.display());
+    if let Err(e) = storage.put(&key, content.into_bytes()).await {
+        tracing::warn!("Failed to archive conversation to {key}: {e}");
     } else {
         info!(
-            "Archived conversation ({} messages) to {}",
+            "Archived conversation ({} messages) to {key}",
             messages.len(),
-            path.display()
         );
     }
 }
@@ -2507,6 +2478,7 @@ mod tests {
     };
     use mchact_storage::db::{Database, StoredMessage};
     use mchact_storage::prelude::*;
+    use mchact_storage_backend::ObjectStorage;
     use serde_json::json;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -3706,106 +3678,113 @@ mod tests {
         assert!(prompt.contains("API spec v1"));
     }
 
-    #[test]
-    fn test_load_soul_content_from_data_dir() {
+    #[tokio::test]
+    async fn test_load_soul_content_from_storage_root() {
         let base_dir = std::env::temp_dir().join(format!("mc_soul_test_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let soul_path = base_dir.join("SOUL.md");
-        std::fs::write(&soul_path, "I am a wise owl assistant.").unwrap();
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put("SOUL.md", b"I am a wise owl assistant.".to_vec())
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
         config.soul_path = None;
-        config.model = "test".into();
-        config.working_dir = "./tmp".into();
-        config.working_dir_isolation = WorkingDirIsolation::Shared;
-        config.web_enabled = false;
-        config.web_port = 0;
 
-        let soul = super::load_soul_content(&config, "web", 999);
+        let soul = super::load_soul_content(&config, &storage, "web", 999).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("wise owl"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_explicit_path() {
+    #[tokio::test]
+    async fn test_load_soul_content_explicit_path() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_explicit_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let soul_file = base_dir.join("custom_soul.md");
-        std::fs::write(&soul_file, "I am a custom personality.").unwrap();
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put(
+                "souls/custom_soul.md",
+                b"I am a custom personality.".to_vec(),
+            )
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
-        config.soul_path = Some(soul_file.to_string_lossy().to_string());
-        config.model = "test".into();
-        config.working_dir = "./tmp".into();
-        config.working_dir_isolation = WorkingDirIsolation::Shared;
-        config.web_enabled = false;
-        config.web_port = 0;
+        config.soul_path = Some("custom_soul.md".to_string());
 
-        let soul = super::load_soul_content(&config, "web", 999);
+        let soul = super::load_soul_content(&config, &storage, "web", 999).await;
         assert!(soul.is_some());
         assert!(soul.unwrap().contains("custom personality"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_channel_account_path() {
+    #[tokio::test]
+    async fn test_load_soul_content_channel_account_path() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_channel_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&base_dir).unwrap();
-        let global_soul_file = base_dir.join("global_soul.md");
-        let ops_soul_file = base_dir.join("ops_soul.md");
-        let default_soul_file = base_dir.join("default_soul.md");
-        std::fs::write(&global_soul_file, "global soul").unwrap();
-        std::fs::write(&ops_soul_file, "ops soul").unwrap();
-        std::fs::write(&default_soul_file, "default account soul").unwrap();
-
-        fn yaml_single_quote(s: &str) -> String {
-            s.replace('\'', "''")
-        }
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
+        storage
+            .put("souls/global_soul.md", b"global soul".to_vec())
+            .await
+            .unwrap();
+        storage
+            .put("souls/ops_soul.md", b"ops soul".to_vec())
+            .await
+            .unwrap();
+        storage
+            .put(
+                "souls/default_soul.md",
+                b"default account soul".to_vec(),
+            )
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
-        config.soul_path = Some(global_soul_file.to_string_lossy().to_string());
-        config.channels = serde_yaml::from_str(&format!(
+        config.soul_path = Some("global_soul.md".to_string());
+        config.channels = serde_yaml::from_str(
             r#"telegram:
   default_account: default
   accounts:
     default:
-      soul_path: '{}'
+      soul_path: 'default_soul.md'
     ops:
-      soul_path: '{}'
+      soul_path: 'ops_soul.md'
 "#,
-            yaml_single_quote(&default_soul_file.to_string_lossy()),
-            yaml_single_quote(&ops_soul_file.to_string_lossy())
-        ))
+        )
         .unwrap();
 
-        let ops_soul = super::load_soul_content(&config, "telegram.ops", 42);
+        let ops_soul = super::load_soul_content(&config, &storage, "telegram.ops", 42).await;
         assert_eq!(ops_soul.as_deref(), Some("ops soul"));
 
-        let default_soul = super::load_soul_content(&config, "telegram", 43);
+        let default_soul = super::load_soul_content(&config, &storage, "telegram", 43).await;
         assert_eq!(default_soul.as_deref(), Some("default account soul"));
 
         let _ = std::fs::remove_dir_all(&base_dir);
     }
 
-    #[test]
-    fn test_load_soul_content_channel_account_relative_path_under_data_dir() {
+    #[tokio::test]
+    async fn test_load_soul_content_channel_account_relative_path_under_souls() {
         let base_dir =
             std::env::temp_dir().join(format!("mc_soul_channel_relative_{}", uuid::Uuid::new_v4()));
+        let storage = mchact_storage_backend::local::LocalStorage::new(base_dir.clone())
+            .await
+            .unwrap();
         let rel_name = format!("__mc_soul_{}.md", uuid::Uuid::new_v4());
         let rel_path = format!("souls/{rel_name}");
-        std::fs::create_dir_all(base_dir.join("souls")).unwrap();
-        std::fs::write(base_dir.join(&rel_path), "relative account soul").unwrap();
+        storage
+            .put(&rel_path, b"relative account soul".to_vec())
+            .await
+            .unwrap();
 
         let mut config = Config::test_defaults();
-        config.data_dir = base_dir.to_string_lossy().to_string();
         config.channels = serde_yaml::from_str(&format!(
             r#"feishu:
   default_account: main
@@ -3817,7 +3796,7 @@ mod tests {
         ))
         .unwrap();
 
-        let soul = super::load_soul_content(&config, "feishu", 99);
+        let soul = super::load_soul_content(&config, &storage, "feishu", 99).await;
         assert_eq!(soul.as_deref(), Some("relative account soul"));
 
         let _ = std::fs::remove_dir_all(&base_dir);

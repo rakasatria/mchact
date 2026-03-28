@@ -1,24 +1,23 @@
 use async_trait::async_trait;
 use serde_json::json;
-use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 
 use mchact_core::llm_types::ToolDefinition;
-use mchact_tools::todo_store::{format_todos, read_todos, write_todos, TodoItem};
+use mchact_storage_backend::ObjectStorage;
+use mchact_tools::todo_store::{format_todos, read_todos_async, write_todos_async, TodoItem};
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};
 
 // --- TodoReadTool ---
 
 pub struct TodoReadTool {
-    groups_dir: PathBuf,
+    storage: Arc<dyn ObjectStorage>,
 }
 
 impl TodoReadTool {
-    pub fn new(data_dir: &str) -> Self {
-        TodoReadTool {
-            groups_dir: PathBuf::from(data_dir).join("groups"),
-        }
+    pub fn new(storage: Arc<dyn ObjectStorage>) -> Self {
+        TodoReadTool { storage }
     }
 }
 
@@ -62,7 +61,7 @@ impl Tool for TodoReadTool {
 
         let channel = todo_channel_from_input(&input);
         info!("Reading todo list for chat {}", chat_id);
-        let todos = read_todos(&self.groups_dir, &channel, chat_id);
+        let todos = read_todos_async(self.storage.as_ref(), &channel, chat_id).await;
         ToolResult::success(format_todos(&todos))
     }
 }
@@ -70,14 +69,12 @@ impl Tool for TodoReadTool {
 // --- TodoWriteTool ---
 
 pub struct TodoWriteTool {
-    groups_dir: PathBuf,
+    storage: Arc<dyn ObjectStorage>,
 }
 
 impl TodoWriteTool {
-    pub fn new(data_dir: &str) -> Self {
-        TodoWriteTool {
-            groups_dir: PathBuf::from(data_dir).join("groups"),
-        }
+    pub fn new(storage: Arc<dyn ObjectStorage>) -> Self {
+        TodoWriteTool { storage }
     }
 }
 
@@ -144,7 +141,7 @@ impl Tool for TodoWriteTool {
         let channel = todo_channel_from_input(&input);
         info!("Writing {} todo items for chat {}", todos.len(), chat_id);
 
-        match write_todos(&self.groups_dir, &channel, chat_id, &todos) {
+        match write_todos_async(self.storage.as_ref(), &channel, chat_id, &todos).await {
             Ok(()) => ToolResult::success(format!(
                 "Todo list updated ({} tasks).\n\n{}",
                 todos.len(),
@@ -158,7 +155,9 @@ impl Tool for TodoWriteTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_tools::todo_store::format_todos;
     use serde_json::json;
+    use std::path::PathBuf;
 
     fn test_dir() -> PathBuf {
         std::env::temp_dir().join(format!("mchact_todo_test_{}", uuid::Uuid::new_v4()))
@@ -166,6 +165,10 @@ mod tests {
 
     fn cleanup(dir: &std::path::Path) {
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn test_storage(dir: &std::path::Path) -> Arc<dyn ObjectStorage> {
+        Arc::new(mchact_storage_backend::local::LocalStorage::new_sync(dir).unwrap())
     }
 
     #[test]
@@ -208,40 +211,10 @@ mod tests {
     }
 
     #[test]
-    fn test_read_todos_empty() {
-        let dir = test_dir();
-        let groups_dir = dir.join("groups");
-        let todos = read_todos(&groups_dir, "web", 123);
-        assert!(todos.is_empty());
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn test_write_and_read_todos() {
-        let dir = test_dir();
-        let groups_dir = dir.join("groups");
-        let todos = vec![
-            TodoItem {
-                task: "Step 1".into(),
-                status: "pending".into(),
-            },
-            TodoItem {
-                task: "Step 2".into(),
-                status: "pending".into(),
-            },
-        ];
-        write_todos(&groups_dir, "web", 42, &todos).unwrap();
-        let loaded = read_todos(&groups_dir, "web", 42);
-        assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].task, "Step 1");
-        assert_eq!(loaded[1].task, "Step 2");
-        cleanup(&dir);
-    }
-
-    #[test]
     fn test_todo_read_tool_name_and_definition() {
         let dir = test_dir();
-        let tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoReadTool::new(storage);
         assert_eq!(tool.name(), "todo_read");
         let def = tool.definition();
         assert_eq!(def.name, "todo_read");
@@ -252,7 +225,8 @@ mod tests {
     #[test]
     fn test_todo_write_tool_name_and_definition() {
         let dir = test_dir();
-        let tool = TodoWriteTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoWriteTool::new(storage);
         assert_eq!(tool.name(), "todo_write");
         let def = tool.definition();
         assert_eq!(def.name, "todo_write");
@@ -264,7 +238,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_read_empty() {
         let dir = test_dir();
-        let tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoReadTool::new(storage);
         let result = tool.execute(json!({"chat_id": 100})).await;
         assert!(!result.is_error);
         assert!(result.content.contains("No tasks"));
@@ -274,7 +249,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_read_missing_chat_id() {
         let dir = test_dir();
-        let tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoReadTool::new(storage);
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("Missing"));
@@ -284,8 +260,9 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_and_read() {
         let dir = test_dir();
-        let write_tool = TodoWriteTool::new(dir.to_str().unwrap());
-        let read_tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let write_tool = TodoWriteTool::new(storage.clone());
+        let read_tool = TodoReadTool::new(storage);
 
         let result = write_tool
             .execute(json!({
@@ -311,7 +288,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_missing_params() {
         let dir = test_dir();
-        let tool = TodoWriteTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoWriteTool::new(storage);
 
         let result = tool.execute(json!({})).await;
         assert!(result.is_error);
@@ -324,7 +302,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_invalid_format() {
         let dir = test_dir();
-        let tool = TodoWriteTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoWriteTool::new(storage);
         let result = tool
             .execute(json!({
                 "chat_id": 1,
@@ -339,8 +318,9 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_overwrites() {
         let dir = test_dir();
-        let write_tool = TodoWriteTool::new(dir.to_str().unwrap());
-        let read_tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let write_tool = TodoWriteTool::new(storage.clone());
+        let read_tool = TodoReadTool::new(storage);
 
         write_tool
             .execute(json!({
@@ -365,7 +345,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_read_permission_denied() {
         let dir = test_dir();
-        let tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoReadTool::new(storage);
         let result = tool
             .execute(json!({
                 "chat_id": 200,
@@ -383,7 +364,8 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_permission_denied() {
         let dir = test_dir();
-        let tool = TodoWriteTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let tool = TodoWriteTool::new(storage);
         let result = tool
             .execute(json!({
                 "chat_id": 200,
@@ -402,8 +384,9 @@ mod tests {
     #[tokio::test]
     async fn test_todo_write_and_read_allowed_for_control_chat_cross_chat() {
         let dir = test_dir();
-        let write_tool = TodoWriteTool::new(dir.to_str().unwrap());
-        let read_tool = TodoReadTool::new(dir.to_str().unwrap());
+        let storage = test_storage(&dir);
+        let write_tool = TodoWriteTool::new(storage.clone());
+        let read_tool = TodoReadTool::new(storage);
         let result = write_tool
             .execute(json!({
                 "chat_id": 200,

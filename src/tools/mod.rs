@@ -259,8 +259,8 @@ impl ToolRegistry {
                 &config.data_dir,
             )),
             Box::new(sync_skills::SyncSkillsTool::new(&skills_data_dir)),
-            Box::new(todo::TodoReadTool::new(&config.data_dir)),
-            Box::new(todo::TodoWriteTool::new(&config.data_dir)),
+            Box::new(todo::TodoReadTool::new(local_storage.clone())),
+            Box::new(todo::TodoWriteTool::new(local_storage.clone())),
             Box::new(structured_memory::StructuredMemorySearchTool::new(
                 db.clone(),
                 memory_backend.clone(),

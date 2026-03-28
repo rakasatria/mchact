@@ -169,7 +169,13 @@ pub async fn handle_chat_command(
             if messages.is_empty() {
                 return Some("No session to archive.".to_string());
             }
-            archive_conversation(&state.config.data_dir, caller_channel, chat_id, &messages);
+            archive_conversation(
+                state.media_manager.storage().as_ref(),
+                caller_channel,
+                chat_id,
+                &messages,
+            )
+            .await;
             return Some(format!("Archived {} messages.", messages.len()));
         }
         return Some("No session to archive.".to_string());
