@@ -312,6 +312,18 @@ fn default_training_environments_dir() -> String {
 fn default_training_distributions_file() -> String {
     "./training/distributions.yaml".into()
 }
+fn default_skill_nudge_enabled() -> bool {
+    true
+}
+fn default_skill_nudge_threshold_tool_calls() -> u32 {
+    10
+}
+fn default_skill_nudge_threshold_turns() -> u32 {
+    15
+}
+fn default_skill_nudge_threshold_duration_secs() -> u64 {
+    300
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClawHubConfig {
@@ -932,6 +944,16 @@ pub struct Config {
     pub training_environments_dir: String,
     #[serde(default = "default_training_distributions_file")]
     pub training_distributions_file: String,
+
+    // --- Skill nudge ---
+    #[serde(default = "default_skill_nudge_enabled")]
+    pub skill_nudge_enabled: bool,
+    #[serde(default = "default_skill_nudge_threshold_tool_calls")]
+    pub skill_nudge_threshold_tool_calls: u32,
+    #[serde(default = "default_skill_nudge_threshold_turns")]
+    pub skill_nudge_threshold_turns: u32,
+    #[serde(default = "default_skill_nudge_threshold_duration_secs")]
+    pub skill_nudge_threshold_duration_secs: u64,
 }
 
 impl Config {
@@ -1411,6 +1433,10 @@ impl Config {
             training_compress_tokenizer: default_training_compress_tokenizer(),
             training_environments_dir: default_training_environments_dir(),
             training_distributions_file: default_training_distributions_file(),
+            skill_nudge_enabled: default_skill_nudge_enabled(),
+            skill_nudge_threshold_tool_calls: default_skill_nudge_threshold_tool_calls(),
+            skill_nudge_threshold_turns: default_skill_nudge_threshold_turns(),
+            skill_nudge_threshold_duration_secs: default_skill_nudge_threshold_duration_secs(),
         }
     }
 

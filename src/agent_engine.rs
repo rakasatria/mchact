@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
 use crate::config::{
-    normalize_model_name, resolve_model_name_with_fallback, ResolvedLlmProviderProfile,
+    normalize_model_name, resolve_model_name_with_fallback, Config, ResolvedLlmProviderProfile,
 };
 use crate::hooks::HookOutcome;
 use crate::memory_service::{build_db_memory_context, maybe_handle_explicit_memory_command};
@@ -2438,11 +2438,54 @@ async fn compact_messages(
     compressor.compress(messages, summarize_fn).await
 }
 
+/// Check if last conversation exceeded skill nudge thresholds and write pending nudge file.
+pub(crate) fn maybe_write_skill_nudge(
+    config: &Config,
+    data_dir: &str,
+    tool_call_count: u32,
+    turn_count: u32,
+    duration_secs: u64,
+) {
+    if !config.skill_nudge_enabled {
+        return;
+    }
+    let exceeds = tool_call_count >= config.skill_nudge_threshold_tool_calls
+        || turn_count >= config.skill_nudge_threshold_turns
+        || duration_secs >= config.skill_nudge_threshold_duration_secs;
+    if !exceeds {
+        return;
+    }
+    let nudge = format!(
+        "\n\n[SKILL SUGGESTION] Your previous conversation was complex ({} tool calls, {} turns, {}s). \
+         If the approach you used would be valuable for future tasks, consider using create_skill to save it as a reusable skill.",
+        tool_call_count, turn_count, duration_secs
+    );
+    let nudge_path = std::path::Path::new(data_dir)
+        .join("runtime")
+        .join("skill_nudge_pending.txt");
+    let _ = std::fs::create_dir_all(nudge_path.parent().unwrap_or(std::path::Path::new(".")));
+    let _ = std::fs::write(&nudge_path, &nudge);
+}
+
+/// Read and consume pending skill nudge (returns None if no nudge pending).
+pub(crate) fn consume_skill_nudge(data_dir: &str) -> Option<String> {
+    let nudge_path = std::path::Path::new(data_dir)
+        .join("runtime")
+        .join("skill_nudge_pending.txt");
+    let content = std::fs::read_to_string(&nudge_path).ok()?;
+    let _ = std::fs::remove_file(&nudge_path);
+    if content.trim().is_empty() {
+        None
+    } else {
+        Some(content)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_db_memory_context, history_to_claude_messages, process_with_agent, strip_thinking,
-        AgentRequestContext,
+        build_db_memory_context, consume_skill_nudge, history_to_claude_messages,
+        maybe_write_skill_nudge, process_with_agent, strip_thinking, AgentRequestContext,
     };
     use crate::config::{Config, WorkingDirIsolation};
     use crate::llm::LlmProvider;
@@ -3804,5 +3847,51 @@ timeout_ms: 1000
         );
 
         let _ = std::fs::remove_dir_all(&base_dir);
+    }
+
+    #[test]
+    fn test_maybe_write_skill_nudge_writes_when_threshold_exceeded() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        let config = Config::test_defaults();
+        // Default threshold is 10 tool calls
+        maybe_write_skill_nudge(&config, &dir.to_string_lossy(), 15, 5, 60);
+        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
+        assert!(nudge_path.exists());
+        let content = std::fs::read_to_string(&nudge_path).unwrap();
+        assert!(content.contains("[SKILL SUGGESTION]"));
+        assert!(content.contains("15 tool calls"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_maybe_write_skill_nudge_skips_when_below_threshold() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_skip_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        let config = Config::test_defaults();
+        maybe_write_skill_nudge(&config, &dir.to_string_lossy(), 3, 5, 60);
+        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
+        assert!(!nudge_path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_consume_skill_nudge() {
+        let dir = std::env::temp_dir()
+            .join(format!("mchact_nudge_consume_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+        let nudge_path = dir.join("runtime/skill_nudge_pending.txt");
+        std::fs::write(&nudge_path, "test nudge").unwrap();
+
+        let result = consume_skill_nudge(&dir.to_string_lossy());
+        assert_eq!(result, Some("test nudge".to_string()));
+        assert!(!nudge_path.exists()); // consumed = deleted
+
+        let result2 = consume_skill_nudge(&dir.to_string_lossy());
+        assert!(result2.is_none()); // already consumed
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

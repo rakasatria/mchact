@@ -114,6 +114,10 @@ fn minimal_config() -> Config {
         training_compress_tokenizer: "moonshotai/Kimi-K2-Thinking".into(),
         training_environments_dir: "./training/environments".into(),
         training_distributions_file: "./training/distributions.yaml".into(),
+        skill_nudge_enabled: true,
+        skill_nudge_threshold_tool_calls: 10,
+        skill_nudge_threshold_turns: 15,
+        skill_nudge_threshold_duration_secs: 300,
     }
 }
 
