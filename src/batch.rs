@@ -195,9 +195,11 @@ pub fn load_checkpoint_via_storage(
     run_id: &str,
 ) -> Option<Checkpoint> {
     let key = format!("batch/{run_id}/checkpoint.json");
-    let bytes = tokio::runtime::Handle::current()
-        .block_on(async { storage.get(&key).await })
-        .ok()?;
+    let handle = tokio::runtime::Handle::current();
+    let bytes = tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.get(&key).await })
+    })
+    .ok()?;
     serde_json::from_slice(&bytes)
         .map_err(|e| eprintln!("  [checkpoint] parse error: {e}"))
         .ok()
@@ -225,9 +227,11 @@ pub fn save_checkpoint_via_storage(
     let key = format!("batch/{run_id}/checkpoint.json");
     let json = serde_json::to_string_pretty(checkpoint)
         .map_err(|e| format!("failed to serialize checkpoint: {e}"))?;
-    tokio::runtime::Handle::current()
-        .block_on(async { storage.put(&key, json.into_bytes()).await })
-        .map_err(|e| format!("failed to write checkpoint '{}': {e}", key))
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.put(&key, json.into_bytes()).await })
+    })
+    .map_err(|e| format!("failed to write checkpoint '{}': {e}", key))
 }
 
 // ---------------------------------------------------------------------------
@@ -386,8 +390,10 @@ pub fn combine_batches_via_storage(
     let trajectories_path = output_dir.join("trajectories.jsonl");
     if let Ok(content) = std::fs::read_to_string(&trajectories_path) {
         let key = format!("batch/{run_id}/trajectories.jsonl");
-        let _ = tokio::runtime::Handle::current()
-            .block_on(async { storage.put(&key, content.into_bytes()).await });
+        let handle = tokio::runtime::Handle::current();
+        let _ = tokio::task::block_in_place(|| {
+            handle.block_on(async { storage.put(&key, content.into_bytes()).await })
+        });
     }
     Ok(result)
 }

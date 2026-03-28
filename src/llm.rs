@@ -2479,7 +2479,6 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -3626,7 +3625,9 @@ mod tests {
         let prev_codex_home = std::env::var("CODEX_HOME").ok();
         std::env::set_var("OPENAI_CODEX_ACCESS_TOKEN", "oauth-token");
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let Some(listener) = crate::test_support::bind_test_tcp_listener() else {
+            return;
+        };
         let addr = listener.local_addr().unwrap();
         let codex_home = std::env::temp_dir().join(format!(
             "mchact-codex-home-oauth-{}",
@@ -3748,7 +3749,9 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&auth_dir).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let Some(listener) = crate::test_support::bind_test_tcp_listener() else {
+            return;
+        };
         let addr = listener.local_addr().unwrap();
         std::fs::write(
             auth_dir.join("auth.json"),

@@ -44,5 +44,5 @@ Typical cases:
 ## Related docs
 
 - `README.md`
-- `website/docs/acp.md`
-- `website/docs/testing.md`
+- `ARCHITECTURE.md`
+- `docs/rfcs/0005-subagents-runtime-v1.md`

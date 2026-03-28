@@ -896,7 +896,6 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
     use std::sync::mpsc;
     use std::sync::Arc;
     use std::time::Duration;
@@ -1353,7 +1352,9 @@ channels:
 
     #[tokio::test]
     async fn models_command_uses_live_models_when_placeholder_profile() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let Some(listener) = crate::test_support::bind_test_tcp_listener() else {
+            return;
+        };
         let addr = listener.local_addr().unwrap();
         let (path_tx, path_rx) = mpsc::channel::<String>();
         let server = std::thread::spawn(move || {
@@ -1412,7 +1413,9 @@ channels:
 
     #[tokio::test]
     async fn model_command_validates_against_live_models_for_placeholder_profile() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let Some(listener) = crate::test_support::bind_test_tcp_listener() else {
+            return;
+        };
         let addr = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
             for _ in 0..2 {

@@ -29,14 +29,16 @@ function writeIfChanged(file, content) {
 }
 
 function parseBuiltinTools() {
-  const toolsDir = path.join(ROOT, 'src/tools');
-  const files = fs
-    .readdirSync(toolsDir)
-    .filter((f) => f.endsWith('.rs'))
-    .map((f) => path.join(toolsDir, f));
+  const sourceFiles = [
+    ...fs
+      .readdirSync(path.join(ROOT, 'src/tools'))
+      .filter((f) => f.endsWith('.rs'))
+      .map((f) => path.join(ROOT, 'src/tools', f)),
+    path.join(ROOT, 'src/clawhub/tools.rs'),
+  ].filter((file) => fs.existsSync(file));
   const names = new Set();
   const re = /fn\s+name\s*\(\s*&self\s*\)\s*->\s*&str\s*\{\s*"([^"]+)"\s*\}/g;
-  for (const file of files) {
+  for (const file of sourceFiles) {
     const text = fs.readFileSync(file, 'utf8');
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -195,6 +197,7 @@ function withWebsiteFrontmatter(id, title, body) {
 function main() {
   const checkOnly = process.argv.includes('--check');
   const skipWebsite = process.argv.includes('--no-website');
+  const websiteDocsDir = path.join(ROOT, 'website', 'docs');
 
   const tools = parseBuiltinTools();
   const configDefaults = parseConfigDefaults();
@@ -242,7 +245,10 @@ function main() {
     },
   ];
 
-  const outputs = skipWebsite ? rootOutputs : [...rootOutputs, ...websiteOutputs];
+  const outputs =
+    skipWebsite || !fs.existsSync(websiteDocsDir)
+      ? rootOutputs
+      : [...rootOutputs, ...websiteOutputs];
 
   let changed = 0;
   for (const out of outputs) {

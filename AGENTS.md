@@ -2,165 +2,194 @@
 
 ## Project overview
 
-mchact is a Rust multi-channel agent runtime for Telegram, Discord, and Web.
-It shares one channel-agnostic agent loop (`src/agent_engine.rs`) and one provider-agnostic LLM layer (`src/llm.rs`), with channel adapters for ingress/egress.
+mchact is a Rust multi-channel agent runtime with one shared agent loop and one provider-agnostic LLM layer. The same core runtime serves the local web UI/API plus chat adapters including Telegram, Discord, Slack, Feishu/Lark, Matrix, WhatsApp, Weixin, Signal, IRC, Nostr, QQ, DingTalk, iMessage, and email.
 
 Core capabilities:
-- Tool-using chat agent loop (multi-step tool calls)
-- Session resume and context compaction
-- Scheduled tasks + background scheduler
-- File memory (`AGENTS.md`) + structured SQLite memory
-- Memory reflector, quality gate, and observability metrics
-- Skills + MCP tool federation
-- ClawHub skill registry integration (search/install/lockfile)
+- Tool-using chat agent loop with multi-step tool execution
+- Session resume, compaction, and persisted per-session settings
+- File memory plus structured memory with reflection and observability
+- Scheduled tasks, DLQ replay, and background scheduler jobs
+- Skills, plugins, MCP tool federation, and ClawHub skill install/search
+- Web operator UI with auth, API keys, audit, metrics, and streaming
+- A2A HTTP integration and ACP server / ACP-backed subagents
+- Knowledge collections, media handling, batch/export/train/RL workflows
 
 ## Tech stack
 
-- Language: Rust (edition 2021)
-- CLI args: clap
-- Async runtime: Tokio
-- Telegram: teloxide
-- Discord: serenity
-- Web API/UI: axum + React (in `web/`)
-- Database: SQLite (rusqlite)
-- LLM runtime: provider abstraction with native Anthropic and OpenAI-compatible providers
+- Language: Rust 2021
+- Toolchain: Rust `1.93.1`
+- CLI: `clap`
+- Async runtime: `tokio`
+- Web server/API: `axum`
+- Web UI: React + Vite + TypeScript in `web/`
+- Database: SQLite by default via `rusqlite`, optional Postgres feature
+- Object storage: local disk, optional S3 / Azure / GCS backends
+- LLM runtime: native Anthropic plus OpenAI-compatible providers
+- MCP: `rmcp`
+- ACP: `agent-client-protocol`
+- Telegram: `teloxide`
+- Discord: `serenity`
+- Matrix: `matrix-sdk`
 
 ## Source index (`src/` + `crates/`)
 
 Main orchestration files in `src/`:
-- `main.rs`: CLI entry (`start`, `setup`, etc.)
-- `runtime.rs`: app wiring (`AppState`), provider/tool initialization, channel boot
-- `agent_engine.rs`: shared agent loop (`process_with_agent`), explicit-memory fast path, compaction, tool loop
-- `hooks.rs`: hooks discovery/runtime/CLI (`hooks list/info/enable/disable`)
-- `llm.rs`: provider implementations + stream handling + format translation
-- `otlp.rs`: OTLP metrics exporter (HTTP/protobuf)
-- `web.rs`: Web API router, shared web state, stream APIs, config endpoints
-- `web/auth.rs`: auth handlers (session login/logout, password, API key lifecycle)
-- `web/config.rs`: config read/update + config self-check handlers
-- `web/sessions.rs`: session/history/reset/delete/fork/tree handlers
-- `web/metrics.rs`: metrics snapshot/history handlers
-- `web/stream.rs`: streaming send/status/SSE handlers
-- `scheduler.rs`: scheduled-task runner + memory reflector loop
-- `skills.rs`: skill discovery/activation
-- `mcp.rs`: MCP server/tool integration
-- `gateway.rs`: event stream / request lifecycle infra
-- `setup.rs`: interactive setup wizard and provider presets
-- `doctor.rs`: environment diagnostics
-- `channels/*.rs`: concrete channel adapters (Telegram/Discord/Slack/Feishu)
+- `main.rs`: CLI entry and command routing (`start`, `setup`, `doctor`, `gateway`, `skill`, `hooks`, `acp`, `knowledge`, `train`, `batch`, `export`, `rl`)
+- `runtime.rs`: builds `AppState`, wires storage, providers, tools, hooks, channels, media, observability
+- `agent_engine.rs`: shared agent loop, prompt assembly, memory injection, compaction, tool loop, persistence
+- `config.rs`: config schema, defaults, normalization, compatibility migration, path resolution
+- `llm.rs`: provider implementations, streaming, format translation, provider-specific compatibility logic
+- `scheduler.rs`: scheduled tasks, reflector/background job loop
+- `memory_backend.rs`: structured memory provider abstraction with local + MCP-backed fallback path
+- `memory_service.rs`: memory extraction/injection logic and explicit remember flow
+- `knowledge.rs`: knowledge collections, chunking, query helpers
+- `knowledge_scheduler.rs`: embedding / observation / autogroup background processing
+- `hooks.rs`: hook discovery, runtime execution, CLI management
+- `skills.rs`: skill discovery, availability filtering, enable/disable handling
+- `mcp.rs`: MCP server config, connection management, retries, circuit breaker, bulkhead, cache
+- `plugins.rs`: manifest-driven plugin commands, tools, and context providers
+- `gateway.rs`: gateway/service lifecycle and bridge RPC support
+- `acp.rs`: ACP server mode over stdio
+- `acp_subagent.rs`: ACP-backed subagent runtime
+- `a2a.rs`: local A2A agent card and peer config
+- `chat_commands.rs`: in-chat slash-style command handling and persisted overrides
+- `web.rs`: Axum router, embedded SPA, auth bootstrap, SSE/WS/run hubs
+- `web/*.rs`: web auth, middleware, sessions, config, metrics, MCP, stream, skills, ws helpers
+- `channels/*.rs`: concrete adapters for Telegram, Discord, Slack, Feishu, Matrix, WhatsApp, Weixin, Signal, IRC, Nostr, QQ, DingTalk, iMessage, email
 - `tools/*.rs`: built-in tool implementations and registry assembly
+- `clawhub/*.rs`: runtime-side ClawHub CLI/service/tool wrappers
+- `batch.rs`, `batch_worker.rs`, `export.rs`, `rl.rs`, `train_pipeline.rs`: offline generation/export/training flows
 
-Modularized crates in `crates/`:
-- `mchact-core`: shared error/types/text (`error`, `llm_types`, `text`)
-- `mchact-storage`: SQLite DB, memory domain, usage report assembly
-- `mchact-tools`: tool runtime primitives, sandbox, path guards, web/todo helpers
-- `mchact-channels`: channel abstractions (`channel`, `channel_adapter`, delivery boundary)
-- `mchact-app`: app-level support modules (logging, builtin skills, transcribe)
+Workspace crates in `crates/`:
+- `mchact-core`: shared errors, text helpers, LLM/tool data types
+- `mchact-storage`: DB traits, schema, migrations, query helpers, SQLite/Postgres support
+- `mchact-storage-backend`: object storage abstraction for local/cloud file payloads
+- `mchact-tools`: tool runtime primitives, auth context, sandbox, path guards, web/todo helpers
+- `mchact-channels`: channel abstractions and delivery/routing helpers
+- `mchact-app`: logging, built-in skills, transcription support
+- `mchact-memory`: observation store, derivation, injection, search
+- `mchact-media`: STT/TTS/image/video/document provider routing
+- `mchact-observability`: OTLP metrics/traces/logs exporters and adapters
+- `mchact-clawhub`: ClawHub registry client, installer, lockfile logic
 
 ## Tool system
 
-`src/tools/mod.rs` assembles built-in tools, while shared runtime primitives live in `mchact-tools::runtime`:
+`src/tools/mod.rs` assembles the built-in registry, while shared runtime primitives live in `mchact-tools::runtime`:
 - `Tool` trait (`name`, `definition`, `execute`)
-- `ToolRegistry` dispatch and auth context injection
-- risk/approval gate for high-risk tools in sensitive contexts
+- `ToolRegistry` dispatch, auth-context injection, working-dir resolution
+- approval/risk gate for high-risk tools
+- sandbox routing and path guard enforcement
 
-Current built-in tools are generated from code to avoid drift:
+Built-in tool docs are generated from code:
 - `docs/generated/tools.md`
-- `website/docs/generated-tools.md`
 
 Regenerate docs artifacts with:
 ```sh
 node scripts/generate_docs_artifacts.mjs
 ```
 
-## Skills Storage
+## Skills storage
 
-- Default skills dir: `<data_dir>/skills` (default `data_dir` is `~/.mchact`)
-- Config override: `skills_dir` in `mchact.config.yaml` (e.g. `~/.mchact/skills`)
-- Compatibility policy: existing configured `data_dir` / `skills_dir` / `working_dir` keep working; new defaults apply only when unset
-- ClawHub lockfile: `~/.mchact/clawhub.lock.json`
+- Default skills dir: `<data_dir>/skills`
+- Config override: `skills_dir` in `mchact.config.yaml`
+- Env override: `MCHACT_SKILLS_DIR`
+- Built-in/runtime skills can also be backed by object storage
+- ClawHub lockfile path: `<data_dir>/clawhub.lock.json`
 
 ## Agent loop (high level)
 
-`process_with_agent` flow:
-1. Optional explicit-memory fast path (`remember ...`/`记住...`) writes structured memory directly
-2. Load resumable session from `sessions`, or rebuild from chat history
-3. Build system prompt from file memory + structured memory context + skills catalog
-4. Compact old context if session exceeds limits
-5. Call provider with tool schemas
-6. If `tool_use`: execute tool(s), append results, loop
-7. If `end_turn`: persist session and return text
+`process_with_agent` / `process_with_agent_with_events` flow:
+1. Optional explicit-memory fast path handles direct remember commands
+2. Load resumable session, or rebuild from persisted message history
+3. Build system prompt from soul/file memory, structured memory, skills, plugins, and runtime context
+4. Compact old context if session limits are exceeded
+5. Call the configured provider with tool schemas
+6. If the model returns tool calls, execute them through `ToolRegistry`
+7. Append tool results and continue until `end_turn`
+8. Persist session/message state and deliver or stream the final reply
 
 ## Memory architecture
 
-Two layers:
+Two primary layers:
 
-1. File memory:
-- Global: `runtime/groups/AGENTS.md`
-- Chat: `runtime/groups/{chat_id}/AGENTS.md`
+1. File memory
+- Global: runtime-scoped `AGENTS.md` file memory
+- Chat-scoped memory files under the runtime data tree
 
-2. Structured memory (`memories` table):
-- category, confidence, source, last_seen, archived lifecycle
+2. Structured memory
+- `memories` table with category, confidence, source, timestamps, archive/supersede lifecycle
 - explicit remember fast path
 - reflector extraction from conversation history
-- dedup/supersede handling with `memory_supersede_edges`
+- dedup/supersede handling and injection logging
 
-Observability tables:
-- `memory_reflector_runs`
-- `memory_injection_logs`
+Related observability surfaces:
+- `/api/usage`
+- `/api/memory_observability`
+- web usage/metrics views
 
-Surfaces:
-- `/api/usage` summary block
-- `/api/memory_observability` time-window series API
-- Web Usage Panel trends/cards
+## Database and storage
 
-## Database
+`mchact-storage` owns:
+- schema creation and migrations
+- chats, messages, sessions, session settings
+- scheduled tasks, DLQ/history
+- structured memory
+- auth passwords, auth sessions, API keys
+- audit logs
+- metrics history
+- knowledge metadata and access control
 
-`mchact-storage::db` includes:
-- schema creation + schema-version migrations (`db_meta`, `schema_migrations`)
-- chat/message/session/task persistence
-- structured memory CRUD + archive/supersede
-- auth/session/api-key persistence (scopes, expiry, rotation)
-- audit log persistence (`audit_logs`)
-- usage and memory observability queries
-- metrics history persistence (`metrics_history`)
+Object/file payloads are handled separately through `mchact-storage-backend`:
+- memory files
+- media/uploads/generated assets
+- exports and archives
+- runtime skill/state files
 
 ## Web/API
 
-`web.rs` routes include:
-- chat send/send_stream + SSE stream replay
-- auth APIs (`/api/auth/*`) with session cookie + API key scopes
+`web.rs` and `src/web/*` expose:
+- send / send_stream and SSE replay
+- auth APIs (`/api/auth/*`) with operator password, session cookie, API key scopes
 - sessions/history/reset/delete/fork/tree
-- config read/update + self-check (`/api/config/self_check`)
-- audit query (`/api/audit`)
-- metrics APIs (`/api/metrics`, `/api/metrics/summary`, `/api/metrics/history`)
-- usage text report (`/api/usage`)
-- memory observability series (`/api/memory_observability`)
+- config read/update and self-check
+- metrics snapshot/summary/history
+- usage report
+- memory observability series
+- A2A endpoints
+- websocket bridge / Mission Control-compatible session methods
+
+Auth model:
+- operator password hash in DB
+- `mc_session` and `mc_csrf` cookies for browser sessions
+- scoped API keys: `operator.read`, `operator.write`, `operator.admin`, `operator.approvals`
+- bootstrap token fallback if first-time password setup cannot be stored normally
 
 ## Hooks
 
 Hook assets and spec:
-- runtime hook dirs: `hooks/<name>/HOOK.md`
-- hook spec doc: `docs/hooks/HOOK.md`
-- sample hooks: `hooks/block-bash/`, `hooks/redact-tool-output/`
+- hook dirs: `hooks/<name>/HOOK.md`
+- spec doc: `docs/hooks/HOOK.md`
+- sample hooks: `hooks/block-bash/`, `hooks/block-global-memory/`, `hooks/filter-global-structured-memory/`, `hooks/redact-tool-output/`
 
 Hook runtime supports:
 - events: `BeforeLLMCall`, `BeforeToolCall`, `AfterToolCall`
-- outcomes: `allow`, `block`, `modify` (structured fields only)
+- outcomes: `allow`, `block`, `modify`
 
 ## ClawHub
 
-- local doc: `docs/clawhub/overview.md`
-- web doc: `website/docs/clawhub.md`
+- doc: `docs/clawhub/overview.md`
+- CLI: `mchact skill search|install|list|inspect|available`
+- agent tools: `clawhub_search`, `clawhub_install` when `clawhub_agent_tools_enabled` is true
 
-## Observability Docs
+## Observability docs
 
 - metrics docs: `docs/observability/metrics.md`
-- operations runbook: `docs/operations/runbook.md`
-- PR/release checklist: `docs/releases/pr-release-checklist.md`
+- observability architecture: `docs/observability/architecture.md`
+- runbook: `docs/operations/runbook.md`
+- release checklist: `docs/releases/pr-release-checklist.md`
 - upgrade guide: `docs/releases/upgrade-guide.md`
-- regression/stability reports: `docs/reports/*.md`
 
-OTLP exporter supports bounded queue + retry backoff tuning:
+OTLP-related queue/retry tuning includes:
 - `otlp_queue_capacity`
 - `otlp_retry_max_attempts`
 - `otlp_retry_base_ms`
@@ -172,14 +201,19 @@ OTLP exporter supports bounded queue + retry backoff tuning:
 cargo build
 cargo test
 npm --prefix web run build
-npm --prefix website run build
 ```
 
-Docs drift guard (CI + local):
+Docs drift guard:
 ```sh
 node scripts/generate_docs_artifacts.mjs --check
 ```
 
+Repo-local validation shortcut:
+```sh
+zsh check.sh
+```
+
 ## Collaboration conventions
 
-- For the separate `website` repository (`mchact.github.io`), do not open a PR by default; commit/push directly unless explicitly requested otherwise.
+- Treat the live source tree as authoritative; keep this file in sync when major modules, docs paths, or validation commands change.
+- Do not assume a separate `website/` repo exists; the current frontend/docs surface in this repo is `web/` plus `docs/`.

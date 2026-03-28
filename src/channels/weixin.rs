@@ -621,9 +621,11 @@ fn load_account_data_via_storage(
     local_account_key: &str,
 ) -> Option<StoredWeixinAccount> {
     let key = weixin_account_storage_key(local_account_key);
-    let bytes = tokio::runtime::Handle::current()
-        .block_on(async { storage.get(&key).await })
-        .ok()?;
+    let handle = tokio::runtime::Handle::current();
+    let bytes = tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.get(&key).await })
+    })
+    .ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
@@ -657,9 +659,11 @@ fn save_account_data_via_storage(
     let raw = serde_json::to_string_pretty(account)
         .map_err(|e| format!("Failed to serialize Weixin account state: {e}"))?;
     let key = weixin_account_storage_key(local_account_key);
-    tokio::runtime::Handle::current()
-        .block_on(async { storage.put(&key, raw.into_bytes()).await })
-        .map_err(|e| format!("Failed to write Weixin account state: {e}"))
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.put(&key, raw.into_bytes()).await })
+    })
+    .map_err(|e| format!("Failed to write Weixin account state: {e}"))
 }
 
 fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(), String> {
@@ -683,11 +687,13 @@ fn delete_account_data_via_storage(
 ) -> Result<(), String> {
     let account_key = weixin_account_storage_key(local_account_key);
     let sync_key = weixin_sync_buf_storage_key(local_account_key);
-    tokio::runtime::Handle::current()
-        .block_on(async {
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(async {
             let _ = storage.delete(&account_key).await;
             let _ = storage.delete(&sync_key).await;
-        });
+        })
+    });
     Ok(())
 }
 
@@ -701,11 +707,13 @@ fn load_sync_buf_via_storage(
     local_account_key: &str,
 ) -> String {
     let key = weixin_sync_buf_storage_key(local_account_key);
-    tokio::runtime::Handle::current()
-        .block_on(async { storage.get(&key).await })
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_default()
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.get(&key).await })
+    })
+    .ok()
+    .and_then(|bytes| String::from_utf8(bytes).ok())
+    .unwrap_or_default()
 }
 
 fn save_sync_buf(
@@ -729,9 +737,11 @@ fn save_sync_buf_via_storage(
     get_updates_buf: &str,
 ) -> Result<(), String> {
     let key = weixin_sync_buf_storage_key(local_account_key);
-    tokio::runtime::Handle::current()
-        .block_on(async { storage.put(&key, get_updates_buf.as_bytes().to_vec()).await })
-        .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(async { storage.put(&key, get_updates_buf.as_bytes().to_vec()).await })
+    })
+    .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
 }
 
 fn stored_account_exists(state_root: &Path, local_account_key: &str) -> bool {
@@ -3009,13 +3019,13 @@ mod tests {
         crate::media_manager::MediaManager::new(storage, db)
     }
 
-    async fn spawn_test_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn spawn_test_server(app: Router) -> Option<(SocketAddr, tokio::task::JoinHandle<()>)> {
+        let listener = crate::test_support::bind_test_tokio_listener().await?;
         let addr = listener.local_addr().unwrap();
         let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        (addr, handle)
+        Some((addr, handle))
     }
 
     #[test]
@@ -3260,7 +3270,9 @@ weixin:
                 async move { response_body }
             }),
         );
-        let (addr, handle) = spawn_test_server(app).await;
+        let Some((addr, handle)) = spawn_test_server(app).await else {
+            return;
+        };
 
         let root = unique_temp_dir();
         let mut cfg = Config::test_defaults();
@@ -3327,7 +3339,9 @@ weixin:
                 async move { response_body }
             }),
         );
-        let (addr, handle) = spawn_test_server(app).await;
+        let Some((addr, handle)) = spawn_test_server(app).await else {
+            return;
+        };
 
         let root = unique_temp_dir();
         let mut cfg = Config::test_defaults();

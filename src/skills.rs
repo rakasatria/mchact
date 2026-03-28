@@ -388,8 +388,10 @@ impl SkillManager {
     fn read_state_file(&self) -> HashMap<String, bool> {
         if let Some(storage) = self.storage.as_ref() {
             let storage = storage.clone();
-            let result = tokio::runtime::Handle::current()
-                .block_on(async move { storage.get("state/skills_state.json").await });
+            let handle = tokio::runtime::Handle::current();
+            let result = tokio::task::block_in_place(|| {
+                handle.block_on(async move { storage.get("state/skills_state.json").await })
+            });
             return match result {
                 Ok(bytes) => {
                     let raw = String::from_utf8_lossy(&bytes);
@@ -415,9 +417,11 @@ impl SkillManager {
         if let Some(storage) = self.storage.as_ref() {
             let storage = storage.clone();
             let data = body.into_bytes();
-            return tokio::runtime::Handle::current()
-                .block_on(async move { storage.put("state/skills_state.json", data).await })
-                .map_err(|e| e.to_string());
+            let handle = tokio::runtime::Handle::current();
+            return tokio::task::block_in_place(|| {
+                handle.block_on(async move { storage.put("state/skills_state.json", data).await })
+            })
+            .map_err(|e| e.to_string());
         }
         let Some(path) = self.state_file.as_ref() else {
             return Err("Skill state is not configured for this runtime.".to_string());

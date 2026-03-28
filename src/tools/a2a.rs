@@ -230,7 +230,6 @@ mod tests {
     use super::*;
     use axum::{extract::State, routing::post, Json, Router};
     use serde_json::Value;
-    use tokio::net::TcpListener;
 
     #[tokio::test]
     async fn test_a2a_list_peers_returns_enabled_peers() {
@@ -276,7 +275,9 @@ mod tests {
             })
         }
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let Some(listener) = crate::test_support::bind_test_tokio_listener().await else {
+            return;
+        };
         let addr = listener.local_addr().unwrap();
         let app = Router::new()
             .route(A2A_MESSAGE_PATH, post(handler))

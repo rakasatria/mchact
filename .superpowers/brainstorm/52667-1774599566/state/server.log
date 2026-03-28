@@ -1,8 +1,0 @@
-{"type":"server-started","port":51330,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:51330","screen_dir":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content","state_dir":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/state"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/approaches.html"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/unified-layer.html"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/detailed-flows.html"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/unified-dual.html"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/three-way-comparison.html"}
-{"type":"screen-added","file":"/Users/raka/Codes/Local/mchact/.superpowers/brainstorm/52667-1774599566/content/waiting.html"}
-{"type":"server-stopped","reason":"idle timeout"}

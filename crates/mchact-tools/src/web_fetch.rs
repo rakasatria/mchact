@@ -795,7 +795,14 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_blocks_redirect_to_denylisted_host() {
-        let final_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let final_listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping test: loopback bind not permitted in this environment");
+                return;
+            }
+            Err(err) => panic!("failed to bind test TCP listener: {err}"),
+        };
         let final_addr = final_listener.local_addr().unwrap();
         let final_hit = Arc::new(AtomicBool::new(false));
         let final_hit_clone = final_hit.clone();
@@ -814,7 +821,14 @@ mod tests {
             }
         });
 
-        let redirect_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect_listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping test: loopback bind not permitted in this environment");
+                return;
+            }
+            Err(err) => panic!("failed to bind test TCP listener: {err}"),
+        };
         let redirect_addr = redirect_listener.local_addr().unwrap();
         let redirect_server = tokio::spawn(async move {
             let (mut stream, _) = redirect_listener.accept().await.unwrap();
