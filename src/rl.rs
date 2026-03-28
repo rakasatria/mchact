@@ -319,6 +319,284 @@ pub async fn fetch_wandb_metrics(
 }
 
 // ---------------------------------------------------------------------------
+// Run Supervisor
+// ---------------------------------------------------------------------------
+
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// Live state for a single RL training run, including OS-level child processes.
+pub struct RlRun {
+    pub info: RlRunInfo,
+    pub processes: Vec<Child>,
+    pub start_instant: Instant,
+    pub last_status_check: Option<Instant>,
+}
+
+/// Thread-safe manager that tracks all active and historical RL training runs.
+pub struct RlRunManager {
+    runs: Mutex<HashMap<String, RlRun>>,
+}
+
+impl RlRunManager {
+    pub fn new() -> Self {
+        Self {
+            runs: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Return a clone of `RlRunInfo` for the given run, or `None` if not found.
+    pub fn get_run_info(&self, run_id: &str) -> Option<RlRunInfo> {
+        let runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        runs.get(run_id).map(|r| r.info.clone())
+    }
+
+    /// Return cloned `RlRunInfo` for all tracked runs.
+    pub fn list_runs(&self) -> Vec<RlRunInfo> {
+        let runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        runs.values().map(|r| r.info.clone()).collect()
+    }
+
+    /// Update the status (and optional error message) of an existing run.
+    pub fn update_status(&self, run_id: &str, status: RlRunStatus, error: Option<String>) {
+        let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(run) = runs.get_mut(run_id) {
+            run.info.status = status;
+            run.info.error_message = error;
+        }
+    }
+
+    /// Return `true` if the run has never had its status checked, or if at
+    /// least `MIN_STATUS_CHECK_INTERVAL_SECS` seconds have elapsed since the
+    /// last check.
+    pub fn can_check_status(&self, run_id: &str) -> bool {
+        let runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(run) = runs.get(run_id) else {
+            return false;
+        };
+        match run.last_status_check {
+            None => true,
+            Some(t) => t.elapsed() >= Duration::from_secs(MIN_STATUS_CHECK_INTERVAL_SECS),
+        }
+    }
+
+    /// Record the current instant as the time of the most recent status check.
+    pub fn mark_status_checked(&self, run_id: &str) {
+        let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(run) = runs.get_mut(run_id) {
+            run.last_status_check = Some(Instant::now());
+        }
+    }
+
+    /// Return elapsed wall-clock time in minutes since the run was created.
+    /// Returns `0.0` if the run does not exist.
+    pub fn running_time_minutes(&self, run_id: &str) -> f64 {
+        let runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        match runs.get(run_id) {
+            Some(run) => run.start_instant.elapsed().as_secs_f64() / 60.0,
+            None => 0.0,
+        }
+    }
+
+    /// Spawn the three training processes for a new run.
+    ///
+    /// Steps:
+    /// 1. Write merged config YAML to `training_dir/run_{id}_config.yaml`.
+    /// 2. Insert a `Starting` run record.
+    /// 3. Spawn `run-api` (Process 1), wait 5 s, verify it is alive.
+    /// 4. Spawn `python3 launch_training.py --config <path>` (Process 2), wait 30 s.
+    /// 5. Spawn `python3 <env_file> serve --config <path>` (Process 3).
+    /// 6. Transition run to `Running`.
+    pub fn start_run(
+        &self,
+        run_id: &str,
+        environment: &EnvironmentInfo,
+        config: Value,
+        wandb_run_name: Option<String>,
+        training_dir: &Path,
+    ) -> Result<(), String> {
+        // 1. Write config YAML to disk
+        let config_filename = format!("run_{run_id}_config.yaml");
+        let config_path = training_dir.join(&config_filename);
+        let yaml_str = serde_yaml::to_string(&config)
+            .map_err(|e| format!("failed to serialize config: {e}"))?;
+        fs::write(&config_path, &yaml_str)
+            .map_err(|e| format!("failed to write config file: {e}"))?;
+
+        // 2. Insert Starting run record
+        let now_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let info = RlRunInfo {
+            run_id: run_id.to_string(),
+            environment: environment.name.clone(),
+            status: RlRunStatus::Starting,
+            error_message: None,
+            wandb_project: None,
+            wandb_run_name,
+            start_time_epoch: now_epoch,
+            config: config.clone(),
+        };
+
+        let run = RlRun {
+            info,
+            processes: Vec::new(),
+            start_instant: Instant::now(),
+            last_status_check: None,
+        };
+
+        {
+            let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+            runs.insert(run_id.to_string(), run);
+        }
+
+        // 3. Spawn Process 1: run-api
+        let mut api_proc = Command::new("run-api")
+            .current_dir(training_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("failed to spawn run-api: {e}"))?;
+
+        // Wait 5 seconds then verify alive
+        std::thread::sleep(Duration::from_secs(5));
+        match api_proc.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "run-api exited unexpectedly after 5 s (status: {status})"
+                ));
+            }
+            Err(e) => return Err(format!("failed to check run-api status: {e}")),
+            Ok(None) => {} // still running — good
+        }
+
+        // 4. Spawn Process 2: python3 launch_training.py --config <path>
+        let tinker_api_key = std::env::var("TINKER_API_KEY").unwrap_or_default();
+        let trainer_proc = Command::new("python3")
+            .arg("launch_training.py")
+            .arg("--config")
+            .arg(&config_path)
+            .current_dir(training_dir)
+            .env("TINKER_API_KEY", &tinker_api_key)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("failed to spawn launch_training.py: {e}"))?;
+
+        // Wait 30 seconds before starting the environment server
+        std::thread::sleep(Duration::from_secs(30));
+
+        // 5. Spawn Process 3: python3 <env_file> serve --config <path>
+        let env_proc = Command::new("python3")
+            .arg(&environment.file_path)
+            .arg("serve")
+            .arg("--config")
+            .arg(&config_path)
+            .current_dir(training_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("failed to spawn environment server: {e}"))?;
+
+        // 6. Store all processes and mark Running
+        {
+            let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(run) = runs.get_mut(run_id) {
+                run.processes.push(api_proc);
+                run.processes.push(trainer_proc);
+                run.processes.push(env_proc);
+                run.info.status = RlRunStatus::Running;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Kill all processes for a run and wait for them to exit.
+    ///
+    /// Processes are killed in reverse order (env → trainer → api) so that
+    /// dependent processes are stopped before their dependencies.
+    pub fn stop_run(&self, run_id: &str) -> Result<(), String> {
+        self.update_status(run_id, RlRunStatus::Stopping, None);
+
+        let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        let run = runs
+            .get_mut(run_id)
+            .ok_or_else(|| format!("run {run_id} not found"))?;
+
+        // Kill in reverse order
+        for proc in run.processes.iter_mut().rev() {
+            let _ = proc.kill();
+        }
+
+        // Wait for all to exit
+        for proc in run.processes.iter_mut() {
+            let _ = proc.wait();
+        }
+
+        run.info.status = RlRunStatus::Stopped;
+        Ok(())
+    }
+
+    /// Check the health of all child processes for a run.
+    ///
+    /// Returns:
+    /// - `None` if the run does not exist.
+    /// - The current status unchanged if the run is not in `Running` state.
+    /// - `Completed` if any process exited with code 0.
+    /// - `Failed` (with error message) if any process exited with non-zero code.
+    /// - `Running` if all processes are still alive.
+    pub fn check_process_health(&self, run_id: &str) -> Option<RlRunStatus> {
+        let mut runs = self.runs.lock().unwrap_or_else(|p| p.into_inner());
+        let run = runs.get_mut(run_id)?;
+
+        if run.info.status != RlRunStatus::Running {
+            return Some(run.info.status);
+        }
+
+        for proc in run.processes.iter_mut() {
+            match proc.try_wait() {
+                Ok(Some(exit_status)) => {
+                    if exit_status.success() {
+                        run.info.status = RlRunStatus::Completed;
+                        return Some(RlRunStatus::Completed);
+                    } else {
+                        let msg = format!(
+                            "process exited with non-zero status: {}",
+                            exit_status
+                                .code()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        );
+                        run.info.status = RlRunStatus::Failed;
+                        run.info.error_message = Some(msg);
+                        return Some(RlRunStatus::Failed);
+                    }
+                }
+                Ok(None) => {} // still running — continue
+                Err(e) => {
+                    let msg = format!("failed to poll process status: {e}");
+                    run.info.status = RlRunStatus::Failed;
+                    run.info.error_message = Some(msg);
+                    return Some(RlRunStatus::Failed);
+                }
+            }
+        }
+
+        Some(RlRunStatus::Running)
+    }
+}
+
+impl Default for RlRunManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -459,5 +737,114 @@ class CodingEnv:
         assert_eq!(RlRunStatus::Stopped.to_string(), "stopped");
         assert_eq!(RlRunStatus::Completed.to_string(), "completed");
         assert_eq!(RlRunStatus::Failed.to_string(), "failed");
+    }
+
+    /// Verify that `RlRunManager` basic lifecycle operations work without real
+    /// processes: insert a run manually, then test list/get/update_status.
+    #[test]
+    fn test_run_manager_lifecycle() {
+        let manager = RlRunManager::new();
+
+        // No runs yet
+        assert!(manager.list_runs().is_empty());
+        assert!(manager.get_run_info("run-1").is_none());
+
+        // Insert a run directly into the map (simulates a starting run)
+        {
+            let run = RlRun {
+                info: RlRunInfo {
+                    run_id: "run-1".to_string(),
+                    environment: "test_env".to_string(),
+                    status: RlRunStatus::Starting,
+                    error_message: None,
+                    wandb_project: None,
+                    wandb_run_name: Some("wandb-run-1".to_string()),
+                    start_time_epoch: 1_700_000_000,
+                    config: serde_json::json!({}),
+                },
+                processes: Vec::new(),
+                start_instant: Instant::now(),
+                last_status_check: None,
+            };
+            let mut runs = manager.runs.lock().unwrap();
+            runs.insert("run-1".to_string(), run);
+        }
+
+        // list_runs returns it
+        let all = manager.list_runs();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].run_id, "run-1");
+        assert_eq!(all[0].status, RlRunStatus::Starting);
+
+        // get_run_info returns a clone
+        let info = manager.get_run_info("run-1").expect("should find run-1");
+        assert_eq!(info.environment, "test_env");
+        assert_eq!(info.wandb_run_name.as_deref(), Some("wandb-run-1"));
+
+        // update_status transitions to Running
+        manager.update_status("run-1", RlRunStatus::Running, None);
+        let updated = manager.get_run_info("run-1").unwrap();
+        assert_eq!(updated.status, RlRunStatus::Running);
+        assert!(updated.error_message.is_none());
+
+        // update_status can record an error
+        manager.update_status(
+            "run-1",
+            RlRunStatus::Failed,
+            Some("trainer crashed".to_string()),
+        );
+        let failed = manager.get_run_info("run-1").unwrap();
+        assert_eq!(failed.status, RlRunStatus::Failed);
+        assert_eq!(failed.error_message.as_deref(), Some("trainer crashed"));
+
+        // Non-existent run
+        assert!(manager.get_run_info("run-999").is_none());
+    }
+
+    /// Verify that `can_check_status` / `mark_status_checked` enforce rate
+    /// limiting: first call returns true, immediately after marking it returns
+    /// false (because < MIN_STATUS_CHECK_INTERVAL_SECS have elapsed).
+    #[test]
+    fn test_status_check_rate_limiting() {
+        let manager = RlRunManager::new();
+
+        // Insert a run
+        {
+            let run = RlRun {
+                info: RlRunInfo {
+                    run_id: "run-2".to_string(),
+                    environment: "test_env".to_string(),
+                    status: RlRunStatus::Running,
+                    error_message: None,
+                    wandb_project: None,
+                    wandb_run_name: None,
+                    start_time_epoch: 1_700_000_000,
+                    config: serde_json::json!({}),
+                },
+                processes: Vec::new(),
+                start_instant: Instant::now(),
+                last_status_check: None,
+            };
+            let mut runs = manager.runs.lock().unwrap();
+            runs.insert("run-2".to_string(), run);
+        }
+
+        // Non-existent run is always false
+        assert!(!manager.can_check_status("run-999"));
+
+        // First call — never checked before
+        assert!(
+            manager.can_check_status("run-2"),
+            "should be checkable on first call"
+        );
+
+        // Mark as checked
+        manager.mark_status_checked("run-2");
+
+        // Immediately after marking, should NOT be checkable (cooldown active)
+        assert!(
+            !manager.can_check_status("run-2"),
+            "should NOT be checkable immediately after mark_status_checked"
+        );
     }
 }
