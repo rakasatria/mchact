@@ -91,6 +91,7 @@ rand = "0.8"
 
 [dev-dependencies]
 tower = "0.5"
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.0"

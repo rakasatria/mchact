@@ -31,6 +31,7 @@ pub mod setup;
 pub mod setup_def;
 pub mod skills;
 pub mod tools;
+pub mod rl;
 pub mod web;
 
 pub use channels::discord;
