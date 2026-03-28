@@ -498,16 +498,23 @@ The web layer no longer uses a static bearer token config as the primary auth mo
 
 ## Known Complexity and Gotchas
 
-- ⚠️ `AGENTS.md` is stale relative to the live repository. Treat the source tree and config schema as authoritative.
-- ⚠️ The config layer supports both current and legacy shapes. `Config::load()` normalizes them, which is helpful operationally but makes behavior harder to reason about if you only read the example config.
-- ⚠️ The repository still has some historical references to a separate `website/` docs site, but the current repo only contains the embedded `web/` UI. Active docs and scripts should not assume `website/` exists.
-- ⚠️ Built-in tool docs can drift if you only scan `src/tools/`; ClawHub tools are registered from `src/clawhub/tools.rs`.
-- ⚠️ State is intentionally split across DB rows, object storage, and filesystem-compatible runtime directories. Debugging often requires checking more than one persistence surface.
-- ⚠️ Subagents have multiple execution modes: restricted in-process registries and ACP-backed external agents. They share concepts, but not identical runtime behavior.
-- ⚠️ Web auth has a bootstrap/default-password path that is safe for first boot, but easy to miss if you only search for API keys.
-- ⚠️ Channel config can exist at multiple levels, including channel accounts and per-channel provider/model overrides.
-- ⚠️ Weixin and some webhook/native-bridge channels have significantly more transport-specific logic than the simpler polling/websocket adapters.
-- ⚠️ Knowledge ingestion, observation, embedding, and grouping are related but not identical pipelines. A document being present does not guarantee every downstream enrichment stage has completed.
+- **Config accepts old and new field names.** `Config::load()` in `src/config.rs` silently migrates legacy fields (e.g. `llm_providers` → `provider_presets`, flat channel fields → `accounts` sub-maps). This means a config file can work even if it uses outdated field names, but `mchact.config.example.yaml` alone will not show you all accepted shapes. When debugging config issues, read `Config::load()` to see the full normalization logic.
+
+- **`website/` is a separate repository.** Some older docs and scripts still reference a `website/` directory as if it lives in this repo. It does not — the public-facing site and docs are maintained in a separate git repository. The only UI in this repo is the embedded React app in `web/`.
+
+- **Tool registration is split across two locations.** Built-in tools are registered in `src/tools/mod.rs`, but ClawHub tools are registered from `src/clawhub/tools.rs`. If you are looking for where a tool is defined or trying to list all available tools, you need to check both locations.
+
+- **Application state lives in three places.** Relational data (messages, sessions, scheduled tasks, auth, metrics) is in SQLite or Postgres. File-like data (memory files, media, archives, skill assets) is in object storage (local disk or S3/Azure/GCS). Runtime state files (per-chat overrides, hook state) live in filesystem directories under `data_dir/runtime/`. When debugging, check all three — a missing file in object storage can cause failures that look like database issues.
+
+- **In-process and ACP subagents behave differently.** The `sub_agent` tool spawns a restricted in-process agent loop with only 9 allowed tools (no `send_message`, `write_memory`, `schedule`, or recursive `sub_agent`). ACP subagents (`src/acp_subagent.rs`) run as external processes via the Agent-Client Protocol with their own tool sets, permissions, and lifecycle. They share the concept of delegated work, but their capabilities and error handling are not interchangeable.
+
+- **First-boot auth uses a temporary password.** On first startup with no existing password in the database, the server generates a random password and prints it to the console. If that fails, it falls back to a bootstrap token delivered via the `x-bootstrap-token` HTTP header. This path is easy to miss if you only search for API key or bearer token auth patterns. See `src/web/auth.rs` for the full flow.
+
+- **Channel config merges multiple levels.** A channel's effective configuration is resolved by merging: global defaults → channel-level settings → account-level settings → per-channel provider/model overrides. For example, a Telegram account can override the LLM model used, which takes precedence over the global `model` field. When a channel behaves unexpectedly, check all levels in the config.
+
+- **Webhook-based channels have more transport logic.** Channels like Weixin, WhatsApp, and DingTalk use webhook ingress with verification tokens, encryption, and callback signatures. They require more setup (public URLs, webhook registration) and have more transport-specific code than polling-based channels like Telegram or websocket-based channels like Slack/Feishu. Expect a larger code surface when working on these adapters.
+
+- **Knowledge processing is a multi-stage async pipeline.** When a document is ingested, it passes through four independent stages: (1) extraction and chunking, (2) observation indexing, (3) embedding for vector search, and (4) auto-grouping. Each stage runs on its own background interval (`knowledge_embed_interval_mins`, `knowledge_observe_interval_mins`, `knowledge_autogroup_interval_mins`). A document appearing in the database does not mean it has been embedded or grouped yet — check the stage-specific state if search or grouping results seem incomplete.
 
 ## Suggested Reading Order
 
