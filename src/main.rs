@@ -153,6 +153,11 @@ enum MainCommand {
         #[command(subcommand)]
         action: RlAction,
     },
+    /// Knowledge collection management
+    Knowledge {
+        #[command(subcommand)]
+        action: KnowledgeAction,
+    },
     /// Run full training pipeline: batch → export → compress
     Train {
         /// Path to the JSONL prompt dataset
@@ -278,6 +283,36 @@ enum RlAction {
         steps: usize,
         #[arg(long, default_value = "16")]
         group_size: usize,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum KnowledgeAction {
+    /// List all knowledge collections
+    List,
+    /// Show collection details
+    Show { name: String },
+    /// Create a collection
+    Create {
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+    },
+    /// Add document to collection
+    Add { name: String, document_id: i64 },
+    /// Remove document from collection
+    Remove { name: String, document_id: i64 },
+    /// Delete collection
+    Delete { name: String },
+    /// Show processing status
+    Status { name: String },
+    /// Search with citations (requires embedding provider; use agent tools for full query)
+    Query { name: String, query: String },
+    /// Share to a chat
+    Share {
+        name: String,
+        #[arg(long)]
+        chat_id: i64,
     },
 }
 
@@ -1095,6 +1130,164 @@ async fn main() -> anyhow::Result<()> {
                 RlAction::Test { steps, group_size } => {
                     println!("RL inference test: steps={}, group_size={}", steps, group_size);
                     println!("Test inference is managed via agent tools for full environment integration.");
+                }
+            }
+
+            return Ok(());
+        }
+        Some(MainCommand::Knowledge { action }) => {
+            let config = Config::load()?;
+            let runtime_data_dir = config.runtime_data_dir();
+            let database = std::sync::Arc::new(db::Database::new(&runtime_data_dir)?);
+            let km = mchact::knowledge::KnowledgeManager::new(database);
+
+            match action {
+                KnowledgeAction::List => {
+                    match km.list_all() {
+                        Ok(collections) => {
+                            if collections.is_empty() {
+                                println!("No knowledge collections found.");
+                            } else {
+                                println!("{:<24} {:>4} {:>6} {:>8} {:>7} {:>6}  {}",
+                                    "NAME", "DOCS", "CHUNKS", "EMBEDDED", "PENDING", "FAILED", "DESCRIPTION");
+                                println!("{}", "-".repeat(80));
+                                for s in &collections {
+                                    println!("{:<24} {:>4} {:>6} {:>8} {:>7} {:>6}  {}",
+                                        s.name, s.document_count, s.chunk_count,
+                                        s.chunks_embedded, s.chunks_pending, s.chunks_failed,
+                                        s.description);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error listing collections: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Show { name } => {
+                    match km.list_all() {
+                        Ok(collections) => {
+                            match collections.iter().find(|s| s.name == name) {
+                                None => {
+                                    eprintln!("Knowledge collection '{}' not found.", name);
+                                    std::process::exit(1);
+                                }
+                                Some(s) => {
+                                    println!("Name:         {}", s.name);
+                                    println!("Description:  {}", s.description);
+                                    println!("Owner chat:   {}", s.owner_chat_id);
+                                    println!("Documents:    {}", s.document_count);
+                                    println!("Chunks:       {} total  ({} embedded, {} pending, {} failed)",
+                                        s.chunk_count, s.chunks_embedded, s.chunks_pending, s.chunks_failed);
+                                    println!("Observations: {} done, {} pending",
+                                        s.observations_done, s.observations_pending);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error fetching collection: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Create { name, description } => {
+                    match km.create(&name, &description, 0) {
+                        Ok(id) => println!("Created knowledge collection '{}' (id={}).", name, id),
+                        Err(e) => {
+                            eprintln!("Error creating collection: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Add { name, document_id } => {
+                    match km.add_document(&name, document_id) {
+                        Ok(chunks) => println!("Added document {} to '{}'. Chunks created: {}", document_id, name, chunks),
+                        Err(e) => {
+                            eprintln!("Error adding document: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Remove { name, document_id } => {
+                    match km.remove_document(&name, document_id) {
+                        Ok(()) => println!("Removed document {} from '{}'.", document_id, name),
+                        Err(e) => {
+                            eprintln!("Error removing document: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Delete { name } => {
+                    // For CLI admin use, look up the collection's owner and pass it.
+                    match km.list_all() {
+                        Ok(collections) => {
+                            match collections.iter().find(|s| s.name == name) {
+                                None => {
+                                    eprintln!("Knowledge collection '{}' not found.", name);
+                                    std::process::exit(1);
+                                }
+                                Some(s) => {
+                                    let owner = s.owner_chat_id;
+                                    match km.delete(&name, owner) {
+                                        Ok(()) => println!("Deleted knowledge collection '{}'.", name),
+                                        Err(e) => {
+                                            eprintln!("Error deleting collection: {e}");
+                                            std::process::exit(1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error fetching collection: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Status { name } => {
+                    match km.list_all() {
+                        Ok(collections) => {
+                            match collections.iter().find(|s| s.name == name) {
+                                None => {
+                                    eprintln!("Knowledge collection '{}' not found.", name);
+                                    std::process::exit(1);
+                                }
+                                Some(s) => {
+                                    println!("Collection: {}", s.name);
+                                    println!("  Documents:    {}", s.document_count);
+                                    println!("  Chunks total: {}", s.chunk_count);
+                                    println!("  Embedded:     {}", s.chunks_embedded);
+                                    println!("  Pending:      {}", s.chunks_pending);
+                                    println!("  Failed:       {}", s.chunks_failed);
+                                    println!("  Observations done:    {}", s.observations_done);
+                                    println!("  Observations pending: {}", s.observations_pending);
+                                    let pct = if s.chunk_count > 0 {
+                                        s.chunks_embedded * 100 / s.chunk_count
+                                    } else {
+                                        0
+                                    };
+                                    println!("  Embedding progress: {}%", pct);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error fetching status: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KnowledgeAction::Query { name: _, query: _ } => {
+                    println!("Query requires an embedding provider. Use agent tools for full query.");
+                }
+                KnowledgeAction::Share { name, chat_id } => {
+                    match km.attach(&name, chat_id) {
+                        Ok(()) => println!("Shared '{}' with chat {}.", name, chat_id),
+                        Err(e) => {
+                            eprintln!("Error sharing collection: {e}");
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
 
