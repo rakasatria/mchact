@@ -7,7 +7,6 @@ use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::call_blocking;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 fn mime_from_extension(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
@@ -258,6 +257,7 @@ impl Tool for ReadDocumentTool {
 mod tests {
     use super::*;
     use mchact_storage::db::Database;
+    use mchact_storage::prelude::*;
     use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 

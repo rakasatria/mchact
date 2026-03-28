@@ -463,6 +463,7 @@ pub fn aggregate_tool_stats(
 /// to `batch_{i}.jsonl`.
 ///
 /// Returns the list of final output `batch_{i}.jsonl` paths.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_workers(
     batches: &[Vec<BatchPrompt>],
     output_dir: &Path,

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use mchact_storage::db::Knowledge;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 use crate::embedding::EmbeddingProvider;
 
@@ -14,7 +13,7 @@ const TARGET_TOKENS_PER_CHUNK: usize = 500;
 
 /// Naive token estimator: 1 token ≈ 4 bytes.
 pub fn estimate_tokens(text: &str) -> usize {
-    (text.len() + 3) / 4
+    text.len().div_ceil(4)
 }
 
 /// Encode a slice of f32 values as little-endian bytes for embedding storage.
@@ -574,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_f32_vec_roundtrip() {
-        let original = vec![1.0_f32, -0.5, 0.25, 3.14];
+        let original = vec![1.0_f32, -0.5, 0.25, std::f32::consts::PI];
         let bytes = f32_vec_to_bytes(&original);
         let recovered = bytes_to_f32_vec(&bytes);
         assert_eq!(original.len(), recovered.len());

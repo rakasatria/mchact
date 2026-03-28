@@ -7,7 +7,6 @@ use super::{authorize_chat_access, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::call_blocking;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 use mchact_storage_backend::ObjectStorage;
 
 pub struct ExportChatTool {
@@ -103,6 +102,7 @@ impl Tool for ExportChatTool {
 mod tests {
     use super::*;
     use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
     use mchact_storage_backend::local::LocalStorage;
 
     async fn test_setup() -> (Arc<Database>, Arc<dyn ObjectStorage>, std::path::PathBuf) {

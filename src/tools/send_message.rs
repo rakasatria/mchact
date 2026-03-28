@@ -13,7 +13,6 @@ use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, StoredMessage};
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 use mchact_tools::runtime::auth_context_from_input;
 
 pub struct SendMessageTool {
@@ -360,6 +359,7 @@ mod tests {
     use super::*;
     use crate::web::WebAdapter;
     use mchact_storage::db::Database;
+    use mchact_storage::prelude::*;
     use mchact_channels::channel::ConversationKind;
     use mchact_channels::channel_adapter::ChannelAdapter;
     use mchact_channels::channel_adapter::ChannelRegistry;

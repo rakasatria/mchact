@@ -22,7 +22,6 @@ use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_core::text::floor_char_boundary;
 use mchact_storage::db::call_blocking;
 use mchact_storage::db::StoredMessage;
-use mchact_storage::prelude::*;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "irc",

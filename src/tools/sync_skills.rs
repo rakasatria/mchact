@@ -10,6 +10,7 @@ use mchact_core::llm_types::ToolDefinition;
 use super::{schema_object, Tool, ToolResult};
 
 pub struct SyncSkillsTool {
+    #[allow(dead_code)]
     skills_dir: std::path::PathBuf,
     storage: Arc<dyn ObjectStorage>,
 }

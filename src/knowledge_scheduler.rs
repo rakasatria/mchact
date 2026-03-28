@@ -5,7 +5,6 @@ use tracing::{info, warn};
 use crate::embedding::EmbeddingProvider;
 use crate::knowledge::f32_vec_to_bytes;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 const MAX_EMBED_TEXT_CHARS: usize = 32000;
 

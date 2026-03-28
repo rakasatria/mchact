@@ -29,7 +29,6 @@ use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
 use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_storage::db::{call_blocking, StoredMessage};
-use mchact_storage::prelude::*;
 
 const CHANNEL_KEY: &str = "weixin";
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
@@ -603,6 +602,7 @@ fn weixin_account_storage_key(local_account_key: &str) -> String {
     )
 }
 
+#[allow(dead_code)]
 fn weixin_sync_buf_storage_key(local_account_key: &str) -> String {
     format!(
         "state/weixin/{}_sync.json",
@@ -676,6 +676,7 @@ fn delete_account_data(state_root: &Path, local_account_key: &str) -> Result<(),
     Ok(())
 }
 
+#[allow(dead_code)]
 fn delete_account_data_via_storage(
     storage: &dyn mchact_storage_backend::ObjectStorage,
     local_account_key: &str,
@@ -694,6 +695,7 @@ fn load_sync_buf(state_root: &Path, local_account_key: &str) -> String {
     std::fs::read_to_string(sync_buf_file_path(state_root, local_account_key)).unwrap_or_default()
 }
 
+#[allow(dead_code)]
 fn load_sync_buf_via_storage(
     storage: &dyn mchact_storage_backend::ObjectStorage,
     local_account_key: &str,
@@ -720,6 +722,7 @@ fn save_sync_buf(
         .map_err(|e| format!("Failed to write Weixin sync buf: {e}"))
 }
 
+#[allow(dead_code)]
 fn save_sync_buf_via_storage(
     storage: &dyn mchact_storage_backend::ObjectStorage,
     local_account_key: &str,
@@ -759,6 +762,7 @@ fn save_account(
 }
 
 /// Delete account preferring ObjectStorage when available.
+#[allow(dead_code)]
 fn delete_account(runtime: &WeixinRuntimeContext) -> Result<(), String> {
     if let Some(ref storage) = runtime.storage {
         return delete_account_data_via_storage(storage.as_ref(), &runtime.local_account_key);
@@ -767,6 +771,7 @@ fn delete_account(runtime: &WeixinRuntimeContext) -> Result<(), String> {
 }
 
 /// Load sync buf preferring ObjectStorage when available.
+#[allow(dead_code)]
 fn load_sync(runtime: &WeixinRuntimeContext) -> String {
     if let Some(ref storage) = runtime.storage {
         return load_sync_buf_via_storage(storage.as_ref(), &runtime.local_account_key);
@@ -775,6 +780,7 @@ fn load_sync(runtime: &WeixinRuntimeContext) -> String {
 }
 
 /// Save sync buf preferring ObjectStorage when available.
+#[allow(dead_code)]
 fn save_sync(
     runtime: &WeixinRuntimeContext,
     get_updates_buf: &str,
@@ -2130,6 +2136,7 @@ impl ChannelAdapter for WeixinAdapter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_weixin_file_note(
     config: &Config,
     media_manager: &crate::media_manager::MediaManager,
@@ -2288,6 +2295,7 @@ async fn build_weixin_file_note(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn enrich_weixin_inbound_text(
     config: &Config,
     media_manager: &crate::media_manager::MediaManager,

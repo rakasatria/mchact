@@ -10,6 +10,7 @@ use mchact_core::llm_types::ToolDefinition;
 use super::{schema_object, Tool, ToolResult};
 
 pub struct CreateSkillTool {
+    #[allow(dead_code)]
     skills_dir: std::path::PathBuf,
     storage: Arc<dyn ObjectStorage>,
 }
@@ -45,6 +46,7 @@ impl CreateSkillTool {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_skill_md(
         skill_name: &str,
         description: &str,

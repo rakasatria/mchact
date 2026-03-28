@@ -7,7 +7,6 @@ use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::call_blocking;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 // ── CreateKnowledgeTool ────────────────────────────────────────────────────────
 

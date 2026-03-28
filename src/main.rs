@@ -1059,7 +1059,7 @@ async fn main() -> anyhow::Result<()> {
             match action {
                 RlAction::List => {
                     let envs = mchact::rl::discover_environments(&env_dir)
-                        .map_err(|e| MchactError::Config(e))?;
+                        .map_err(MchactError::Config)?;
                     if envs.is_empty() {
                         println!("No RL environments found in: {}", env_dir.display());
                         println!("Add Python environment files with YAML frontmatter to that directory.");
@@ -1072,7 +1072,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 RlAction::Select { name } => {
                     let envs = mchact::rl::discover_environments(&env_dir)
-                        .map_err(|e| MchactError::Config(e))?;
+                        .map_err(MchactError::Config)?;
                     match envs.iter().find(|e| e.name == name) {
                         None => {
                             eprintln!("Environment '{}' not found.", name);
@@ -1118,7 +1118,7 @@ async fn main() -> anyhow::Result<()> {
                     }
 
                     let envs = mchact::rl::discover_environments(&env_dir)
-                        .map_err(|e| MchactError::Config(e))?;
+                        .map_err(MchactError::Config)?;
                     if envs.is_empty() {
                         eprintln!("No RL environments found in: {}", env_dir.display());
                         std::process::exit(1);
@@ -1196,8 +1196,8 @@ async fn main() -> anyhow::Result<()> {
                             if collections.is_empty() {
                                 println!("No knowledge collections found.");
                             } else {
-                                println!("{:<24} {:>4} {:>6} {:>8} {:>7} {:>6}  {}",
-                                    "NAME", "DOCS", "CHUNKS", "EMBEDDED", "PENDING", "FAILED", "DESCRIPTION");
+                                println!("{:<24} {:>4} {:>6} {:>8} {:>7} {:>6}  DESCRIPTION",
+                                    "NAME", "DOCS", "CHUNKS", "EMBEDDED", "PENDING", "FAILED");
                                 println!("{}", "-".repeat(80));
                                 for s in &collections {
                                     println!("{:<24} {:>4} {:>6} {:>8} {:>7} {:>6}  {}",

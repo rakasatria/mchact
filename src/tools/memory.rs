@@ -6,7 +6,6 @@ use tracing::info;
 use crate::memory_backend::MemoryBackend;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 use mchact_storage::memory_quality;
 use mchact_storage_backend::{ObjectStorage, StorageError};
 
@@ -341,6 +340,7 @@ impl Tool for WriteMemoryTool {
 mod tests {
     use super::*;
     use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
     use mchact_storage_backend::local::LocalStorage;
     use serde_json::json;
 

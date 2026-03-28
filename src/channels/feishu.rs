@@ -22,7 +22,6 @@ use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_storage::db::call_blocking;
 use mchact_storage::db::StoredMessage;
-use mchact_storage::prelude::*;
 
 type WsSink = Arc<
     tokio::sync::Mutex<

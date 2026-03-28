@@ -903,7 +903,7 @@ struct AnthropicApiErrorDetail {
 
 /// Apply Anthropic cache_control markers to reduce input token costs.
 /// Places up to 4 breakpoints: system prompt + last 3 non-system messages.
-pub fn apply_anthropic_cache_control(messages: &mut Vec<serde_json::Value>) {
+pub fn apply_anthropic_cache_control(messages: &mut [serde_json::Value]) {
     let marker = serde_json::json!({"type": "ephemeral"});
     let mut breakpoints_used = 0usize;
     const MAX_BREAKPOINTS: usize = 4;

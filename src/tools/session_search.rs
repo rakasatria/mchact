@@ -8,7 +8,6 @@ use super::{auth_context_from_input, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, FtsSearchResult, StoredMessage};
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 pub struct SessionSearchTool {
     db: Arc<DynDataStore>,
@@ -202,6 +201,7 @@ impl Tool for SessionSearchTool {
 mod tests {
     use super::*;
     use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage::prelude::*;
     use serde_json::json;
 
     fn make_db() -> Arc<Database> {

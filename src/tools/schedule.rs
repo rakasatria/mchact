@@ -11,7 +11,6 @@ use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::call_blocking;
 use mchact_storage::DynDataStore;
-use mchact_storage::prelude::*;
 
 fn compute_next_run(cron_expr: &str, tz_name: &str) -> Result<String, String> {
     let tz: chrono_tz::Tz = tz_name
@@ -898,6 +897,7 @@ mod tests {
     use crate::web::WebAdapter;
     use mchact_channels::channel_adapter::ChannelRegistry;
     use mchact_storage::db::Database;
+    use mchact_storage::prelude::*;
     use serde_json::json;
 
     fn test_registry() -> Arc<ChannelRegistry> {
