@@ -226,7 +226,32 @@ pub struct DocumentExtraction {
     pub created_at: String,
 }
 
-const SCHEMA_VERSION_CURRENT: i64 = 22;
+const SCHEMA_VERSION_CURRENT: i64 = 23;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Knowledge {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub owner_chat_id: i64,
+    pub last_grouping_check_at: Option<String>,
+    pub document_count_at_last_check: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DocumentChunk {
+    pub id: i64,
+    pub document_extraction_id: i64,
+    pub page_number: i64,
+    pub text: String,
+    pub token_count: Option<i64>,
+    pub embedding: Option<Vec<u8>>,
+    pub embedding_status: String,
+    pub observation_status: String,
+    pub created_at: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MediaObject {
@@ -997,6 +1022,54 @@ fn apply_schema_migrations(conn: &Connection) -> Result<(), MchactError> {
         )?;
         set_schema_version(conn, 22)?;
         version = 22;
+    }
+    if version < 23 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT DEFAULT '',
+                owner_chat_id INTEGER NOT NULL,
+                last_grouping_check_at TEXT,
+                document_count_at_last_check INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_knowledge_owner ON knowledge(owner_chat_id);
+
+            CREATE TABLE IF NOT EXISTS knowledge_documents (
+                knowledge_id INTEGER NOT NULL REFERENCES knowledge(id) ON DELETE CASCADE,
+                document_extraction_id INTEGER NOT NULL REFERENCES document_extractions(id),
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (knowledge_id, document_extraction_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_chat_access (
+                knowledge_id INTEGER NOT NULL REFERENCES knowledge(id) ON DELETE CASCADE,
+                chat_id INTEGER NOT NULL,
+                attached_at TEXT NOT NULL,
+                PRIMARY KEY (knowledge_id, chat_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_knowledge_access_chat ON knowledge_chat_access(chat_id);
+
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_extraction_id INTEGER NOT NULL REFERENCES document_extractions(id) ON DELETE CASCADE,
+                page_number INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                token_count INTEGER,
+                embedding BLOB,
+                embedding_status TEXT NOT NULL DEFAULT 'pending',
+                observation_status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_chunks_extraction ON document_chunks(document_extraction_id);
+            CREATE INDEX IF NOT EXISTS idx_chunks_embedding_status ON document_chunks(embedding_status);
+            CREATE INDEX IF NOT EXISTS idx_chunks_observation_status ON document_chunks(observation_status);
+            ",
+        )?;
+        set_schema_version(conn, 23)?;
+        version = 23;
     }
     if version != SCHEMA_VERSION_CURRENT {
         set_schema_version(conn, SCHEMA_VERSION_CURRENT)?;
@@ -4979,6 +5052,430 @@ impl Database {
             avg_duration_ms_24h,
             recent_runs,
         })
+    }
+
+    // ── Knowledge CRUD ────────────────────────────────────────────────────────
+
+    pub fn create_knowledge(
+        &self,
+        name: &str,
+        description: &str,
+        owner_chat_id: i64,
+    ) -> Result<i64, MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO knowledge (name, description, owner_chat_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![name, description, owner_chat_id, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_knowledge_by_name(&self, name: &str) -> Result<Option<Knowledge>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, owner_chat_id, last_grouping_check_at,
+                    document_count_at_last_check, created_at, updated_at
+             FROM knowledge WHERE name = ?1",
+        )?;
+        let result = stmt
+            .query_row(params![name], |row| {
+                Ok(Knowledge {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    owner_chat_id: row.get(3)?,
+                    last_grouping_check_at: row.get(4)?,
+                    document_count_at_last_check: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn list_knowledge(&self) -> Result<Vec<Knowledge>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, owner_chat_id, last_grouping_check_at,
+                    document_count_at_last_check, created_at, updated_at
+             FROM knowledge ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Knowledge {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                owner_chat_id: row.get(3)?,
+                last_grouping_check_at: row.get(4)?,
+                document_count_at_last_check: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn delete_knowledge(&self, id: i64) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute("DELETE FROM knowledge WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_knowledge_timestamp(&self, id: i64) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE knowledge SET updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
+    // ── Knowledge Documents ───────────────────────────────────────────────────
+
+    pub fn add_document_to_knowledge(
+        &self,
+        knowledge_id: i64,
+        doc_extraction_id: i64,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR IGNORE INTO knowledge_documents (knowledge_id, document_extraction_id, added_at)
+             VALUES (?1, ?2, ?3)",
+            params![knowledge_id, doc_extraction_id, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_document_from_knowledge(
+        &self,
+        knowledge_id: i64,
+        doc_extraction_id: i64,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "DELETE FROM knowledge_documents
+             WHERE knowledge_id = ?1 AND document_extraction_id = ?2",
+            params![knowledge_id, doc_extraction_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_knowledge_documents(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT document_extraction_id FROM knowledge_documents
+             WHERE knowledge_id = ?1 ORDER BY added_at",
+        )?;
+        let rows = stmt.query_map(params![knowledge_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn count_knowledge_documents(&self, knowledge_id: i64) -> Result<i64, MchactError> {
+        let conn = self.lock_conn();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM knowledge_documents WHERE knowledge_id = ?1",
+            params![knowledge_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    // ── Knowledge Chat Access ─────────────────────────────────────────────────
+
+    pub fn add_knowledge_chat_access(
+        &self,
+        knowledge_id: i64,
+        chat_id: i64,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR IGNORE INTO knowledge_chat_access (knowledge_id, chat_id, attached_at)
+             VALUES (?1, ?2, ?3)",
+            params![knowledge_id, chat_id, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn has_knowledge_chat_access(
+        &self,
+        knowledge_id: i64,
+        chat_id: i64,
+    ) -> Result<bool, MchactError> {
+        let conn = self.lock_conn();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM knowledge_chat_access
+             WHERE knowledge_id = ?1 AND chat_id = ?2",
+            params![knowledge_id, chat_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn list_knowledge_for_chat(&self, chat_id: i64) -> Result<Vec<Knowledge>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT k.id, k.name, k.description, k.owner_chat_id,
+                    k.last_grouping_check_at, k.document_count_at_last_check,
+                    k.created_at, k.updated_at
+             FROM knowledge k
+             JOIN knowledge_chat_access kca ON kca.knowledge_id = k.id
+             WHERE kca.chat_id = ?1
+             ORDER BY k.created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![chat_id], |row| {
+            Ok(Knowledge {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                owner_chat_id: row.get(3)?,
+                last_grouping_check_at: row.get(4)?,
+                document_count_at_last_check: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn list_knowledge_chat_ids(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT chat_id FROM knowledge_chat_access WHERE knowledge_id = ?1 ORDER BY attached_at",
+        )?;
+        let rows = stmt.query_map(params![knowledge_id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    // ── Document Chunks ───────────────────────────────────────────────────────
+
+    pub fn insert_document_chunk(
+        &self,
+        doc_extraction_id: i64,
+        page_number: i64,
+        text: &str,
+        token_count: Option<i64>,
+    ) -> Result<i64, MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO document_chunks
+             (document_extraction_id, page_number, text, token_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![doc_extraction_id, page_number, text, token_count, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_chunks_by_status(
+        &self,
+        embedding_status: &str,
+        limit: i64,
+    ) -> Result<Vec<DocumentChunk>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, document_extraction_id, page_number, text, token_count,
+                    embedding, embedding_status, observation_status, created_at
+             FROM document_chunks
+             WHERE embedding_status = ?1
+             ORDER BY created_at
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![embedding_status, limit], |row| {
+            Ok(DocumentChunk {
+                id: row.get(0)?,
+                document_extraction_id: row.get(1)?,
+                page_number: row.get(2)?,
+                text: row.get(3)?,
+                token_count: row.get(4)?,
+                embedding: row.get(5)?,
+                embedding_status: row.get(6)?,
+                observation_status: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_chunks_for_observation(&self, limit: i64) -> Result<Vec<DocumentChunk>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, document_extraction_id, page_number, text, token_count,
+                    embedding, embedding_status, observation_status, created_at
+             FROM document_chunks
+             WHERE embedding_status = 'done' AND observation_status = 'pending'
+             ORDER BY created_at
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(DocumentChunk {
+                id: row.get(0)?,
+                document_extraction_id: row.get(1)?,
+                page_number: row.get(2)?,
+                text: row.get(3)?,
+                token_count: row.get(4)?,
+                embedding: row.get(5)?,
+                embedding_status: row.get(6)?,
+                observation_status: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn update_chunk_embedding(
+        &self,
+        chunk_id: i64,
+        embedding_bytes: &[u8],
+        status: &str,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE document_chunks SET embedding = ?1, embedding_status = ?2 WHERE id = ?3",
+            params![embedding_bytes, status, chunk_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_chunk_observation_status(
+        &self,
+        chunk_id: i64,
+        status: &str,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE document_chunks SET observation_status = ?1 WHERE id = ?2",
+            params![status, chunk_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chunks_for_document(
+        &self,
+        doc_extraction_id: i64,
+    ) -> Result<Vec<DocumentChunk>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, document_extraction_id, page_number, text, token_count,
+                    embedding, embedding_status, observation_status, created_at
+             FROM document_chunks
+             WHERE document_extraction_id = ?1
+             ORDER BY page_number",
+        )?;
+        let rows = stmt.query_map(params![doc_extraction_id], |row| {
+            Ok(DocumentChunk {
+                id: row.get(0)?,
+                document_extraction_id: row.get(1)?,
+                page_number: row.get(2)?,
+                text: row.get(3)?,
+                token_count: row.get(4)?,
+                embedding: row.get(5)?,
+                embedding_status: row.get(6)?,
+                observation_status: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn reset_failed_chunks(&self, older_than_mins: i64) -> Result<i64, MchactError> {
+        let conn = self.lock_conn();
+        let cutoff = (chrono::Utc::now()
+            - chrono::Duration::minutes(older_than_mins))
+        .to_rfc3339();
+        let count = conn.execute(
+            "UPDATE document_chunks
+             SET embedding_status = 'pending'
+             WHERE embedding_status = 'failed' AND created_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(count as i64)
+    }
+
+    // ── Grouping ──────────────────────────────────────────────────────────────
+
+    pub fn update_knowledge_grouping_check(
+        &self,
+        knowledge_id: i64,
+        doc_count: i64,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE knowledge
+             SET last_grouping_check_at = ?1, document_count_at_last_check = ?2, updated_at = ?1
+             WHERE id = ?3",
+            params![now, doc_count, knowledge_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_knowledge_needing_grouping(
+        &self,
+        min_docs: i64,
+    ) -> Result<Vec<Knowledge>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT k.id, k.name, k.description, k.owner_chat_id,
+                    k.last_grouping_check_at, k.document_count_at_last_check,
+                    k.created_at, k.updated_at
+             FROM knowledge k
+             WHERE (
+                 SELECT COUNT(*) FROM knowledge_documents kd WHERE kd.knowledge_id = k.id
+             ) >= ?1
+             AND (
+                 SELECT COUNT(*) FROM knowledge_documents kd WHERE kd.knowledge_id = k.id
+             ) > k.document_count_at_last_check
+             ORDER BY k.updated_at",
+        )?;
+        let rows = stmt.query_map(params![min_docs], |row| {
+            Ok(Knowledge {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                owner_chat_id: row.get(3)?,
+                last_grouping_check_at: row.get(4)?,
+                document_count_at_last_check: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    // ── Document Extraction by ID ─────────────────────────────────────────────
+
+    pub fn get_document_extraction_by_id(
+        &self,
+        id: i64,
+    ) -> Result<Option<DocumentExtraction>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, file_hash, filename, mime_type, file_size,
+                    extracted_text, char_count, created_at
+             FROM document_extractions WHERE id = ?1",
+        )?;
+        let result = stmt
+            .query_row(params![id], |row| {
+                Ok(DocumentExtraction {
+                    id: row.get(0)?,
+                    chat_id: row.get(1)?,
+                    file_hash: row.get(2)?,
+                    filename: row.get(3)?,
+                    mime_type: row.get(4)?,
+                    file_size: row.get(5)?,
+                    extracted_text: row.get(6)?,
+                    char_count: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .optional()?;
+        Ok(result)
     }
 }
 
