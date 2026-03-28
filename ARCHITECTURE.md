@@ -2,7 +2,34 @@
 
 This document is derived from the live codebase in `src/`, `crates/`, `web/`, and `mchact.config.example.yaml`. It is written for a new developer joining the project cold.
 
-> ⚠️ Needs clarification: deployment topology, production hostnames, managed databases, and external service credentials are not encoded in the repository. The code shows supported integration points, but not which ones are used in any specific environment.
+## Deployment Topology
+
+Deployment topology, production hostnames, managed databases, and external service credentials are not encoded in the repository. All integration points are activated through `mchact.config.yaml` (override path via `MCHACT_CONFIG`). Below is a summary of what the code supports.
+
+### Supported deployment shapes
+
+| Shape | Database | Object storage | Notes |
+|-------|----------|----------------|-------|
+| Local / single-node | SQLite (default) | Local disk | Zero external dependencies. `cargo run -- start` with a config file. |
+| Containerized | SQLite or Postgres | Local volume or cloud | Dockerfile (multi-stage, non-root `mchact` user), docker-compose with mounted config + data. Default port `10961`. |
+| Production / multi-node | Postgres (`--features storage-postgres`) | S3 / Azure Blob / GCS (`--features storage-s3`, `storage-azure`, `storage-gcs`) | Cloud object storage uses an LRU disk cache (`storage_cache_max_size_mb`). |
+
+### Web server
+
+Bound to `web_host` (default `127.0.0.1`) and `web_port` (default `10961`). The embedded React SPA is served from the same binary. Rate limiting is per-session (`web_max_requests_per_window`, `web_rate_window_seconds`).
+
+### External service credentials
+
+All credentials are config-driven. None are compiled in or assumed. Key credential surfaces:
+
+- **LLM providers** — `api_key`, `llm_base_url`, and `provider_presets` entries. Supports native Anthropic, OpenAI-compatible, OpenRouter, Ollama, DeepSeek, and others.
+- **Channel tokens** — per-channel or per-account (`channels.<name>.accounts.<account>.*`): bot tokens, app secrets, webhook verification tokens, etc.
+- **Object storage** — S3 keys (`storage_s3_access_key_id`), Azure connection strings (`storage_azure_connection_string`), GCS credentials (`storage_gcs_credentials_path`). Env vars (`AWS_ACCESS_KEY_ID`, `AZURE_STORAGE_CONNECTION_STRING`, `GOOGLE_APPLICATION_CREDENTIALS`) are also accepted.
+- **Observability** — OTLP endpoints, Langfuse host/keys, AgentOps key.
+- **Media providers** — TTS/STT/image/video API keys, embedding provider keys.
+- **A2A / Gateway** — `a2a.shared_tokens`, `MCHACT_GATEWAY_TOKEN`.
+
+See [`mchact.config.example.yaml`](/Volumes/Data/Codes/Local/mchact/mchact.config.example.yaml) for the full schema and defaults.
 
 ## System Overview
 
