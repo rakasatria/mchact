@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::channel_adapter::ChannelRegistry;
-use mchact_storage::db::{call_blocking, Database, StoredMessage};
+use mchact_storage::db::{call_blocking, ChatStore, Database, MessageStore, StoredMessage};
 
 #[derive(Clone, Debug)]
 struct ToolAuthContext {

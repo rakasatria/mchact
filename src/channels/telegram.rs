@@ -25,6 +25,7 @@ use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_core::llm_types::{ContentBlock, ImageSource, MessageContent};
 use mchact_core::text::floor_char_boundary;
 use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::prelude::*;
 
 /// Configuration for Telegram streaming and reasoning display
 #[derive(Debug, Clone, Deserialize)]

@@ -4,6 +4,7 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::{ChatSummary};
+use crate::traits::ChatStore;
 
 fn infer_channel_from_chat_type(chat_type: &str) -> &'static str {
     if chat_type.starts_with("telegram_")
@@ -19,8 +20,8 @@ fn infer_channel_from_chat_type(chat_type: &str) -> &'static str {
     }
 }
 
-impl Database {
-    pub fn upsert_chat(
+impl ChatStore for Database {
+    fn upsert_chat(
         &self,
         chat_id: i64,
         chat_title: Option<&str>,
@@ -49,7 +50,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn resolve_or_create_chat_id(
+    fn resolve_or_create_chat_id(
         &self,
         channel: &str,
         external_chat_id: &str,
@@ -106,7 +107,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_chat_type(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn get_chat_type(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT chat_type FROM chats WHERE chat_id = ?1",
@@ -120,7 +121,7 @@ impl Database {
         }
     }
 
-    pub fn get_chat_id_by_channel_and_title(
+    fn get_chat_id_by_channel_and_title(
         &self,
         channel: &str,
         chat_title: &str,
@@ -142,7 +143,7 @@ impl Database {
         }
     }
 
-    pub fn get_chat_channel(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn get_chat_channel(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT channel FROM chats WHERE chat_id = ?1",
@@ -156,7 +157,7 @@ impl Database {
         }
     }
 
-    pub fn get_chat_external_id(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn get_chat_external_id(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT external_chat_id FROM chats WHERE chat_id = ?1",
@@ -170,7 +171,7 @@ impl Database {
         }
     }
 
-    pub fn get_recent_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, MchactError> {
+    fn get_recent_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT
@@ -206,7 +207,7 @@ impl Database {
         Ok(chats)
     }
 
-    pub fn get_chats_by_type(
+    fn get_chats_by_type(
         &self,
         chat_type: &str,
         limit: usize,

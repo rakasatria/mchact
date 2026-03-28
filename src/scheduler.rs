@@ -15,6 +15,7 @@ use mchact_channels::channel::{
 use mchact_core::llm_types::{Message, MessageContent, ResponseContentBlock};
 use mchact_core::text::floor_char_boundary;
 use mchact_storage::db::call_blocking;
+use mchact_storage::prelude::*;
 
 pub fn spawn_scheduler(state: Arc<AppState>) {
     tokio::spawn(async move {

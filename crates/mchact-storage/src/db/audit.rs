@@ -3,9 +3,10 @@ use rusqlite::params;
 
 use super::Database;
 use super::AuditLogRecord;
+use crate::traits::AuditStore;
 
-impl Database {
-    pub fn log_audit_event(
+impl AuditStore for Database {
+    fn log_audit_event(
         &self,
         kind: &str,
         actor: &str,
@@ -24,7 +25,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn list_audit_logs(
+    fn list_audit_logs(
         &self,
         kind: Option<&str>,
         limit: usize,

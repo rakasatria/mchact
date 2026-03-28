@@ -6,6 +6,7 @@ use serde_json::json;
 use super::{authorize_chat_access, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::prelude::*;
 
 pub struct ExportChatTool {
     db: Arc<Database>,

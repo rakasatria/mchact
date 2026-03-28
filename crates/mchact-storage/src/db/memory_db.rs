@@ -6,9 +6,10 @@ use super::Database;
 use super::{
     Memory, MemoryInjectionLog, MemoryObservabilitySummary, MemoryReflectorRun,
 };
+use crate::traits::MemoryDbStore;
 
-impl Database {
-    pub fn insert_memory(
+impl MemoryDbStore for Database {
+    fn insert_memory(
         &self,
         chat_id: Option<i64>,
         content: &str,
@@ -17,7 +18,7 @@ impl Database {
         self.insert_memory_with_metadata(chat_id, content, category, "tool", 0.80)
     }
 
-    pub fn insert_memory_with_metadata(
+    fn insert_memory_with_metadata(
         &self,
         chat_id: Option<i64>,
         content: &str,
@@ -64,7 +65,7 @@ impl Database {
     }
 
     /// Get a single memory by id.
-    pub fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
+    fn get_memory_by_id(&self, id: i64) -> Result<Option<Memory>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT id, chat_id, content, category, created_at, updated_at, embedding_model,
@@ -95,7 +96,7 @@ impl Database {
         }
     }
 
-    pub fn get_memories_for_context(
+    fn get_memories_for_context(
         &self,
         chat_id: i64,
         limit: usize,
@@ -132,7 +133,7 @@ impl Database {
         Ok(memories)
     }
 
-    pub fn get_all_memories_for_chat(
+    fn get_all_memories_for_chat(
         &self,
         chat_id: Option<i64>,
     ) -> Result<Vec<Memory>, MchactError> {
@@ -164,7 +165,7 @@ impl Database {
         Ok(memories)
     }
 
-    pub fn get_active_chat_ids_since(&self, since: &str) -> Result<Vec<i64>, MchactError> {
+    fn get_active_chat_ids_since(&self, since: &str) -> Result<Vec<i64>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT DISTINCT chat_id FROM messages WHERE timestamp > ?1 AND is_from_bot = 0",
@@ -176,14 +177,14 @@ impl Database {
     }
 
     /// Delete a memory row by id. Returns true if a row was deleted.
-    pub fn delete_memory(&self, id: i64) -> Result<bool, MchactError> {
+    fn delete_memory(&self, id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute("DELETE FROM memories WHERE id = ?1", params![id])?;
         Ok(rows > 0)
     }
 
     /// Keyword search in memories visible to chat_id (own + global).
-    pub fn search_memories(
+    fn search_memories(
         &self,
         chat_id: i64,
         query: &str,
@@ -192,7 +193,7 @@ impl Database {
         self.search_memories_with_options(chat_id, query, limit, false, true)
     }
 
-    pub fn search_memories_with_options(
+    fn search_memories_with_options(
         &self,
         chat_id: i64,
         query: &str,
@@ -239,7 +240,7 @@ impl Database {
     }
 
     /// Update content and category of an existing memory. Returns true if found.
-    pub fn update_memory_content(
+    fn update_memory_content(
         &self,
         id: i64,
         content: &str,
@@ -263,7 +264,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn update_memory_with_metadata(
+    fn update_memory_with_metadata(
         &self,
         id: i64,
         content: &str,
@@ -297,7 +298,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn update_memory_embedding_model(
+    fn update_memory_embedding_model(
         &self,
         id: i64,
         model: &str,
@@ -310,7 +311,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn touch_memory_last_seen(
+    fn touch_memory_last_seen(
         &self,
         id: i64,
         confidence_floor: Option<f64>,
@@ -334,7 +335,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
+    fn archive_memory(&self, id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn.execute(
@@ -346,7 +347,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn archive_stale_memories(&self, stale_days: i64) -> Result<usize, MchactError> {
+    fn archive_stale_memories(&self, stale_days: i64) -> Result<usize, MchactError> {
         let conn = self.lock_conn();
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(stale_days.max(1))).to_rfc3339();
         let now = chrono::Utc::now().to_rfc3339();
@@ -361,7 +362,7 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn supersede_memory(
+    fn supersede_memory(
         &self,
         from_memory_id: i64,
         new_content: &str,
@@ -416,7 +417,7 @@ impl Database {
         Ok(to_memory_id)
     }
 
-    pub fn get_memories_without_embedding(
+    fn get_memories_without_embedding(
         &self,
         chat_id: Option<i64>,
         limit: usize,
@@ -462,7 +463,7 @@ impl Database {
     }
 
     #[cfg(feature = "sqlite-vec")]
-    pub fn prepare_vector_index(&self, dimension: usize) -> Result<(), MchactError> {
+    fn prepare_vector_index(&self, dimension: usize) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let dimension = dimension.max(1);
         conn.execute(
@@ -501,7 +502,7 @@ impl Database {
     }
 
     #[cfg(feature = "sqlite-vec")]
-    pub fn upsert_memory_vec(
+    fn upsert_memory_vec(
         &self,
         memory_id: i64,
         embedding: &[f32],
@@ -515,7 +516,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_all_active_memories(&self) -> Result<Vec<(i64, String)>, MchactError> {
+    fn get_all_active_memories(&self) -> Result<Vec<(i64, String)>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt =
             conn.prepare("SELECT id, content FROM memories WHERE is_archived = 0 ORDER BY id")?;
@@ -526,7 +527,7 @@ impl Database {
     }
 
     #[cfg(feature = "sqlite-vec")]
-    pub fn knn_memories(
+    fn knn_memories(
         &self,
         chat_id: i64,
         query_vec: &[f32],
@@ -551,7 +552,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_reflector_cursor(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn get_reflector_cursor(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT last_reflected_ts FROM memory_reflector_state WHERE chat_id = ?1",
@@ -565,7 +566,7 @@ impl Database {
         }
     }
 
-    pub fn set_reflector_cursor(
+    fn set_reflector_cursor(
         &self,
         chat_id: i64,
         last_reflected_ts: &str,
@@ -584,7 +585,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn log_reflector_run(
+    fn log_reflector_run(
         &self,
         chat_id: i64,
         started_at: &str,
@@ -618,7 +619,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn log_memory_injection(
+    fn log_memory_injection(
         &self,
         chat_id: i64,
         retrieval_method: &str,
@@ -646,7 +647,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_memory_observability_summary(
+    fn get_memory_observability_summary(
         &self,
         chat_id: Option<i64>,
     ) -> Result<MemoryObservabilitySummary, MchactError> {
@@ -794,7 +795,7 @@ impl Database {
         })
     }
 
-    pub fn get_memory_reflector_runs(
+    fn get_memory_reflector_runs(
         &self,
         chat_id: Option<i64>,
         since: Option<&str>,
@@ -851,7 +852,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_memory_injection_logs(
+    fn get_memory_injection_logs(
         &self,
         chat_id: Option<i64>,
         since: Option<&str>,

@@ -19,6 +19,7 @@ use crate::config::{Config, ResolvedSubagentAcpTargetConfig};
 use crate::tools::{resolve_tool_working_dir, ToolAuthContext};
 use mchact_core::text::floor_char_boundary;
 use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::prelude::*;
 
 const ACP_RUNTIME_PROVIDER: &str = "acp";
 const ACP_AGENT_STDERR_LIMIT_BYTES: usize = 16 * 1024;

@@ -3,9 +3,10 @@ use rusqlite::params;
 
 use super::Database;
 use super::{ScheduledTask, ScheduledTaskDlqEntry, TaskRunLog};
+use crate::traits::TaskStore;
 
-impl Database {
-    pub fn create_scheduled_task(
+impl TaskStore for Database {
+    fn create_scheduled_task(
         &self,
         chat_id: i64,
         prompt: &str,
@@ -23,7 +24,7 @@ impl Database {
         )
     }
 
-    pub fn create_scheduled_task_with_timezone(
+    fn create_scheduled_task_with_timezone(
         &self,
         chat_id: i64,
         prompt: &str,
@@ -50,7 +51,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_due_tasks(&self, now: &str) -> Result<Vec<ScheduledTask>, MchactError> {
+    fn get_due_tasks(&self, now: &str) -> Result<Vec<ScheduledTask>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, prompt, schedule_type, schedule_value, timezone, next_run, last_run, status, created_at
@@ -76,7 +77,7 @@ impl Database {
         Ok(tasks)
     }
 
-    pub fn claim_due_tasks(
+    fn claim_due_tasks(
         &self,
         now: &str,
         limit: usize,
@@ -128,7 +129,7 @@ impl Database {
         Ok(claimed)
     }
 
-    pub fn get_tasks_for_chat(&self, chat_id: i64) -> Result<Vec<ScheduledTask>, MchactError> {
+    fn get_tasks_for_chat(&self, chat_id: i64) -> Result<Vec<ScheduledTask>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, prompt, schedule_type, schedule_value, timezone, next_run, last_run, status, created_at
@@ -155,7 +156,7 @@ impl Database {
         Ok(tasks)
     }
 
-    pub fn get_task_by_id(&self, task_id: i64) -> Result<Option<ScheduledTask>, MchactError> {
+    fn get_task_by_id(&self, task_id: i64) -> Result<Option<ScheduledTask>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT id, chat_id, prompt, schedule_type, schedule_value, timezone, next_run, last_run, status, created_at
@@ -184,7 +185,7 @@ impl Database {
         }
     }
 
-    pub fn update_task_status(&self, task_id: i64, status: &str) -> Result<bool, MchactError> {
+    fn update_task_status(&self, task_id: i64, status: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute(
             "UPDATE scheduled_tasks SET status = ?1 WHERE id = ?2",
@@ -193,7 +194,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn requeue_scheduled_task(
+    fn requeue_scheduled_task(
         &self,
         task_id: i64,
         next_run: &str,
@@ -208,7 +209,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn update_task_after_run(
+    fn update_task_after_run(
         &self,
         task_id: i64,
         last_run: &str,
@@ -235,7 +236,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn recover_running_tasks(&self) -> Result<usize, MchactError> {
+    fn recover_running_tasks(&self) -> Result<usize, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute(
             "UPDATE scheduled_tasks
@@ -247,7 +248,7 @@ impl Database {
     }
 
     #[allow(dead_code)]
-    pub fn delete_task(&self, task_id: i64) -> Result<bool, MchactError> {
+    fn delete_task(&self, task_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute(
             "DELETE FROM scheduled_tasks WHERE id = ?1",
@@ -259,7 +260,7 @@ impl Database {
     // --- Task run logs ---
 
     #[allow(clippy::too_many_arguments)]
-    pub fn log_task_run(
+    fn log_task_run(
         &self,
         task_id: i64,
         chat_id: i64,
@@ -286,7 +287,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_task_run_logs(
+    fn get_task_run_logs(
         &self,
         task_id: i64,
         limit: usize,
@@ -316,7 +317,7 @@ impl Database {
         Ok(logs)
     }
 
-    pub fn get_task_run_summary_since(
+    fn get_task_run_summary_since(
         &self,
         since: Option<&str>,
     ) -> Result<(i64, i64), MchactError> {
@@ -345,7 +346,7 @@ impl Database {
         }
     }
 
-    pub fn insert_scheduled_task_dlq(
+    fn insert_scheduled_task_dlq(
         &self,
         task_id: i64,
         chat_id: i64,
@@ -373,7 +374,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn list_scheduled_task_dlq(
+    fn list_scheduled_task_dlq(
         &self,
         chat_id: Option<i64>,
         task_id: Option<i64>,
@@ -451,7 +452,7 @@ impl Database {
         }
     }
 
-    pub fn mark_scheduled_task_dlq_replayed(
+    fn mark_scheduled_task_dlq_replayed(
         &self,
         dlq_id: i64,
         note: Option<&str>,

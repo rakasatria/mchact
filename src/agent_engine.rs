@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
 use crate::config::{
-    normalize_model_name, resolve_model_name_with_fallback, Config, ResolvedLlmProviderProfile,
+    normalize_model_name, resolve_model_name_with_fallback, ResolvedLlmProviderProfile,
 };
 use crate::hooks::HookOutcome;
 use crate::memory_service::{build_db_memory_context, maybe_handle_explicit_memory_command};
@@ -18,6 +18,7 @@ use mchact_observability::traces::{
     kv, kv_int, new_span_id, new_trace_id, now_unix_nano, SpanData,
 };
 use mchact_storage::db::{call_blocking, SessionSettings, StoredMessage};
+use mchact_storage::prelude::*;
 use opentelemetry_proto::tonic::trace::v1::Status;
 use opentelemetry_semantic_conventions::attribute::{
     GEN_AI_OPERATION_NAME, GEN_AI_REQUEST_MODEL, GEN_AI_SYSTEM, GEN_AI_USAGE_INPUT_TOKENS,
@@ -2439,8 +2440,9 @@ async fn compact_messages(
 }
 
 /// Check if last conversation exceeded skill nudge thresholds and write pending nudge file.
+#[cfg(test)]
 pub(crate) fn maybe_write_skill_nudge(
-    config: &Config,
+    config: &crate::config::Config,
     data_dir: &str,
     tool_call_count: u32,
     turn_count: u32,
@@ -2468,6 +2470,7 @@ pub(crate) fn maybe_write_skill_nudge(
 }
 
 /// Read and consume pending skill nudge (returns None if no nudge pending).
+#[cfg(test)]
 pub(crate) fn consume_skill_nudge(data_dir: &str) -> Option<String> {
     let nudge_path = std::path::Path::new(data_dir)
         .join("runtime")

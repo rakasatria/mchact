@@ -7,6 +7,7 @@ use tracing::info;
 use crate::memory_backend::MemoryBackend;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::Database;
+use mchact_storage::prelude::*;
 use mchact_storage::memory_quality;
 
 use super::{auth_context_from_input, authorize_chat_access, schema_object, Tool, ToolResult};

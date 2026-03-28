@@ -12,6 +12,7 @@ use mchact_channels::channel::{
 use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database, StoredMessage};
+use mchact_storage::prelude::*;
 use mchact_tools::runtime::auth_context_from_input;
 
 pub struct SendMessageTool {

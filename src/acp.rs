@@ -21,6 +21,7 @@ use agent_client_protocol::{
 use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
 use mchact_storage::db::{call_blocking, Database, StoredMessage};
+use mchact_storage::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

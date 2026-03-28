@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use mchact_storage::db::{Database, Knowledge};
+use mchact_storage::prelude::*;
 
 use crate::embedding::EmbeddingProvider;
 

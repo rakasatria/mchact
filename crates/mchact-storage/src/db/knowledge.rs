@@ -4,11 +4,12 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::{DocumentChunk, Knowledge};
+use crate::traits::KnowledgeStore;
 
-impl Database {
+impl KnowledgeStore for Database {
     // ── Knowledge CRUD ────────────────────────────────────────────────────────
 
-    pub fn create_knowledge(
+    fn create_knowledge(
         &self,
         name: &str,
         description: &str,
@@ -24,7 +25,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_knowledge_by_name(&self, name: &str) -> Result<Option<Knowledge>, MchactError> {
+    fn get_knowledge_by_name(&self, name: &str) -> Result<Option<Knowledge>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, description, owner_chat_id, last_grouping_check_at,
@@ -48,7 +49,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn list_knowledge(&self) -> Result<Vec<Knowledge>, MchactError> {
+    fn list_knowledge(&self) -> Result<Vec<Knowledge>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, description, owner_chat_id, last_grouping_check_at,
@@ -70,13 +71,13 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn delete_knowledge(&self, id: i64) -> Result<(), MchactError> {
+    fn delete_knowledge(&self, id: i64) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute("DELETE FROM knowledge WHERE id = ?1", params![id])?;
         Ok(())
     }
 
-    pub fn update_knowledge_timestamp(&self, id: i64) -> Result<(), MchactError> {
+    fn update_knowledge_timestamp(&self, id: i64) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -86,7 +87,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_knowledge_grouping_check(
+    fn update_knowledge_grouping_check(
         &self,
         knowledge_id: i64,
         doc_count: i64,
@@ -102,7 +103,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_knowledge_needing_grouping(
+    fn get_knowledge_needing_grouping(
         &self,
         min_docs: i64,
     ) -> Result<Vec<Knowledge>, MchactError> {
@@ -137,7 +138,7 @@ impl Database {
 
     // ── Knowledge Documents ───────────────────────────────────────────────────
 
-    pub fn add_document_to_knowledge(
+    fn add_document_to_knowledge(
         &self,
         knowledge_id: i64,
         doc_extraction_id: i64,
@@ -152,7 +153,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn remove_document_from_knowledge(
+    fn remove_document_from_knowledge(
         &self,
         knowledge_id: i64,
         doc_extraction_id: i64,
@@ -166,7 +167,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_knowledge_documents(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
+    fn list_knowledge_documents(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT document_extraction_id FROM knowledge_documents
@@ -176,7 +177,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn count_knowledge_documents(&self, knowledge_id: i64) -> Result<i64, MchactError> {
+    fn count_knowledge_documents(&self, knowledge_id: i64) -> Result<i64, MchactError> {
         let conn = self.lock_conn();
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM knowledge_documents WHERE knowledge_id = ?1",
@@ -188,7 +189,7 @@ impl Database {
 
     // ── Knowledge Chat Access ─────────────────────────────────────────────────
 
-    pub fn add_knowledge_chat_access(
+    fn add_knowledge_chat_access(
         &self,
         knowledge_id: i64,
         chat_id: i64,
@@ -203,7 +204,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn has_knowledge_chat_access(
+    fn has_knowledge_chat_access(
         &self,
         knowledge_id: i64,
         chat_id: i64,
@@ -218,7 +219,7 @@ impl Database {
         Ok(count > 0)
     }
 
-    pub fn list_knowledge_for_chat(&self, chat_id: i64) -> Result<Vec<Knowledge>, MchactError> {
+    fn list_knowledge_for_chat(&self, chat_id: i64) -> Result<Vec<Knowledge>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT k.id, k.name, k.description, k.owner_chat_id,
@@ -244,7 +245,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn list_knowledge_chat_ids(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
+    fn list_knowledge_chat_ids(&self, knowledge_id: i64) -> Result<Vec<i64>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT chat_id FROM knowledge_chat_access WHERE knowledge_id = ?1 ORDER BY attached_at",
@@ -255,7 +256,7 @@ impl Database {
 
     // ── Document Chunks ───────────────────────────────────────────────────────
 
-    pub fn insert_document_chunk(
+    fn insert_document_chunk(
         &self,
         doc_extraction_id: i64,
         page_number: i64,
@@ -273,7 +274,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_chunks_by_status(
+    fn get_chunks_by_status(
         &self,
         embedding_status: &str,
         limit: i64,
@@ -303,7 +304,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_chunks_for_observation(&self, limit: i64) -> Result<Vec<DocumentChunk>, MchactError> {
+    fn get_chunks_for_observation(&self, limit: i64) -> Result<Vec<DocumentChunk>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, document_extraction_id, page_number, text, token_count,
@@ -329,7 +330,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn update_chunk_embedding(
+    fn update_chunk_embedding(
         &self,
         chunk_id: i64,
         embedding_bytes: &[u8],
@@ -343,7 +344,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_chunk_observation_status(
+    fn update_chunk_observation_status(
         &self,
         chunk_id: i64,
         status: &str,
@@ -356,7 +357,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_chunks_for_document(
+    fn get_chunks_for_document(
         &self,
         doc_extraction_id: i64,
     ) -> Result<Vec<DocumentChunk>, MchactError> {
@@ -384,7 +385,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn reset_failed_chunks(&self, older_than_mins: i64) -> Result<i64, MchactError> {
+    fn reset_failed_chunks(&self, older_than_mins: i64) -> Result<i64, MchactError> {
         let conn = self.lock_conn();
         let cutoff = (chrono::Utc::now()
             - chrono::Duration::minutes(older_than_mins))
@@ -401,7 +402,7 @@ impl Database {
     /// Returns (total, embedded, pending, failed, obs_done, obs_pending) chunk
     /// counts for all document_chunks belonging to documents in the given
     /// knowledge collection.
-    pub fn get_knowledge_chunk_stats(
+    fn get_knowledge_chunk_stats(
         &self,
         knowledge_id: i64,
     ) -> Result<(i64, i64, i64, i64, i64, i64), MchactError> {

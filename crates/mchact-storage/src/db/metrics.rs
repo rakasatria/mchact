@@ -3,9 +3,10 @@ use rusqlite::params;
 
 use super::Database;
 use super::{LlmModelUsageSummary, LlmUsageSummary, MetricsHistoryPoint};
+use crate::traits::MetricsStore;
 
-impl Database {
-    pub fn upsert_metrics_history(
+impl MetricsStore for Database {
+    fn upsert_metrics_history(
         &self,
         point: &MetricsHistoryPoint,
     ) -> Result<(), MchactError> {
@@ -45,7 +46,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_metrics_history(
+    fn get_metrics_history(
         &self,
         since_ts_ms: i64,
         limit: usize,
@@ -82,7 +83,7 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn cleanup_metrics_history_before(
+    fn cleanup_metrics_history_before(
         &self,
         before_ts_ms: i64,
     ) -> Result<usize, MchactError> {
@@ -95,7 +96,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn log_llm_usage(
+    fn log_llm_usage(
         &self,
         chat_id: i64,
         caller_channel: &str,
@@ -127,14 +128,14 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_llm_usage_summary(
+    fn get_llm_usage_summary(
         &self,
         chat_id: Option<i64>,
     ) -> Result<LlmUsageSummary, MchactError> {
         self.get_llm_usage_summary_since(chat_id, None)
     }
 
-    pub fn get_llm_usage_summary_since(
+    fn get_llm_usage_summary_since(
         &self,
         chat_id: Option<i64>,
         since: Option<&str>,
@@ -232,7 +233,7 @@ impl Database {
         })
     }
 
-    pub fn get_llm_usage_by_model(
+    fn get_llm_usage_by_model(
         &self,
         chat_id: Option<i64>,
         since: Option<&str>,

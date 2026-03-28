@@ -14,6 +14,16 @@ mod document;
 mod media;
 mod knowledge;
 
+impl crate::traits::DataStore for Database {}
+
+// Re-export all storage traits so they are conveniently available
+// to callers that import this module (including the test module below).
+pub use crate::traits::{
+    AuthStore, AuditStore, ChatStore, DataStore, DocumentStore, KnowledgeStore,
+    MediaObjectStore, MemoryDbStore, MessageStore, MetricsStore, SessionStore,
+    SubagentStore, TaskStore,
+};
+
 use rusqlite::OptionalExtension;
 use rusqlite::{params, Connection};
 use std::path::Path;

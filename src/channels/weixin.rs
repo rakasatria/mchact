@@ -29,6 +29,7 @@ use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
 use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::prelude::*;
 
 const CHANNEL_KEY: &str = "weixin";
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";

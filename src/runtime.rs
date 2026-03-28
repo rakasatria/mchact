@@ -45,7 +45,7 @@ use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
 use mchact_storage::db::Database;
-use mchact_storage_backend::local::LocalStorage;
+use mchact_storage_backend::StorageBackendConfig;
 
 pub struct AppState {
     pub config: Config,
@@ -467,13 +467,15 @@ pub async fn run(
     let trace_exporter = OtlpTraceExporter::from_observability(config.observability.as_ref());
     let log_exporter = OtlpLogExporter::from_observability(config.observability.as_ref());
 
-    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
-        LocalStorage::new(&config.data_dir)
+    let storage_config = build_storage_backend_config(&config);
+    apply_storage_env_overrides(&config);
+    let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::from(
+        mchact_storage_backend::create_storage(&storage_config)
             .await
             .unwrap_or_else(|e| {
                 panic!(
-                    "Cannot initialize media storage at '{}': {e}",
-                    config.data_dir
+                    "Cannot initialize '{}' storage backend: {e}",
+                    config.storage_backend
                 )
             }),
     );
@@ -777,5 +779,89 @@ pub async fn run(
         Err(anyhow!(
             "No channel is enabled. Configure channels.<name>.enabled (or legacy channel settings) for Telegram, Discord, Slack, Feishu, Matrix, WhatsApp, iMessage, Email, Nostr, Signal, DingTalk, QQ, Weixin, IRC, or web."
         ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Storage backend helpers
+// ---------------------------------------------------------------------------
+
+/// Forward config-level credentials to the environment variables that the
+/// underlying cloud SDKs expect, but only when the env var is not already set
+/// (explicit env vars take precedence over config file values).
+///
+/// # Safety
+///
+/// Called once during single-threaded startup before any cloud SDK clients are
+/// created or background tasks are spawned.
+fn apply_storage_env_overrides(config: &crate::config::Config) {
+    // SAFETY: called once at startup before spawning background tasks.
+    unsafe {
+        if let Some(ref key) = config.storage_s3_access_key_id {
+            if std::env::var("AWS_ACCESS_KEY_ID").is_err() {
+                std::env::set_var("AWS_ACCESS_KEY_ID", key);
+            }
+        }
+        if let Some(ref secret) = config.storage_s3_secret_access_key {
+            if std::env::var("AWS_SECRET_ACCESS_KEY").is_err() {
+                std::env::set_var("AWS_SECRET_ACCESS_KEY", secret);
+            }
+        }
+        if let Some(ref conn) = config.storage_azure_connection_string {
+            if std::env::var("AZURE_STORAGE_CONNECTION_STRING").is_err() {
+                std::env::set_var("AZURE_STORAGE_CONNECTION_STRING", conn);
+            }
+        }
+        if let Some(ref key) = config.storage_azure_account_key {
+            if std::env::var("AZURE_STORAGE_KEY").is_err() {
+                std::env::set_var("AZURE_STORAGE_KEY", key);
+            }
+        }
+        if let Some(ref path) = config.storage_gcs_credentials_path {
+            if std::env::var("GOOGLE_APPLICATION_CREDENTIALS").is_err() {
+                std::env::set_var("GOOGLE_APPLICATION_CREDENTIALS", path);
+            }
+        }
+    }
+}
+
+fn build_storage_backend_config(config: &crate::config::Config) -> StorageBackendConfig {
+    let s3 = config.storage_s3_bucket.as_ref().map(|bucket| {
+        mchact_storage_backend::S3Config {
+            bucket: bucket.clone(),
+            region: config
+                .storage_s3_region
+                .clone()
+                .unwrap_or_else(|| "us-east-1".into()),
+            prefix: String::new(),
+            endpoint_url: config.storage_s3_endpoint.clone(),
+        }
+    });
+
+    let azure = config.storage_azure_account_name.as_ref().map(|account| {
+        mchact_storage_backend::AzureConfig {
+            account: account.clone(),
+            container: config
+                .storage_azure_container
+                .clone()
+                .unwrap_or_else(|| "mchact".into()),
+            prefix: String::new(),
+        }
+    });
+
+    let gcs = config.storage_gcs_bucket.as_ref().map(|bucket| {
+        mchact_storage_backend::GcsConfig {
+            bucket: bucket.clone(),
+            prefix: String::new(),
+        }
+    });
+
+    StorageBackendConfig {
+        backend: config.storage_backend.clone(),
+        data_dir: config.data_dir.clone(),
+        cache_max_bytes: config.storage_cache_max_size_mb * 1024 * 1024,
+        s3,
+        azure,
+        gcs,
     }
 }

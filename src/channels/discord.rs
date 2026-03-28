@@ -28,6 +28,7 @@ use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_core::text::{floor_char_boundary, split_text};
 use mchact_storage::db::call_blocking;
 use mchact_storage::db::StoredMessage;
+use mchact_storage::prelude::*;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DiscordAccountConfig {

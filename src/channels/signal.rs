@@ -19,6 +19,7 @@ use crate::setup_def::{ChannelFieldDef, DynamicChannelDef};
 use mchact_channels::channel::ConversationKind;
 use mchact_channels::channel_adapter::ChannelAdapter;
 use mchact_storage::db::{call_blocking, StoredMessage};
+use mchact_storage::prelude::*;
 
 pub const SETUP_DEF: DynamicChannelDef = DynamicChannelDef {
     name: "signal",

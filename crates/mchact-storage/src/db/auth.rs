@@ -4,9 +4,10 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::AuthApiKeyRecord;
+use crate::traits::AuthStore;
 
-impl Database {
-    pub fn upsert_auth_password_hash(&self, password_hash: &str) -> Result<(), MchactError> {
+impl AuthStore for Database {
+    fn upsert_auth_password_hash(&self, password_hash: &str) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -20,7 +21,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_auth_password_hash(&self) -> Result<Option<String>, MchactError> {
+    fn get_auth_password_hash(&self) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let value = conn
             .query_row(
@@ -32,13 +33,13 @@ impl Database {
         Ok(value)
     }
 
-    pub fn clear_auth_password_hash(&self) -> Result<bool, MchactError> {
+    fn clear_auth_password_hash(&self) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute("DELETE FROM auth_passwords WHERE id = 1", [])?;
         Ok(rows > 0)
     }
 
-    pub fn create_auth_session(
+    fn create_auth_session(
         &self,
         session_id: &str,
         label: Option<&str>,
@@ -54,7 +55,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn validate_auth_session(&self, session_id: &str) -> Result<bool, MchactError> {
+    fn validate_auth_session(&self, session_id: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let valid = conn
@@ -79,7 +80,7 @@ impl Database {
         Ok(valid)
     }
 
-    pub fn revoke_auth_session(&self, session_id: &str) -> Result<bool, MchactError> {
+    fn revoke_auth_session(&self, session_id: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn.execute(
@@ -91,7 +92,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn revoke_all_auth_sessions(&self) -> Result<usize, MchactError> {
+    fn revoke_all_auth_sessions(&self) -> Result<usize, MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn.execute(
@@ -103,7 +104,7 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn create_api_key(
+    fn create_api_key(
         &self,
         label: &str,
         key_hash: &str,
@@ -131,7 +132,7 @@ impl Database {
         Ok(key_id)
     }
 
-    pub fn list_api_keys(&self) -> Result<Vec<AuthApiKeyRecord>, MchactError> {
+    fn list_api_keys(&self) -> Result<Vec<AuthApiKeyRecord>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, label, prefix, created_at, revoked_at, expires_at, last_used_at, rotated_from_key_id
@@ -163,11 +164,11 @@ impl Database {
         Ok(out)
     }
 
-    pub fn rotate_api_key_revoke_old(&self, old_key_id: i64) -> Result<bool, MchactError> {
+    fn rotate_api_key_revoke_old(&self, old_key_id: i64) -> Result<bool, MchactError> {
         self.revoke_api_key(old_key_id)
     }
 
-    pub fn revoke_api_key(&self, key_id: i64) -> Result<bool, MchactError> {
+    fn revoke_api_key(&self, key_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn.execute(
@@ -179,7 +180,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn validate_api_key_hash(
+    fn validate_api_key_hash(
         &self,
         key_hash: &str,
     ) -> Result<Option<(i64, Vec<String>)>, MchactError> {

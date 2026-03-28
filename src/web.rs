@@ -27,6 +27,7 @@ use mchact_channels::channel::{
 use mchact_channels::channel_adapter::{ChannelAdapter, ChannelRegistry};
 use mchact_observability::metrics::{OtlpMetricExporter, OtlpMetricSnapshot};
 use mchact_storage::db::{call_blocking, ChatSummary, MetricsHistoryPoint, StoredMessage};
+use mchact_storage::prelude::*;
 use mchact_storage::usage::build_usage_report;
 
 mod a2a;

@@ -6,6 +6,7 @@ use serde_json::json;
 use super::{schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::prelude::*;
 
 fn extract_runtime_ids(input: &serde_json::Value) -> Option<(String, String)> {
     let meta = input.get("__subagent_runtime")?;

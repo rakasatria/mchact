@@ -10,6 +10,7 @@ use mchact_channels::channel::enforce_channel_policy;
 use mchact_channels::channel_adapter::ChannelRegistry;
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::prelude::*;
 
 fn compute_next_run(cron_expr: &str, tz_name: &str) -> Result<String, String> {
     let tz: chrono_tz::Tz = tz_name

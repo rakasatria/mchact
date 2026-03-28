@@ -4,9 +4,10 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::{FtsSearchResult, StoredMessage};
+use crate::traits::MessageStore;
 
-impl Database {
-    pub fn store_message(&self, msg: &StoredMessage) -> Result<(), MchactError> {
+impl MessageStore for Database {
+    fn store_message(&self, msg: &StoredMessage) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute(
             "INSERT OR REPLACE INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
@@ -23,7 +24,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn store_message_if_new(&self, msg: &StoredMessage) -> Result<bool, MchactError> {
+    fn store_message_if_new(&self, msg: &StoredMessage) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let affected = conn.execute(
             "INSERT OR IGNORE INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
@@ -40,7 +41,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    pub fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MchactError> {
+    fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let exists = conn
             .query_row(
@@ -53,7 +54,7 @@ impl Database {
         Ok(exists)
     }
 
-    pub fn search_messages_fts(
+    fn search_messages_fts(
         &self,
         query: &str,
         chat_id: Option<i64>,
@@ -97,7 +98,7 @@ impl Database {
         Ok(results)
     }
 
-    pub fn get_message_context(
+    fn get_message_context(
         &self,
         chat_id: i64,
         timestamp: &str,
@@ -136,13 +137,13 @@ impl Database {
         Ok(results)
     }
 
-    pub fn rebuild_fts_index(&self) -> Result<(), MchactError> {
+    fn rebuild_fts_index(&self) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute_batch("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")?;
         Ok(())
     }
 
-    pub fn get_recent_messages(
+    fn get_recent_messages(
         &self,
         chat_id: i64,
         limit: usize,
@@ -175,7 +176,7 @@ impl Database {
         Ok(messages)
     }
 
-    pub fn get_all_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>, MchactError> {
+    fn get_all_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, sender_name, content, is_from_bot, timestamp
@@ -200,7 +201,7 @@ impl Database {
 
     /// Get messages since the bot's last response in this chat.
     /// Falls back to `fallback_limit` most recent messages if bot never responded.
-    pub fn get_messages_since_last_bot_response(
+    fn get_messages_since_last_bot_response(
         &self,
         chat_id: i64,
         max: usize,
@@ -267,7 +268,7 @@ impl Database {
         Ok(messages)
     }
 
-    pub fn get_new_user_messages_since(
+    fn get_new_user_messages_since(
         &self,
         chat_id: i64,
         since: &str,
@@ -294,7 +295,7 @@ impl Database {
         Ok(messages)
     }
 
-    pub fn get_messages_since(
+    fn get_messages_since(
         &self,
         chat_id: i64,
         since: &str,

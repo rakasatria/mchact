@@ -6,6 +6,7 @@ use mchact::error::MchactError;
 use mchact::{
     builtin_skills, db, doctor, gateway, hooks, logging, mcp, memory, runtime, setup, skills,
 };
+use mchact_storage::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use tracing::info;

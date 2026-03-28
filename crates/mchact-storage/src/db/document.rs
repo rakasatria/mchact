@@ -4,9 +4,10 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::DocumentExtraction;
+use crate::traits::DocumentStore;
 
-impl Database {
-    pub fn insert_document_extraction(
+impl DocumentStore for Database {
+    fn insert_document_extraction(
         &self,
         chat_id: i64,
         file_hash: &str,
@@ -27,7 +28,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_document_extraction(
+    fn get_document_extraction(
         &self,
         chat_id: i64,
         file_hash: &str,
@@ -57,7 +58,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn search_document_extractions(
+    fn search_document_extractions(
         &self,
         chat_id: Option<i64>,
         query: &str,
@@ -96,7 +97,7 @@ impl Database {
         Ok(results)
     }
 
-    pub fn list_document_extractions(
+    fn list_document_extractions(
         &self,
         chat_id: i64,
         limit: usize,
@@ -130,7 +131,7 @@ impl Database {
         Ok(results)
     }
 
-    pub fn get_document_extraction_by_id(
+    fn get_document_extraction_by_id(
         &self,
         id: i64,
     ) -> Result<Option<DocumentExtraction>, MchactError> {
@@ -158,7 +159,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn set_document_extraction_media_id(
+    fn set_document_extraction_media_id(
         &self,
         extraction_id: i64,
         media_object_id: i64,
@@ -171,7 +172,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_document_extraction_id_by_media_object_id(
+    fn get_document_extraction_id_by_media_object_id(
         &self,
         media_object_id: i64,
     ) -> Result<Option<i64>, MchactError> {

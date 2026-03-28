@@ -5,6 +5,7 @@ use chrono::SecondsFormat;
 use crate::db::{
     call_blocking, Database, LlmModelUsageSummary, LlmUsageSummary, MemoryObservabilitySummary,
 };
+use crate::traits::{MemoryDbStore, MetricsStore};
 
 fn fmt_int(v: i64) -> String {
     let neg = v < 0;

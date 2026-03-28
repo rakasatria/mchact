@@ -3,13 +3,14 @@ use rusqlite::params;
 
 use super::Database;
 use super::{SessionMetaRow, SessionSettings, SessionTreeRow};
+use crate::traits::SessionStore;
 
-impl Database {
-    pub fn save_session(&self, chat_id: i64, messages_json: &str) -> Result<(), MchactError> {
+impl SessionStore for Database {
+    fn save_session(&self, chat_id: i64, messages_json: &str) -> Result<(), MchactError> {
         self.save_session_with_meta(chat_id, messages_json, None, None, None)
     }
 
-    pub fn save_session_with_meta(
+    fn save_session_with_meta(
         &self,
         chat_id: i64,
         messages_json: &str,
@@ -33,7 +34,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn save_session_skill_envs(
+    fn save_session_skill_envs(
         &self,
         chat_id: i64,
         skill_envs_json: &str,
@@ -46,7 +47,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn load_session(&self, chat_id: i64) -> Result<Option<(String, String)>, MchactError> {
+    fn load_session(&self, chat_id: i64) -> Result<Option<(String, String)>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT messages_json, updated_at FROM sessions WHERE chat_id = ?1",
@@ -60,7 +61,7 @@ impl Database {
         }
     }
 
-    pub fn load_session_skill_envs(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn load_session_skill_envs(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         let result = conn.query_row(
             "SELECT skill_envs_json FROM sessions WHERE chat_id = ?1",
@@ -74,7 +75,7 @@ impl Database {
         }
     }
 
-    pub fn save_session_settings(
+    fn save_session_settings(
         &self,
         chat_id: i64,
         settings: &SessionSettings,
@@ -110,7 +111,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn load_session_settings(
+    fn load_session_settings(
         &self,
         chat_id: i64,
     ) -> Result<Option<SessionSettings>, MchactError> {
@@ -136,7 +137,7 @@ impl Database {
         }
     }
 
-    pub fn load_session_meta(
+    fn load_session_meta(
         &self,
         chat_id: i64,
     ) -> Result<Option<SessionMetaRow>, MchactError> {
@@ -161,7 +162,7 @@ impl Database {
         }
     }
 
-    pub fn list_session_meta(&self, limit: usize) -> Result<Vec<SessionTreeRow>, MchactError> {
+    fn list_session_meta(&self, limit: usize) -> Result<Vec<SessionTreeRow>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT chat_id, parent_session_key, fork_point, updated_at
@@ -182,7 +183,7 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn delete_session(&self, chat_id: i64) -> Result<bool, MchactError> {
+    fn delete_session(&self, chat_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let rows = conn.execute("DELETE FROM sessions WHERE chat_id = ?1", params![chat_id])?;
         Ok(rows > 0)
@@ -190,7 +191,7 @@ impl Database {
 
     /// Clear all resettable chat state without deleting chat metadata or memories.
     /// This removes resumable session state, historical messages, and scheduled task state.
-    pub fn clear_chat_context(&self, chat_id: i64) -> Result<bool, MchactError> {
+    fn clear_chat_context(&self, chat_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let tx = conn.unchecked_transaction()?;
         let mut affected = 0usize;
@@ -214,7 +215,7 @@ impl Database {
 
     /// Clear conversational context for a chat while preserving scheduled task state.
     /// This removes resumable session state and historical messages only.
-    pub fn clear_chat_conversation(&self, chat_id: i64) -> Result<bool, MchactError> {
+    fn clear_chat_conversation(&self, chat_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let tx = conn.unchecked_transaction()?;
         let mut affected = 0usize;
@@ -226,7 +227,7 @@ impl Database {
 
     /// Clear memory state for a chat without deleting chat/session/message history.
     /// This removes structured memories and reflector bookkeeping for the chat.
-    pub fn clear_chat_memory(&self, chat_id: i64) -> Result<bool, MchactError> {
+    fn clear_chat_memory(&self, chat_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let tx = conn.unchecked_transaction()?;
         let mut affected = 0usize;
@@ -253,7 +254,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    pub fn delete_chat_data(&self, chat_id: i64) -> Result<bool, MchactError> {
+    fn delete_chat_data(&self, chat_id: i64) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let tx = conn.unchecked_transaction()?;
         let mut affected = 0usize;

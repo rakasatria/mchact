@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use mchact_storage::db::{call_blocking, Database};
+use mchact_storage::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;

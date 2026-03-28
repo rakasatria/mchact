@@ -7,9 +7,10 @@ use super::{
     CreateSubagentRunParams, Finding, FinishSubagentRunParams, SubagentAnnounceRecord,
     SubagentEventRecord, SubagentObservabilitySnapshot, SubagentRunRecord,
 };
+use crate::traits::SubagentStore;
 
-impl Database {
-    pub fn create_subagent_run(
+impl SubagentStore for Database {
+    fn create_subagent_run(
         &self,
         params: CreateSubagentRunParams<'_>,
     ) -> Result<(), MchactError> {
@@ -36,7 +37,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn mark_subagent_queued(&self, run_id: &str) -> Result<(), MchactError> {
+    fn mark_subagent_queued(&self, run_id: &str) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute(
             "UPDATE subagent_runs
@@ -47,7 +48,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn mark_subagent_running(&self, run_id: &str) -> Result<(), MchactError> {
+    fn mark_subagent_running(&self, run_id: &str) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -59,7 +60,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn mark_subagent_finished(
+    fn mark_subagent_finished(
         &self,
         params: FinishSubagentRunParams<'_>,
     ) -> Result<(), MchactError> {
@@ -90,7 +91,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn is_subagent_cancel_requested(&self, run_id: &str) -> Result<bool, MchactError> {
+    fn is_subagent_cancel_requested(&self, run_id: &str) -> Result<bool, MchactError> {
         let conn = self.lock_conn();
         let requested = conn
             .query_row(
@@ -103,7 +104,7 @@ impl Database {
         Ok(requested != 0)
     }
 
-    pub fn request_subagent_cancel(
+    fn request_subagent_cancel(
         &self,
         run_id: &str,
         chat_id: i64,
@@ -119,7 +120,7 @@ impl Database {
         Ok(affected > 0)
     }
 
-    pub fn list_subagent_runs(
+    fn list_subagent_runs(
         &self,
         chat_id: i64,
         limit: usize,
@@ -162,7 +163,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn get_subagent_run(
+    fn get_subagent_run(
         &self,
         run_id: &str,
         chat_id: i64,
@@ -205,7 +206,7 @@ impl Database {
         .map_err(Into::into)
     }
 
-    pub fn count_active_subagent_runs_for_chat(&self, chat_id: i64) -> Result<i64, MchactError> {
+    fn count_active_subagent_runs_for_chat(&self, chat_id: i64) -> Result<i64, MchactError> {
         let conn = self.lock_conn();
         conn.query_row(
             "SELECT COUNT(*)
@@ -218,7 +219,7 @@ impl Database {
         .map_err(Into::into)
     }
 
-    pub fn count_active_subagent_children(
+    fn count_active_subagent_children(
         &self,
         parent_run_id: &str,
     ) -> Result<i64, MchactError> {
@@ -234,7 +235,7 @@ impl Database {
         .map_err(Into::into)
     }
 
-    pub fn enqueue_subagent_announce(
+    fn enqueue_subagent_announce(
         &self,
         run_id: &str,
         chat_id: i64,
@@ -253,7 +254,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_due_subagent_announces(
+    fn list_due_subagent_announces(
         &self,
         now_iso: &str,
         limit: usize,
@@ -283,7 +284,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn mark_subagent_announce_sent(&self, id: i64) -> Result<(), MchactError> {
+    fn mark_subagent_announce_sent(&self, id: i64) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -295,7 +296,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn mark_subagent_announce_retry(
+    fn mark_subagent_announce_retry(
         &self,
         id: i64,
         attempts: i64,
@@ -315,7 +316,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn append_subagent_event(
+    fn append_subagent_event(
         &self,
         run_id: &str,
         event_type: &str,
@@ -331,7 +332,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_subagent_events(
+    fn list_subagent_events(
         &self,
         run_id: &str,
         limit: usize,
@@ -356,7 +357,7 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn set_subagent_focus(&self, chat_id: i64, run_id: &str) -> Result<(), MchactError> {
+    fn set_subagent_focus(&self, chat_id: i64, run_id: &str) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -370,7 +371,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn clear_subagent_focus(&self, chat_id: i64) -> Result<(), MchactError> {
+    fn clear_subagent_focus(&self, chat_id: i64) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute(
             "DELETE FROM subagent_focus_bindings WHERE chat_id = ?1",
@@ -379,7 +380,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_subagent_focus(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
+    fn get_subagent_focus(&self, chat_id: i64) -> Result<Option<String>, MchactError> {
         let conn = self.lock_conn();
         conn.query_row(
             "SELECT run_id FROM subagent_focus_bindings WHERE chat_id = ?1",
@@ -390,7 +391,7 @@ impl Database {
         .map_err(Into::into)
     }
 
-    pub fn get_subagent_observability_snapshot(
+    fn get_subagent_observability_snapshot(
         &self,
         chat_id: Option<i64>,
         recent_limit: usize,
@@ -642,7 +643,7 @@ impl Database {
         })
     }
 
-    pub fn insert_finding(
+    fn insert_finding(
         &self,
         orchestration_id: &str,
         run_id: &str,
@@ -659,7 +660,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_findings(
+    fn get_findings(
         &self,
         orchestration_id: &str,
     ) -> Result<Vec<Finding>, MchactError> {
@@ -687,7 +688,7 @@ impl Database {
         Ok(results)
     }
 
-    pub fn delete_findings(
+    fn delete_findings(
         &self,
         orchestration_id: &str,
     ) -> Result<usize, MchactError> {

@@ -4,9 +4,10 @@ use rusqlite::OptionalExtension;
 
 use super::Database;
 use super::MediaObject;
+use crate::traits::MediaObjectStore;
 
-impl Database {
-    pub fn insert_media_object(
+impl MediaObjectStore for Database {
+    fn insert_media_object(
         &self,
         key: &str,
         backend: &str,
@@ -27,7 +28,7 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn get_media_object(&self, id: i64) -> Result<Option<MediaObject>, MchactError> {
+    fn get_media_object(&self, id: i64) -> Result<Option<MediaObject>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at
@@ -52,7 +53,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn get_media_object_by_hash(&self, hash: &str) -> Result<Option<MediaObject>, MchactError> {
+    fn get_media_object_by_hash(&self, hash: &str) -> Result<Option<MediaObject>, MchactError> {
         let conn = self.lock_conn();
         let mut stmt = conn.prepare(
             "SELECT id, object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at
@@ -77,7 +78,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn list_media_objects_for_chat(
+    fn list_media_objects_for_chat(
         &self,
         chat_id: i64,
     ) -> Result<Vec<MediaObject>, MchactError> {
@@ -108,7 +109,7 @@ impl Database {
         Ok(results)
     }
 
-    pub fn delete_media_object(&self, id: i64) -> Result<(), MchactError> {
+    fn delete_media_object(&self, id: i64) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         conn.execute("DELETE FROM media_objects WHERE id = ?1", params![id])?;
         Ok(())
