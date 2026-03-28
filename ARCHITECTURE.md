@@ -35,17 +35,56 @@ See [`mchact.config.example.yaml`](/Volumes/Data/Codes/Local/mchact/mchact.confi
 
 mchact solves the problem of running one agent runtime across many chat and operator surfaces without forking the core logic per channel. A message can enter from the local web UI, Telegram, Discord, Slack, Feishu/Lark, Matrix, Weixin, WhatsApp, Signal, IRC, Nostr, email, or other adapters, but it is processed by the same agent loop in [`src/agent_engine.rs`](/Volumes/Data/Codes/Local/mchact/src/agent_engine.rs).
 
-At a high level, the system works like this:
+```mermaid
+graph TB
+    subgraph Channels["Channels"]
+        TG[Telegram] & DC[Discord] & SL[Slack] & FE[Feishu/Lark]
+        MX[Matrix] & WA[WhatsApp] & WX[Weixin] & SG[Signal]
+        IR[IRC] & NS[Nostr] & EM[Email] & WEB[Web UI]
+    end
 
-```text
-Inbound channel/web request
-  -> channel adapter normalizes message/context
-  -> runtime builds AppState (LLM, DB, tools, memory, skills, hooks, MCP, observability)
-  -> agent engine builds prompt + memory + tool schemas
-  -> LLM responds with text or tool calls
-  -> tool registry executes approved tools
-  -> loop continues until end_turn
-  -> response is persisted and emitted back through the originating channel
+    subgraph Core["Agent Runtime Core"]
+        AE[Agent Engine] --> LLM[LLM Provider Layer]
+        AE --> TR[Tool Registry]
+        AE --> SM[Session Manager]
+        AE --> MM[Memory Service]
+    end
+
+    subgraph Providers["LLM Providers"]
+        AN[Anthropic] & OA[OpenAI-compat] & OR[OpenRouter] & OL[Ollama]
+    end
+
+    subgraph Tools["Tool Families"]
+        FS[File/Shell] & WS[Web/Search] & MEM[Memory] & ORCH[Orchestration] & KN[Knowledge] & MD[Media] & SK[Skills]
+    end
+
+    subgraph Storage["Persistence"]
+        DB[(SQLite / Postgres)]
+        OS[Object Storage\nLocal / S3 / Azure / GCS]
+    end
+
+    subgraph Background["Background"]
+        SCH[Scheduler] & REF[Reflector] & KE[Knowledge Embedder]
+    end
+
+    subgraph External["External"]
+        MCP[MCP Servers] & ACP[ACP Subagents] & A2A[A2A Peers] & CH[ClawHub]
+    end
+
+    subgraph Observability["Observability"]
+        OTLP[OTLP Export] --> LF[Langfuse] & AO[AgentOps]
+    end
+
+    Channels --> AE
+    LLM --> Providers
+    TR --> Tools
+    TR --> MCP
+    TR --> ACP
+    TR --> A2A
+    AE --> DB
+    AE --> OS
+    Background --> AE
+    AE --> OTLP
 ```
 
 The important architectural decisions are:
@@ -199,6 +238,21 @@ The important architectural decisions are:
 
 Each adapter owns transport-specific ingress/egress and runtime wiring. The set currently includes Telegram, Discord, Slack, Feishu/Lark, Matrix, WhatsApp, Weixin, Signal, IRC, Nostr, QQ, DingTalk, iMessage, and email.
 
+```mermaid
+graph LR
+    MSG[Inbound Message] --> AD[Channel Adapter]
+    AD --> NORM[Normalize to\nAgentRequestContext]
+    NORM --> CFG{Config Resolution}
+    CFG -->|Global defaults| AE[Agent Engine]
+    CFG -->|Channel overrides| AE
+    CFG -->|Account overrides| AE
+    AE --> RESP[Response]
+    RESP --> SPLIT{Message Splitting}
+    SPLIT -->|Telegram: 4096 chars| TG[Telegram API]
+    SPLIT -->|Discord: 2000 chars| DC[Discord API]
+    SPLIT -->|Slack/Feishu: 4000 chars| SL[Slack/Feishu API]
+```
+
 These modules depend on:
 
 - `mchact-channels` abstractions
@@ -207,6 +261,28 @@ These modules depend on:
 - shared agent execution in `agent_engine`
 
 ### Tools in `src/tools/`
+
+```mermaid
+graph TB
+    LLM[LLM Response] --> TC{tool_use?}
+    TC -->|yes| AUTH[Auth Context Injection]
+    TC -->|no| DONE[Return Text Response]
+    AUTH --> POLICY{Approval Required?}
+    POLICY -->|high-risk| WAIT[Wait for User Approval]
+    POLICY -->|allowed| SANDBOX{Sandboxed?}
+    WAIT --> SANDBOX
+    SANDBOX -->|yes| SB[Sandbox Router]
+    SANDBOX -->|no| EXEC[Direct Execution]
+    SB --> RESULT[ToolResult]
+    EXEC --> RESULT
+    RESULT --> PATH[Path Guard Check]
+    PATH --> APPEND[Append to Conversation]
+
+    subgraph Sources["Tool Sources"]
+        BUILTIN[src/tools/mod.rs] & CLAW[src/clawhub/tools.rs] & MCPT[MCP Servers]
+    end
+    Sources --> AUTH
+```
 
 `src/tools/mod.rs` assembles the built-in registry. The source tree groups tool families by concern:
 
@@ -263,17 +339,28 @@ ClawHub tools are registered from [`src/clawhub/tools.rs`](/Volumes/Data/Codes/L
 
 ## 1. Chat message to response
 
-```text
-Channel/Web ingress
-  -> adapter normalizes message and routing
-  -> runtime resolves channel + account configuration
-  -> agent engine loads session/history/memory/skills/plugins
-  -> system prompt + tool schemas built
-  -> provider call via LlmProvider
-  -> tool calls dispatched through ToolRegistry if requested
-  -> tool results appended to conversation state
-  -> repeated until end_turn
-  -> persistence + outbound delivery + observability emission
+```mermaid
+sequenceDiagram
+    participant CH as Channel Adapter
+    participant AE as Agent Engine
+    participant DB as Database
+    participant LLM as LLM Provider
+    participant TR as Tool Registry
+
+    CH->>AE: AgentRequestContext
+    AE->>DB: Load session + history
+    AE->>AE: Build prompt (soul + memory + skills + plugins)
+    loop Until end_turn (max iterations)
+        AE->>LLM: Chat completion + tool schemas
+        LLM-->>AE: Response (text or tool_use)
+        opt tool_use
+            AE->>TR: Execute tool(s)
+            TR-->>AE: ToolResult
+            AE->>AE: Append tool_result to conversation
+        end
+    end
+    AE->>DB: Persist session + messages
+    AE-->>CH: Final response
 ```
 
 More concretely:
@@ -297,11 +384,52 @@ More concretely:
 
 ## 3. Scheduler and background work
 
+```mermaid
+graph TB
+    CRON[Cron / One-time Tasks] --> DB[(Database)]
+    DB --> POLL[Scheduler Poll Loop]
+    POLL --> DUE{Task Due?}
+    DUE -->|yes| AE[process_with_agent\nwith override_prompt]
+    DUE -->|no| WAIT[Sleep until next check]
+    AE --> PERSIST[Persist Result + History]
+    AE --> DLQ[Dead Letter Queue\non failure]
+
+    REF[Reflector Loop] -->|reflector_interval_mins| AE
+    KE[Knowledge Embedder] -->|knowledge_embed_interval_mins| EMB[Embed Chunks]
+```
+
 1. Scheduled tasks are stored in the database.
 2. `scheduler.rs` wakes up, selects due tasks, and re-enters the agent/runtime path.
 3. Memory reflection, knowledge embedding, and other background processors run alongside the main runtime.
 
 ## 4. Knowledge/document flow
+
+```mermaid
+graph TB
+    subgraph Memory["Memory Service"]
+        direction TB
+        EXT[Extract from conversation] --> OBS[Observation Store]
+        OBS --> INJ[Inject into system prompt]
+        INJ -->|budget: memory_token_budget| PROMPT[System Prompt]
+        REM["Explicit /remember"] --> OBS
+    end
+
+    subgraph Knowledge["Knowledge Pipeline"]
+        direction TB
+        DOC[Document Ingested] --> CHUNK[Chunking]
+        CHUNK --> EMB["Embedding\n(background interval)"]
+        CHUNK --> OBSERVE["Observation Indexing\n(background interval)"]
+        EMB --> VEC[(Vector Store)]
+        OBSERVE --> GRP["Auto-Grouping\n(background interval)"]
+        VEC --> QUERY[Query: chunks + observations]
+    end
+
+    subgraph Backends["Memory Backends"]
+        SQL[(SQLite Local)] & MCPM[MCP Provider + Fallback]
+    end
+
+    OBS --> Backends
+```
 
 1. A document is ingested and extracted.
 2. `KnowledgeManager` chunks it into pages/chunks.
@@ -388,8 +516,6 @@ More concretely:
 - Native Anthropic.
 - OpenAI-compatible providers, including OpenAI, OpenRouter, Ollama, DeepSeek, Google-compatible endpoints, and others configured through provider presets.
 
-> ⚠️ Needs clarification: the actual provider endpoints in production are config-driven and not fixed in source.
-
 ## Chat and operator surfaces
 
 - Local web UI and HTTP API.
@@ -460,6 +586,38 @@ The browser session itself is backed by `mc_session` and `mc_csrf` cookies when 
 ## Auth and Security
 
 ## Web auth
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant W as Web Server
+    participant DB as Database
+
+    Note over W: First Boot
+    W->>DB: Check for existing password
+    alt No password exists
+        W->>W: Generate temp password (printed to console)
+        W->>DB: Store hashed password
+    end
+
+    Note over B,W: Login
+    B->>W: POST /api/auth/login (password)
+    W->>DB: Verify hash
+    W-->>B: Set mc_session + mc_csrf cookies
+
+    Note over B,W: Authenticated Request
+    B->>W: Request + mc_session cookie
+    W->>W: Validate session
+    alt Write/Admin/Approval action
+        W->>W: Validate CSRF token
+    end
+    W-->>B: Response
+
+    Note over B,W: API Key Auth
+    B->>W: Authorization: Bearer scoped-key
+    W->>DB: Validate key + scope
+    W-->>B: Response
+```
 
 The web layer no longer uses a static bearer token config as the primary auth model.
 
