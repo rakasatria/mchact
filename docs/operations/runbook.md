@@ -3,8 +3,11 @@
 ## Auth Issues
 
 - Symptom: `401 unauthorized`
-  - Check `Authorization: Bearer <api-key-or-legacy-token>` or `mc_session` cookie.
+  - Check `Authorization: Bearer <scoped-api-key>` or `mc_session` cookie.
   - Verify key scopes via `GET /api/auth/api_keys`.
+- Symptom: first-time operator cannot log in
+  - Check startup logs for the generated temporary password.
+  - If password bootstrap storage failed, use `x-bootstrap-token` to set the operator password first.
 - Symptom: unsure whether deployment config is safe
   - Run `GET /api/config/self_check` and inspect `risk_level` + `warnings`.
   - Fix high-severity items first (`severity: high`).

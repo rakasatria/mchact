@@ -10,6 +10,7 @@ Use this guide for rolling upgrades that may include schema/auth/hooks/session/m
 2. Record current config (`mchact.config.yaml`).
 3. Ensure shell runtime for hooks (`sh`) is available if hooks are used.
 4. Record current binary/image version and commit SHA.
+5. If using `provider_presets`, verify referenced preset IDs still exist after the upgrade.
 
 ## Database Migration
 
@@ -42,18 +43,6 @@ On first start, schema migrations are applied automatically.
 5. `GET /api/config/self_check` (no unaccepted `high` warnings)
 6. In any chat, start a long-running request and send `/stop`; verify the in-flight run is aborted.
 7. Verify `/reset` still clears chat context (session + chat history) as before.
-
-## Recent PR References
-
-As of 2026-03-05 (local `main` HEAD), recent merged PRs include:
-
-- #195 `mcp: strip internal mchact keys from forwarded args`
-- #192 `Journald`
-- #191 `add flake.nix`
-- #190 `fix(mcp): fix streamable HTTP transport protocol compliance`
-- #188 `add podman sandbox runtime support and runtime-aware diagnostics`
-
-Update this list when preparing a release note.
 
 ## Rollback Procedure
 

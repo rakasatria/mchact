@@ -2315,6 +2315,11 @@ impl SetupApp {
 
     /// Load existing config values from mchact.config.yaml/.yml.
     fn load_existing_config() -> HashMap<String, String> {
+        #[cfg(test)]
+        if std::env::var("MCHACT_TEST_LOAD_EXISTING_CONFIG").ok().as_deref() != Some("1") {
+            return HashMap::new();
+        }
+
         let yaml_path = if Path::new("./mchact.config.yaml").exists() {
             Some("./mchact.config.yaml")
         } else if Path::new("./mchact.config.yml").exists() {
@@ -9071,6 +9076,7 @@ mod tests {
     #[test]
     fn test_setup_loads_existing_web_hook_settings() {
         let _guard = env_lock();
+        std::env::set_var("MCHACT_TEST_LOAD_EXISTING_CONFIG", "1");
         let temp = std::env::temp_dir().join(format!(
             "mchact_setup_load_web_hooks_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -9112,6 +9118,7 @@ channels:
         );
 
         std::env::set_current_dir(old_cwd).unwrap();
+        std::env::remove_var("MCHACT_TEST_LOAD_EXISTING_CONFIG");
         let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
@@ -9119,6 +9126,7 @@ channels:
     #[test]
     fn test_setup_loads_existing_a2a_settings() {
         let _guard = env_lock();
+        std::env::set_var("MCHACT_TEST_LOAD_EXISTING_CONFIG", "1");
         let temp = std::env::temp_dir().join(format!(
             "mchact_setup_load_a2a_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -9160,6 +9168,7 @@ a2a:
         assert!(app.field_value(a2a_peers_json_key()).contains("\"worker\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
+        std::env::remove_var("MCHACT_TEST_LOAD_EXISTING_CONFIG");
         let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
@@ -9167,6 +9176,7 @@ a2a:
     #[test]
     fn test_setup_loads_existing_provider_presets_from_legacy_llm_providers() {
         let _guard = env_lock();
+        std::env::set_var("MCHACT_TEST_LOAD_EXISTING_CONFIG", "1");
         let temp = std::env::temp_dir().join(format!(
             "mchact_setup_load_provider_presets_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -9195,6 +9205,7 @@ llm_providers:
         assert!(presets.contains("\"provider\":\"openai\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
+        std::env::remove_var("MCHACT_TEST_LOAD_EXISTING_CONFIG");
         let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
@@ -9225,6 +9236,7 @@ llm_providers:
     #[test]
     fn test_setup_loads_existing_telegram_topic_routing() {
         let _guard = env_lock();
+        std::env::set_var("MCHACT_TEST_LOAD_EXISTING_CONFIG", "1");
         let temp = std::env::temp_dir().join(format!(
             "mchact_setup_load_telegram_topic_routing_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -9250,6 +9262,7 @@ channels:
         assert_eq!(app.field_value(telegram_topic_routing_key()), "true");
 
         std::env::set_current_dir(old_cwd).unwrap();
+        std::env::remove_var("MCHACT_TEST_LOAD_EXISTING_CONFIG");
         let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
@@ -9257,6 +9270,7 @@ channels:
     #[test]
     fn test_setup_loads_existing_subagents_settings() {
         let _guard = env_lock();
+        std::env::set_var("MCHACT_TEST_LOAD_EXISTING_CONFIG", "1");
         let temp = std::env::temp_dir().join(format!(
             "mchact_setup_load_subagents_{}",
             Utc::now().timestamp_nanos_opt().unwrap_or_default()
@@ -9340,6 +9354,7 @@ subagents:
             .contains("\"codex-fast\""));
 
         std::env::set_current_dir(old_cwd).unwrap();
+        std::env::remove_var("MCHACT_TEST_LOAD_EXISTING_CONFIG");
         let _ = std::fs::remove_file(temp.join("mchact.config.yaml"));
         let _ = std::fs::remove_dir_all(&temp);
     }
@@ -10694,9 +10709,25 @@ sandbox:
         )));
     }
 
+    fn assign_writable_temp_dirs(app: &mut SetupApp) {
+        let root = std::env::temp_dir().join(format!(
+            "mchact_setup_validate_local_{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let working = root.join("working");
+
+        if let Some(field) = app.fields.iter_mut().find(|f| f.key == "DATA_DIR") {
+            field.value = root.to_string_lossy().to_string();
+        }
+        if let Some(field) = app.fields.iter_mut().find(|f| f.key == "WORKING_DIR") {
+            field.value = working.to_string_lossy().to_string();
+        }
+    }
+
     #[test]
     fn test_validate_local_accepts_accounts_json_without_legacy_tokens() {
         let mut app = SetupApp::new();
+        assign_writable_temp_dirs(&mut app);
         if let Some(field) = app.fields.iter_mut().find(|f| f.key == "ENABLED_CHANNELS") {
             field.value = "telegram,discord".to_string();
         }
@@ -10747,6 +10778,7 @@ sandbox:
     #[test]
     fn test_validate_local_accepts_minimal_weixin() {
         let mut app = SetupApp::new();
+        assign_writable_temp_dirs(&mut app);
         if let Some(field) = app.fields.iter_mut().find(|f| f.key == "ENABLED_CHANNELS") {
             field.value = "weixin".to_string();
         }
@@ -10848,6 +10880,7 @@ sandbox:
     #[test]
     fn test_validate_local_accepts_telegram_accounts_array_json() {
         let mut app = SetupApp::new();
+        assign_writable_temp_dirs(&mut app);
         if let Some(field) = app.fields.iter_mut().find(|f| f.key == "ENABLED_CHANNELS") {
             field.value = "telegram".to_string();
         }

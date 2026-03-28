@@ -12,7 +12,7 @@ Last reviewed: 2026-03-05
 - [ ] API contract changes documented (new/changed endpoints, request/response fields).
 - [ ] Security-sensitive paths reviewed (auth scope, CSRF, audit events).
 - [ ] Governance/support docs updated when policy or support expectations changed (`SECURITY.md`, `SUPPORT.md`, `docs/releases/release-policy.md`).
-- [ ] Docs updated in both `docs/` and `website/docs/` when user-facing behavior changes.
+- [ ] Docs updated in `docs/` and top-level onboarding docs (`README.md`, `ARCHITECTURE.md`) when user-facing behavior changes.
 
 ## Required Validation
 
@@ -20,7 +20,6 @@ Last reviewed: 2026-03-05
 - [ ] `cargo clippy --all-targets`
 - [ ] `cargo test`
 - [ ] `npm --prefix web run build`
-- [ ] `npm --prefix website run build`
 - [ ] `node scripts/generate_docs_artifacts.mjs --check`
 - [ ] `cargo audit`
 - [ ] `cargo deny check advisories bans licenses`

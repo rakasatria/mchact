@@ -54,6 +54,8 @@ pub use mchact_tools::sandbox;
 
 #[cfg(test)]
 pub mod test_support {
+    use std::io::ErrorKind;
+    use std::net::TcpListener;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     pub fn env_lock() -> MutexGuard<'static, ()> {
@@ -61,6 +63,28 @@ pub mod test_support {
         ENV_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("env lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn bind_test_tcp_listener() -> Option<TcpListener> {
+        match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => Some(listener),
+            Err(err) if err.kind() == ErrorKind::PermissionDenied => {
+                eprintln!("skipping test: loopback bind not permitted in this environment");
+                None
+            }
+            Err(err) => panic!("failed to bind test TCP listener: {err}"),
+        }
+    }
+
+    pub async fn bind_test_tokio_listener() -> Option<tokio::net::TcpListener> {
+        match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => Some(listener),
+            Err(err) if err.kind() == ErrorKind::PermissionDenied => {
+                eprintln!("skipping test: loopback bind not permitted in this environment");
+                None
+            }
+            Err(err) => panic!("failed to bind test tokio TCP listener: {err}"),
+        }
     }
 }

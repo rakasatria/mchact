@@ -3009,13 +3009,13 @@ mod tests {
         crate::media_manager::MediaManager::new(storage, db)
     }
 
-    async fn spawn_test_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn spawn_test_server(app: Router) -> Option<(SocketAddr, tokio::task::JoinHandle<()>)> {
+        let listener = crate::test_support::bind_test_tokio_listener().await?;
         let addr = listener.local_addr().unwrap();
         let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        (addr, handle)
+        Some((addr, handle))
     }
 
     #[test]
@@ -3260,7 +3260,9 @@ weixin:
                 async move { response_body }
             }),
         );
-        let (addr, handle) = spawn_test_server(app).await;
+        let Some((addr, handle)) = spawn_test_server(app).await else {
+            return;
+        };
 
         let root = unique_temp_dir();
         let mut cfg = Config::test_defaults();
@@ -3327,7 +3329,9 @@ weixin:
                 async move { response_body }
             }),
         );
-        let (addr, handle) = spawn_test_server(app).await;
+        let Some((addr, handle)) = spawn_test_server(app).await else {
+            return;
+        };
 
         let root = unique_temp_dir();
         let mut cfg = Config::test_defaults();
