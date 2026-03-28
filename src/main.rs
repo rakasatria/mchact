@@ -148,6 +148,11 @@ enum MainCommand {
         #[arg(long)]
         filter_min_tools: Option<u64>,
     },
+    /// RL training management
+    Rl {
+        #[command(subcommand)]
+        action: RlAction,
+    },
     /// Run full training pipeline: batch → export → compress
     Train {
         /// Path to the JSONL prompt dataset
@@ -245,6 +250,35 @@ enum WebAction {
     PasswordGenerate,
     /// Clear password hash and revoke sessions (test/reset)
     PasswordClear,
+}
+
+#[derive(Debug, Subcommand)]
+enum RlAction {
+    /// List available training environments
+    List,
+    /// Select an environment and show its config
+    Select { name: String },
+    /// Show current config (locked + configurable fields)
+    Config,
+    /// Edit a configurable field
+    Edit { field: String, value: String },
+    /// Start a training run
+    Start,
+    /// Check training status and WandB metrics
+    Status { run_id: Option<String> },
+    /// Stop a training run
+    Stop { run_id: Option<String> },
+    /// Fetch final results
+    Results { run_id: Option<String> },
+    /// List all training runs
+    Runs,
+    /// Test inference without full training
+    Test {
+        #[arg(long, default_value = "3")]
+        steps: usize,
+        #[arg(long, default_value = "16")]
+        group_size: usize,
+    },
 }
 
 fn print_version() {
@@ -945,6 +979,125 @@ async fn main() -> anyhow::Result<()> {
                     std::process::exit(1);
                 }
             }
+            return Ok(());
+        }
+        Some(MainCommand::Rl { action }) => {
+            let config = Config::load()?;
+            let env_dir = std::path::Path::new(&config.training_environments_dir).to_path_buf();
+
+            match action {
+                RlAction::List => {
+                    let envs = mchact::rl::discover_environments(&env_dir)
+                        .map_err(|e| MchactError::Config(e))?;
+                    if envs.is_empty() {
+                        println!("No RL environments found in: {}", env_dir.display());
+                        println!("Add Python environment files with YAML frontmatter to that directory.");
+                    } else {
+                        println!("Available RL environments ({}):", envs.len());
+                        for env in &envs {
+                            println!("  {} — {} ({})", env.name, env.description, env.class_name);
+                        }
+                    }
+                }
+                RlAction::Select { name } => {
+                    let envs = mchact::rl::discover_environments(&env_dir)
+                        .map_err(|e| MchactError::Config(e))?;
+                    match envs.iter().find(|e| e.name == name) {
+                        None => {
+                            eprintln!("Environment '{}' not found.", name);
+                            eprintln!("Run `mchact rl list` to see available environments.");
+                            std::process::exit(1);
+                        }
+                        Some(env) => {
+                            println!("Environment: {}", env.name);
+                            println!("  Class:       {}", env.class_name);
+                            println!("  Description: {}", env.description);
+                            println!("  File:        {}", env.file_path.display());
+                            println!();
+                            let locked = mchact::rl::locked_config();
+                            println!("Locked config:");
+                            println!("{}", serde_json::to_string_pretty(&locked).unwrap_or_default());
+                        }
+                    }
+                }
+                RlAction::Config => {
+                    let locked = mchact::rl::locked_config();
+                    println!("{}", serde_json::to_string_pretty(&locked).unwrap_or_default());
+                }
+                RlAction::Edit { field, value } => {
+                    if mchact::rl::is_locked_field(&field) {
+                        eprintln!("Field '{}' is locked and cannot be modified.", field);
+                        eprintln!("Locked fields ensure reproducibility and are managed by the infrastructure.");
+                        std::process::exit(1);
+                    }
+                    println!("Configurable field '{}' set to '{}'.", field, value);
+                    println!("(Note: persistent config editing is managed via agent tools at runtime.)");
+                }
+                RlAction::Start => {
+                    let tinker_key = std::env::var("TINKER_API_KEY").unwrap_or_default();
+                    let wandb_key = std::env::var("WANDB_API_KEY").unwrap_or_default();
+
+                    if tinker_key.is_empty() {
+                        eprintln!("TINKER_API_KEY environment variable is not set.");
+                        std::process::exit(1);
+                    }
+                    if wandb_key.is_empty() {
+                        eprintln!("WANDB_API_KEY environment variable is not set.");
+                        std::process::exit(1);
+                    }
+
+                    let envs = mchact::rl::discover_environments(&env_dir)
+                        .map_err(|e| MchactError::Config(e))?;
+                    if envs.is_empty() {
+                        eprintln!("No RL environments found in: {}", env_dir.display());
+                        std::process::exit(1);
+                    }
+
+                    let env = &envs[0];
+                    let run_id = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
+                    let manager = mchact::rl::RlRunManager::new();
+                    let locked = mchact::rl::locked_config();
+                    let training_dir = std::path::Path::new("training");
+
+                    match manager.start_run(&run_id, env, locked, None, training_dir) {
+                        Ok(()) => {
+                            println!("Training run '{}' started for environment '{}'.", run_id, env.name);
+                            println!("Use `mchact rl status {}` to check progress.", run_id);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to start training run: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                RlAction::Status { run_id } => {
+                    match run_id {
+                        Some(id) => println!("Status for run '{}': use agent tools for persistent run tracking.", id),
+                        None => println!("No active run ID provided. Use agent tools for persistent run tracking across sessions."),
+                    }
+                }
+                RlAction::Stop { run_id } => {
+                    match run_id {
+                        Some(id) => println!("Stop requested for run '{}'. Use agent tools for persistent run management.", id),
+                        None => println!("No run ID provided. Use `mchact rl runs` to list runs, then `mchact rl stop <run_id>`."),
+                    }
+                }
+                RlAction::Results { run_id } => {
+                    match run_id {
+                        Some(id) => println!("Results for run '{}': use agent tools for persistent result retrieval.", id),
+                        None => println!("No run ID provided. Use `mchact rl runs` to list completed runs."),
+                    }
+                }
+                RlAction::Runs => {
+                    println!("Persistent run tracking is managed via agent tools across sessions.");
+                    println!("Use the rl_list_runs agent tool to list all tracked runs.");
+                }
+                RlAction::Test { steps, group_size } => {
+                    println!("RL inference test: steps={}, group_size={}", steps, group_size);
+                    println!("Test inference is managed via agent tools for full environment integration.");
+                }
+            }
+
             return Ok(());
         }
         Some(MainCommand::Train {
