@@ -52,12 +52,11 @@ impl SttProvider for WhisperLocalProvider {
             state.full(params, &samples)
                 .map_err(|e| MediaError::ProviderError(format!("Whisper inference failed: {e}")))?;
 
-            let num_segments = state.full_n_segments()
-                .map_err(|e| MediaError::ProviderError(format!("Failed to get segments: {e}")))?;
+            let num_segments = state.full_n_segments();
 
             let mut text = String::new();
             for i in 0..num_segments {
-                if let Ok(segment) = state.full_get_segment_text(i) {
+                if let Ok(segment) = state.full_get_segment_text_lossy(i) {
                     text.push_str(&segment);
                     text.push(' ');
                 }

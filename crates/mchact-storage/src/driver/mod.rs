@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::warn;
 
-use crate::traits::DataStore;
-
 #[cfg(feature = "postgres")]
 pub mod postgres;
 

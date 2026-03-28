@@ -53,6 +53,7 @@ pub trait TaskStore {
 
     fn delete_task(&self, task_id: i64) -> Result<bool, MchactError>;
 
+    #[allow(clippy::too_many_arguments)]
     fn log_task_run(
         &self,
         task_id: i64,

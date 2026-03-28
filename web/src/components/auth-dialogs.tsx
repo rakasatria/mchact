@@ -173,8 +173,8 @@ export function AuthDialogs(props: AuthDialogsProps): React.ReactElement {
               className="mt-2"
             >
               <Callout.Text>
-                No custom password is set yet. Temporary default password:{" "}
-                <code>helloworld</code>
+                No custom password is set yet. Check your server logs for
+                the temporary password.
               </Callout.Text>
             </Callout.Root>
           ) : null}
@@ -224,8 +224,8 @@ export function AuthDialogs(props: AuthDialogsProps): React.ReactElement {
         <Dialog.Content maxWidth="520px">
           <Dialog.Title>Change Default Password</Dialog.Title>
           <Dialog.Description size="2">
-            You are using the default password <code>helloworld</code>. Set a
-            new password now, or skip for now.
+            You are using the auto-generated default password. Set a new
+            password now, or skip for now.
           </Dialog.Description>
           <div className="mt-4 space-y-3">
             <ConfigFieldCard

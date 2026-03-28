@@ -128,6 +128,7 @@ pub trait MemoryDbStore {
         last_reflected_ts: &str,
     ) -> Result<(), MchactError>;
 
+    #[allow(clippy::too_many_arguments)]
     fn log_reflector_run(
         &self,
         chat_id: i64,

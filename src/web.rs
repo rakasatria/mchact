@@ -42,7 +42,15 @@ mod ws;
 use middleware::*;
 
 static WEB_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/web/dist");
-pub(crate) const DEFAULT_WEB_PASSWORD: &str = "helloworld";
+pub(crate) fn generate_default_web_password() -> String {
+    const ALPHABET: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let uuid_bytes = uuid::Uuid::new_v4().into_bytes();
+    let mut password = String::with_capacity(16);
+    for &b in &uuid_bytes[..16] {
+        password.push(ALPHABET[(b as usize) % ALPHABET.len()] as char);
+    }
+    password
+}
 
 pub struct WebAdapter;
 
@@ -73,6 +81,7 @@ impl ChannelAdapter for WebAdapter {
 struct WebState {
     app_state: Arc<AppState>,
     bootstrap_token: Arc<Mutex<Option<String>>>,
+    generated_default_password: Arc<Mutex<Option<String>>>,
     run_hub: RunHub,
     session_hub: SessionHub,
     request_hub: RequestHub,
@@ -2401,18 +2410,30 @@ pub async fn start_web_server(state: Arc<AppState>) {
         .ok()
         .flatten()
         .is_some();
-    if !has_password {
-        let default_hash = make_password_hash(DEFAULT_WEB_PASSWORD);
-        let _ = call_blocking(state.db.clone(), move |db| {
-            db.upsert_auth_password_hash(&default_hash)
+    let generated_default_password = if !has_password {
+        let password = generate_default_web_password();
+        let hash = make_password_hash(&password);
+        match call_blocking(state.db.clone(), move |db| {
+            db.upsert_auth_password_hash(&hash)
         })
-        .await;
-        warn!(
-            "web auth default password enabled: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
-            DEFAULT_WEB_PASSWORD
-        );
-        has_password = true;
-    }
+        .await
+        {
+            Ok(_) => {
+                warn!(
+                    "web auth: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
+                    password
+                );
+                has_password = true;
+                Some(password)
+            }
+            Err(e) => {
+                warn!("web auth: failed to store default password: {e}; bootstrap token will be generated instead");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let bootstrap_token = if has_password {
         None
     } else {
@@ -2425,6 +2446,7 @@ pub async fn start_web_server(state: Arc<AppState>) {
     };
     let web_state = WebState {
         bootstrap_token: Arc::new(Mutex::new(bootstrap_token)),
+        generated_default_password: Arc::new(Mutex::new(generated_default_password)),
         app_state: state.clone(),
         run_hub: RunHub::default(),
         session_hub: SessionHub::default(),
@@ -2904,6 +2926,7 @@ mod tests {
         WebState {
             app_state: state,
             bootstrap_token: Arc::new(Mutex::new(None)),
+            generated_default_password: Arc::new(Mutex::new(None)),
             run_hub: RunHub::default(),
             session_hub: SessionHub::default(),
             request_hub: RequestHub::default(),

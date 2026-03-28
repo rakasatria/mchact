@@ -19,12 +19,7 @@ pub mod task;
 
 const SCHEMA_SQL: &str = include_str!("../../schema/postgres.sql");
 
-pub(super) fn not_impl() -> MchactError {
-    MchactError::ToolExecution("postgres: not yet implemented".into())
-}
-
 pub struct PgDriver {
-    #[allow(dead_code)]
     pub(super) pool: Pool,
 }
 

@@ -17,10 +17,10 @@ pub(super) async fn api_auth_status(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let has_password = hash.is_some();
-    let using_default_password = hash
-        .as_deref()
-        .map(|h| verify_password_hash(h, DEFAULT_WEB_PASSWORD))
-        .unwrap_or(false);
+    let using_default_password = match (hash.as_deref(), state.generated_default_password.lock().await.as_deref()) {
+        (Some(h), Some(default_pw)) => verify_password_hash(h, default_pw),
+        _ => false,
+    };
     let authenticated = require_scope(&state, &headers, AuthScope::Read)
         .await
         .is_ok();
@@ -76,6 +76,10 @@ pub(super) async fn api_auth_set_password(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if bootstrap_mode {
         let mut guard = state.bootstrap_token.lock().await;
+        *guard = None;
+    }
+    {
+        let mut guard = state.generated_default_password.lock().await;
         *guard = None;
     }
     audit_log(

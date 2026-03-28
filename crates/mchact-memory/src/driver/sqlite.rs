@@ -64,7 +64,7 @@ fn row_to_peer(row: &Row<'_>) -> rusqlite::Result<Peer> {
     let created_at_str: String = row.get(6)?;
     let updated_at_str: String = row.get(7)?;
 
-    let kind = PeerKind::from_str(&kind_str).unwrap_or(PeerKind::User);
+    let kind = PeerKind::parse(&kind_str).unwrap_or(PeerKind::User);
 
     let peer_card: Option<Vec<String>> = peer_card_json
         .as_deref()
@@ -112,7 +112,7 @@ fn row_to_observation(row: &Row<'_>) -> rusqlite::Result<Observation> {
     let created_at_str: String = row.get(15)?;
     let updated_at_str: String = row.get(16)?;
 
-    let level = ObservationLevel::from_str(&level_str)
+    let level = ObservationLevel::parse(&level_str)
         .unwrap_or(ObservationLevel::Explicit);
 
     let source_ids: Vec<i64> = serde_json::from_str(&source_ids_str).unwrap_or_default();

@@ -10,7 +10,7 @@ pub enum MchactError {
     RateLimited,
 
     #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(String),
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
@@ -29,6 +29,12 @@ pub enum MchactError {
 
     #[error("Max tool iterations reached ({0})")]
     MaxIterations(usize),
+}
+
+impl From<rusqlite::Error> for MchactError {
+    fn from(e: rusqlite::Error) -> Self {
+        MchactError::Database(e.to_string())
+    }
 }
 
 #[cfg(test)]
