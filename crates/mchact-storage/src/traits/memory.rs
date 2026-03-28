@@ -100,10 +100,10 @@ pub trait MemoryDbStore {
         limit: usize,
     ) -> Result<Vec<Memory>, MchactError>;
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn prepare_vector_index(&self, dimension: usize) -> Result<(), MchactError>;
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn upsert_memory_vec(
         &self,
         memory_id: i64,
@@ -112,7 +112,7 @@ pub trait MemoryDbStore {
 
     fn get_all_active_memories(&self) -> Result<Vec<(i64, String)>, MchactError>;
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn knn_memories(
         &self,
         chat_id: i64,

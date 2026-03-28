@@ -72,7 +72,7 @@ enum MainCommand {
     Weixin(WeixinCommand),
     /// Manage Web UI configurations
     Web(WebCommand),
-    /// Re-embed active memories (requires `sqlite-vec` feature)
+    /// Re-embed active memories (requires `vector-search` feature)
     Reembed,
     /// Upgrade mchact to latest release
     Upgrade,
@@ -687,15 +687,15 @@ fn apply_config_override(path: Option<&PathBuf>) -> anyhow::Result<()> {
 async fn reembed_memories() -> anyhow::Result<()> {
     let config = Config::load()?;
 
-    #[cfg(not(feature = "sqlite-vec"))]
+    #[cfg(not(feature = "vector-search"))]
     {
         let _ = config;
         anyhow::bail!(
-            "sqlite-vec feature not enabled. Rebuild with: cargo build --release --features sqlite-vec"
+            "vector-search feature not enabled. Rebuild with: cargo build --release --features vector-search"
         );
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         use mchact::embedding;
         let runtime_data_dir = config.runtime_data_dir();

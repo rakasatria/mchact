@@ -29,7 +29,7 @@ max_history_messages: 50
 max_document_size_mb: 100
 # Estimated token budget for injecting structured memories into system prompt
 memory_token_budget: 1500
-# Optional embedding runtime config (requires binary built with --features sqlite-vec)
+# Optional embedding runtime config (requires binary built with --features vector-search)
 # embedding_provider: "openai"   # openai | ollama
 # embedding_api_key: ""
 # embedding_base_url: ""
@@ -39,6 +39,11 @@ memory_token_budget: 1500
 # - runtime files go to <data_dir>/runtime
 # - built-in/custom skills are loaded from <data_dir>/skills
 data_dir: "./mchact.data"
+# Database backend: "sqlite" (default) or "postgres"
+# PostgreSQL requires: cargo build --features storage-postgres
+# db_backend: "sqlite"
+# db_database_url: "postgresql://user:pass@localhost/mchact"  # required for postgres
+
 # Object storage backend for media, documents, and generated files.
 # Options: "local" (default), "s3", "azure", "gcs"
 # Cloud backends require compiling with the matching feature flag:

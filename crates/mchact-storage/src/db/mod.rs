@@ -27,7 +27,7 @@ pub use crate::traits::{
 use rusqlite::OptionalExtension;
 use rusqlite::{params, Connection};
 use std::path::Path;
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 use std::sync::Once;
 use std::sync::{Mutex, MutexGuard};
 
@@ -37,10 +37,10 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 static SQLITE_VEC_AUTOEXT_INIT: Once = Once::new();
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 type SqliteAutoExtensionFn = unsafe extern "C" fn(
     *mut rusqlite::ffi::sqlite3,
     *mut *mut i8,
@@ -754,7 +754,7 @@ impl Database {
         let db_path = Path::new(data_dir).join("mchact.db");
         std::fs::create_dir_all(data_dir)?;
 
-        #[cfg(feature = "sqlite-vec")]
+        #[cfg(feature = "vector-search")]
         SQLITE_VEC_AUTOEXT_INIT.call_once(|| unsafe {
             let init_fn_ptr = sqlite_vec::sqlite3_vec_init as *const ();
             let init_fn: SqliteAutoExtensionFn = std::mem::transmute(init_fn_ptr);
@@ -2980,7 +2980,7 @@ mod tests {
         cleanup(&dir);
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     #[test]
     fn test_sqlite_vec_prepare_and_knn() {
         let (db, dir) = test_db();

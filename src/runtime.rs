@@ -45,6 +45,8 @@ use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
 use mchact_storage::db::Database;
+#[cfg(feature = "vector-search")]
+use mchact_storage::traits::MemoryDbStore;
 use mchact_storage::DataStore;
 use mchact_storage_backend::StorageBackendConfig;
 
@@ -157,7 +159,7 @@ pub async fn run(
     let db = Arc::new(db);
     let llm = crate::llm::create_provider(&config);
     let embedding = crate::embedding::create_provider(&config);
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         let dim = embedding
             .as_ref()
@@ -165,7 +167,7 @@ pub async fn run(
             .or(config.embedding_dim)
             .unwrap_or(1536);
         if let Err(e) = db.prepare_vector_index(dim) {
-            warn!("Failed to initialize sqlite-vec index: {e}");
+            warn!("Failed to initialize vector index: {e}");
         }
     }
 

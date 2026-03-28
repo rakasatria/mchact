@@ -23,7 +23,7 @@ default-run = "mchact"
 
 [features]
 default = []
-sqlite-vec = ["mchact-storage/sqlite-vec"]
+vector-search = ["mchact-storage/vector-search"]
 journald = ["mchact-app/journald"]
 storage-s3 = ["mchact-storage-backend/s3"]
 storage-azure = ["mchact-storage-backend/azure"]

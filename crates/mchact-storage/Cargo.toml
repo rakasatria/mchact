@@ -7,7 +7,7 @@ license = "MIT"
 [features]
 default = ["sqlite"]
 sqlite = []
-sqlite-vec = ["sqlite", "dep:sqlite-vec"]
+vector-search = ["sqlite", "dep:sqlite-vec"]
 postgres = ["dep:tokio-postgres", "dep:deadpool-postgres"]
 
 [dependencies]

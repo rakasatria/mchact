@@ -55,7 +55,7 @@ struct OllamaEmbeddingResponse {
     embedding: Vec<f32>,
 }
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 fn infer_default_dim(provider: &str, model: &str) -> usize {
     match provider {
         "openai" => {
@@ -142,13 +142,13 @@ impl EmbeddingProvider for OllamaEmbeddingProvider {
 }
 
 pub fn create_provider(config: &Config) -> Option<Arc<dyn EmbeddingProvider>> {
-    #[cfg(not(feature = "sqlite-vec"))]
+    #[cfg(not(feature = "vector-search"))]
     {
         let _ = config;
         None
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     {
         let provider = config
             .embedding_provider
@@ -225,7 +225,7 @@ mod tests {
         assert!(create_provider(&cfg).is_none());
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     #[test]
     fn test_create_provider_openai_when_configured() {
         let mut cfg = base_config();

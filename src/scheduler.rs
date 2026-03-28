@@ -309,7 +309,7 @@ CRITICAL — how to memorize bugs and problems:
   GOOD: "TODO: strictly follow TOOLS.md rules for every tool call"
 - The memory should tell the agent HOW TO BEHAVE CORRECTLY, never describe the broken behavior."#;
 
-#[cfg(feature = "sqlite-vec")]
+#[cfg(feature = "vector-search")]
 async fn backfill_embeddings(state: &Arc<AppState>) {
     if state.embedding.is_none() {
         return;
@@ -409,7 +409,7 @@ fn parse_reflector_json_array(text: &str) -> Result<Vec<serde_json::Value>, serd
 }
 
 async fn run_reflector(state: &Arc<AppState>) {
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     backfill_embeddings(state).await;
 
     let _ = call_blocking(state.db.clone(), move |db| db.archive_stale_memories(30)).await;

@@ -7452,7 +7452,7 @@ fn save_config_yaml(
         || !embedding_dim.is_empty()
     {
         yaml.push_str(
-            "\n# Optional embedding config for semantic memory retrieval (requires sqlite-vec feature)\n",
+            "\n# Optional embedding config for semantic memory retrieval (requires vector-search feature)\n",
         );
         if !embedding_provider.is_empty() {
             yaml.push_str(&format!("embedding_provider: \"{}\"\n", embedding_provider));

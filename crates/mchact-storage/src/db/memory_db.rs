@@ -462,7 +462,7 @@ impl MemoryDbStore for Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn prepare_vector_index(&self, dimension: usize) -> Result<(), MchactError> {
         let conn = self.lock_conn();
         let dimension = dimension.max(1);
@@ -501,7 +501,7 @@ impl MemoryDbStore for Database {
         Ok(())
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn upsert_memory_vec(
         &self,
         memory_id: i64,
@@ -526,7 +526,7 @@ impl MemoryDbStore for Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    #[cfg(feature = "sqlite-vec")]
+    #[cfg(feature = "vector-search")]
     fn knn_memories(
         &self,
         chat_id: i64,
