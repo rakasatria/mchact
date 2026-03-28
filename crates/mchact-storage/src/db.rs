@@ -226,7 +226,20 @@ pub struct DocumentExtraction {
     pub created_at: String,
 }
 
-const SCHEMA_VERSION_CURRENT: i64 = 21;
+const SCHEMA_VERSION_CURRENT: i64 = 22;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MediaObject {
+    pub id: i64,
+    pub object_key: String,
+    pub storage_backend: String,
+    pub original_chat_id: i64,
+    pub mime_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub sha256_hash: Option<String>,
+    pub source: String,
+    pub created_at: String,
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -955,6 +968,36 @@ fn apply_schema_migrations(conn: &Connection) -> Result<(), MchactError> {
         set_schema_version(conn, 21)?;
         version = 21;
     }
+    if version < 22 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS media_objects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                object_key TEXT NOT NULL UNIQUE,
+                storage_backend TEXT NOT NULL DEFAULT 'local',
+                original_chat_id INTEGER NOT NULL,
+                mime_type TEXT,
+                size_bytes INTEGER,
+                sha256_hash TEXT,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_media_objects_chat ON media_objects(original_chat_id);
+            CREATE INDEX IF NOT EXISTS idx_media_objects_hash ON media_objects(sha256_hash);
+            ",
+        )?;
+        if !table_has_column(conn, "document_extractions", "media_object_id")? {
+            conn.execute(
+                "ALTER TABLE document_extractions ADD COLUMN media_object_id INTEGER",
+                [],
+            )?;
+        }
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_doc_extractions_media ON document_extractions(media_object_id)",
+            [],
+        )?;
+        set_schema_version(conn, 22)?;
+        version = 22;
+    }
     if version != SCHEMA_VERSION_CURRENT {
         set_schema_version(conn, SCHEMA_VERSION_CURRENT)?;
     }
@@ -1613,6 +1656,127 @@ impl Database {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    pub fn insert_media_object(
+        &self,
+        key: &str,
+        backend: &str,
+        chat_id: i64,
+        mime_type: Option<&str>,
+        size_bytes: Option<i64>,
+        hash: Option<&str>,
+        source: &str,
+    ) -> Result<i64, MchactError> {
+        let conn = self.lock_conn();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO media_objects
+             (object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![key, backend, chat_id, mime_type, size_bytes, hash, source, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_media_object(&self, id: i64) -> Result<Option<MediaObject>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at
+             FROM media_objects
+             WHERE id = ?1",
+        )?;
+        let result = stmt
+            .query_row(params![id], |row| {
+                Ok(MediaObject {
+                    id: row.get(0)?,
+                    object_key: row.get(1)?,
+                    storage_backend: row.get(2)?,
+                    original_chat_id: row.get(3)?,
+                    mime_type: row.get(4)?,
+                    size_bytes: row.get(5)?,
+                    sha256_hash: row.get(6)?,
+                    source: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn get_media_object_by_hash(&self, hash: &str) -> Result<Option<MediaObject>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at
+             FROM media_objects
+             WHERE sha256_hash = ?1",
+        )?;
+        let result = stmt
+            .query_row(params![hash], |row| {
+                Ok(MediaObject {
+                    id: row.get(0)?,
+                    object_key: row.get(1)?,
+                    storage_backend: row.get(2)?,
+                    original_chat_id: row.get(3)?,
+                    mime_type: row.get(4)?,
+                    size_bytes: row.get(5)?,
+                    sha256_hash: row.get(6)?,
+                    source: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn list_media_objects_for_chat(
+        &self,
+        chat_id: i64,
+    ) -> Result<Vec<MediaObject>, MchactError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, object_key, storage_backend, original_chat_id, mime_type, size_bytes, sha256_hash, source, created_at
+             FROM media_objects
+             WHERE original_chat_id = ?1
+             ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![chat_id], |row| {
+            Ok(MediaObject {
+                id: row.get(0)?,
+                object_key: row.get(1)?,
+                storage_backend: row.get(2)?,
+                original_chat_id: row.get(3)?,
+                mime_type: row.get(4)?,
+                size_bytes: row.get(5)?,
+                sha256_hash: row.get(6)?,
+                source: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn delete_media_object(&self, id: i64) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute("DELETE FROM media_objects WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn set_document_extraction_media_id(
+        &self,
+        extraction_id: i64,
+        media_object_id: i64,
+    ) -> Result<(), MchactError> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE document_extractions SET media_object_id = ?1 WHERE id = ?2",
+            params![media_object_id, extraction_id],
+        )?;
+        Ok(())
     }
 
     pub fn message_exists(&self, chat_id: i64, message_id: &str) -> Result<bool, MchactError> {
