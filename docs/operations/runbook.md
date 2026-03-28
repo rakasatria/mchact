@@ -312,7 +312,7 @@ Operational checks:
   - `startup_probe_ok=false` means the provider was discovered but failed the initial `memory_query(list)` probe
   - high `consecutive_primary_failures` or `total_fallbacks` means the runtime is degrading to SQLite frequently
   - `last_fallback_reason` records the most recent classified fallback reason
-- if semantic retrieval quality drops while MCP is enabled, note that local `sqlite-vec` KNN ranking is skipped for MCP-backed rows
+- if semantic retrieval quality drops while MCP is enabled, note that local vector-search KNN ranking is skipped for MCP-backed rows
 
 Consistency model:
 

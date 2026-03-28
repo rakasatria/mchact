@@ -219,17 +219,17 @@ cargo build --release
 cp target/release/mchact /usr/local/bin/
 ```
 
-Optional semantic-memory build (sqlite-vec disabled by default):
+Optional semantic-memory build (vector-search disabled by default):
 
 ```sh
-cargo build --release --features sqlite-vec
+cargo build --release --features vector-search
 ```
 
-First-time sqlite-vec quickstart (3 commands):
+First-time vector-search quickstart (3 commands):
 
 ```sh
-cargo run --features sqlite-vec -- setup
-cargo run --features sqlite-vec -- start
+cargo run --features vector-search -- setup
+cargo run --features vector-search -- start
 sqlite3 <data_dir>/runtime/mchact.db "SELECT id, chat_id, chat_channel, external_chat_id, category, embedding_model FROM memories ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -353,7 +353,7 @@ Optional memory MCP backend:
 - Startup runs a lightweight probe against the external provider. If it fails, foreground memory operations can still continue through SQLite fallback.
 - This mode favors availability over strict cross-store consistency: SQLite fallback writes are not automatically backfilled into the external provider after recovery, and reflector background writes pause while the external provider is unhealthy to limit divergence.
 
-When built with `--features sqlite-vec` and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
+When built with `--features vector-search` and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
 
 `/usage` now includes a **Memory Observability** section (and Web UI panel) showing:
 - memory pool health (active/archived/low-confidence)
@@ -1065,7 +1065,7 @@ sandbox:
 max_document_size_mb: 100
 memory_token_budget: 1500
 timezone: "UTC"
-# optional semantic memory runtime config (requires --features sqlite-vec build)
+# optional semantic memory runtime config (requires --features vector-search build)
 # embedding_provider: "openai"   # openai | ollama
 # embedding_api_key: "sk-..."
 # embedding_base_url: "https://api.openai.com/v1"
@@ -1179,11 +1179,11 @@ All configuration is via `mchact.config.yaml`:
 | `control_chat_ids` | No | `[]` | Chat IDs that can perform cross-chat actions (send_message/schedule/export/memory global/todo) |
 | `max_session_messages` | No | `40` | Message count threshold that triggers context compaction |
 | `compact_keep_recent` | No | `20` | Number of recent messages to keep verbatim during compaction |
-| `embedding_provider` | No | unset | Runtime embedding provider (`openai` or `ollama`) for semantic memory retrieval; requires `--features sqlite-vec` build |
+| `embedding_provider` | No | unset | Runtime embedding provider (`openai` or `ollama`) for semantic memory retrieval; requires `--features vector-search` build |
 | `embedding_api_key` | No | unset | API key for embedding provider (optional for `ollama`) |
 | `embedding_base_url` | No | provider default | Optional base URL override for embedding provider |
 | `embedding_model` | No | provider default | Embedding model ID |
-| `embedding_dim` | No | provider default | Embedding vector dimension for sqlite-vec index initialization |
+| `embedding_dim` | No | provider default | Embedding vector dimension for vector-search index initialization |
 | `channels.slack.default_account` | No | unset | Default Slack account ID in multi-account mode |
 | `channels.slack.accounts.<id>.bot_token` | No* | unset | Slack bot token for a specific account |
 | `channels.slack.accounts.<id>.app_token` | No* | unset | Slack app token (Socket Mode) for a specific account |

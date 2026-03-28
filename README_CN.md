@@ -219,17 +219,17 @@ cargo build --release
 cp target/release/mchact /usr/local/bin/
 ```
 
-可选语义记忆构建（默认关闭 sqlite-vec）：
+可选语义记忆构建（默认关闭 vector-search）：
 
 ```sh
-cargo build --release --features sqlite-vec
+cargo build --release --features vector-search
 ```
 
-首次启用 sqlite-vec（最短 3 条命令）：
+首次启用 vector-search（最短 3 条命令）：
 
 ```sh
-cargo run --features sqlite-vec -- setup
-cargo run --features sqlite-vec -- start
+cargo run --features vector-search -- setup
+cargo run --features vector-search -- start
 sqlite3 <data_dir>/runtime/mchact.db "SELECT id, chat_id, chat_channel, external_chat_id, category, embedding_model FROM memories ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -327,7 +327,7 @@ mchact 通过 `AGENTS.md` 文件维护持久化记忆：
 - 写入前有质量闸门，过滤低信息量/不确定表达
 - 结构化记忆具备置信度与软归档生命周期（不再只依赖硬删除）
 
-当使用 `--features sqlite-vec` 构建且配置了 embedding 参数时，结构化记忆的检索和去重会使用语义 KNN；否则自动回退为关键词排序 + Jaccard 去重。
+当使用 `--features vector-search` 构建且配置了 embedding 参数时，结构化记忆的检索和去重会使用语义 KNN；否则自动回退为关键词排序 + Jaccard 去重。
 
 `/usage` 现在包含 **Memory Observability**（Web UI 也有可视化面板），可查看：
 - 记忆池健康度（active/archived/low-confidence）
@@ -866,7 +866,7 @@ sandbox:
 max_document_size_mb: 100
 memory_token_budget: 1500
 timezone: "UTC"
-# 可选语义记忆配置（需使用 --features sqlite-vec 构建）
+# 可选语义记忆配置（需使用 --features vector-search 构建）
 # embedding_provider: "openai"   # openai | ollama
 # embedding_api_key: "sk-..."
 # embedding_base_url: "https://api.openai.com/v1"
@@ -942,11 +942,11 @@ mchact gateway uninstall
 | `control_chat_ids`                             | 否   | `[]`                       | 可跨聊天执行操作的 chat_id 列表（send_message/定时/导出/全局记忆/todo）                                      |
 | `max_session_messages`                         | 否   | `40`                       | 触发上下文压缩的消息数阈值                                                                                   |
 | `compact_keep_recent`                          | 否   | `20`                       | 压缩时保留的最近消息数                                                                                       |
-| `embedding_provider`                           | 否   | 未设置                     | 语义记忆 embedding provider（`openai` 或 `ollama`）；需要 `--features sqlite-vec` 构建                       |
+| `embedding_provider`                           | 否   | 未设置                     | 语义记忆 embedding provider（`openai` 或 `ollama`）；需要 `--features vector-search` 构建                       |
 | `embedding_api_key`                            | 否   | 未设置                     | embedding provider API key（`ollama` 可留空）                                                                |
 | `embedding_base_url`                           | 否   | provider 默认              | embedding provider base URL 覆盖                                                                             |
 | `embedding_model`                              | 否   | provider 默认              | embedding 模型 ID                                                                                            |
-| `embedding_dim`                                | 否   | provider 默认              | sqlite-vec 索引使用的向量维度                                                                                |
+| `embedding_dim`                                | 否   | provider 默认              | vector-search 索引使用的向量维度                                                                                |
 | `channels.irc.server`                          | 否*  | 未设置                     | IRC 服务器地址（域名/IP）                                                                                    |
 | `channels.irc.port`                            | 否   | `"6667"`                   | IRC 端口                                                                                                     |
 | `channels.irc.nick`                            | 否*  | 未设置                     | IRC 机器人昵称                                                                                               |

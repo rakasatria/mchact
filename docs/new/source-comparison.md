@@ -201,7 +201,7 @@ Inspired by hermes-agent's multimodal tools (TTS, STT, image gen, vision). Full 
 
 | Aspect | microclaw (original) | hermes-agent | honcho | mchact (current) |
 |--------|---------------------|--------------|--------|-----------------|
-| **Storage** | SQLite + sqlite-vec | SQLite WAL + files | PostgreSQL + pgvector | SQLite OR PostgreSQL (dual-driver) |
+| **Storage** | SQLite + vector-search | SQLite WAL + files | PostgreSQL + pgvector | SQLite OR PostgreSQL (dual-driver, vector-search) |
 | **Model** | Flat (3 categories) | Dual-layer (files + sessions) | 4-level hierarchy | **4-level hierarchy** (from honcho) |
 | **Extraction** | Reflector loop (every 30min) | Agent self-curates | Deriver (async queue) | **Deriver agent** (from honcho) |
 | **Consolidation** | Jaccard dedup | Manual | Dreamer (deduction + induction) | **Dreamer agent** (from honcho) |

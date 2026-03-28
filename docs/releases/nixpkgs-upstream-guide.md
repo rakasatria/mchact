@@ -55,7 +55,7 @@ rustPlatform.buildRustPackage rec {
     ]
     ++ lib.optionals stdenv.hostPlatform.isLinux [ udev ];
 
-  buildFeatures = lib.optionals stdenv.hostPlatform.isLinux [ "journald" "sqlite-vec" ];
+  buildFeatures = lib.optionals stdenv.hostPlatform.isLinux [ "journald" "vector-search" ];
 
   doCheck = false;
 
