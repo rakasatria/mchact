@@ -38,7 +38,7 @@ Provider-agnostic runtime supporting Anthropic, OpenAI, OpenRouter, Ollama, Deep
 
 - **Agentic tool loop** — multi-step tool execution with session resume and context compaction
 - **22+ built-in tools** — bash, file ops, web search/fetch, browser, memory, scheduling, MCP, A2A, and more
-- **Persistent memory** — file-based (AGENTS.md) + structured SQLite memory with reflector and deduplication
+- **Persistent memory** — file-based (AGENTS.md) + structured SQLite/PostgreSQL memory with reflector and deduplication
 - **Scheduled tasks** — cron-based background scheduler with override prompts
 - **Sub-agents** — spawn isolated agent loops with restricted tool access
 - **Skills & ClawHub** — skill discovery, activation, and registry integration
@@ -70,7 +70,7 @@ Multi-agent collaboration framework. ClawTeam enables teams of specialized agent
 ```
 crates/
   mchact-core/        Shared types, errors, text utilities
-  mchact-storage/     SQLite persistence, memory domain, usage reports
+  mchact-storage/     SQLite/PostgreSQL persistence (DataStore trait), memory domain, usage reports
   mchact-tools/       Tool runtime primitives, sandbox, path guards
   mchact-channels/    Channel abstraction and delivery boundary
   mchact-clawhub/     ClawHub registry client, install, lockfile
@@ -110,8 +110,10 @@ cargo run -- doctor
 
 Copy `mchact.config.example.yaml` to `mchact.config.yaml` and configure:
 - LLM provider and API key
+- LLM provider and API key
 - Channels to enable (web, telegram, discord, etc.)
 - Data directory and working directory
+- `db_backend`: `"sqlite"` (default) or `"postgres"`; set `db_database_url` for Postgres
 - Optional: observability, sandbox, voice, plugins
 
 See [README-origin.md](README-origin.md) for the full original documentation.

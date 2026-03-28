@@ -222,7 +222,9 @@ cp target/release/mchact /usr/local/bin/
 Optional semantic-memory build (vector-search disabled by default):
 
 ```sh
-cargo build --release --features vector-search
+cargo build --release --features vector-search          # SQLite + sqlite-vec
+cargo build --release --features postgres               # PostgreSQL backend
+cargo build --release --features postgres-vector        # PostgreSQL + pgvector
 ```
 
 First-time vector-search quickstart (3 commands):
@@ -339,7 +341,7 @@ mchact maintains persistent memory via `AGENTS.md` files:
 
 Memory is loaded into the system prompt on every request. The model can read and update memory through tools -- tell it to "remember that I prefer Python" and it will persist across sessions.
 
-mchact also keeps structured memory rows in SQLite (`memories` table):
+mchact also keeps structured memory rows in the configured database backend (`memories` table; SQLite or PostgreSQL):
 - `write_memory` persists to file memory and structured memory
 - Background reflector extracts durable facts incrementally and deduplicates
 - Explicit "remember ..." commands use a deterministic fast path (direct structured-memory upsert)
@@ -348,12 +350,12 @@ mchact also keeps structured memory rows in SQLite (`memories` table):
 
 Optional memory MCP backend:
 - If MCP config includes a server exposing both `memory_query` and `memory_upsert`, structured-memory operations prefer that MCP server.
-- If MCP is not configured, unavailable, or returns invalid payloads, mchact automatically falls back to built-in SQLite memory behavior.
+- If MCP is not configured, unavailable, or returns invalid payloads, mchact automatically falls back to built-in DataStore memory behavior.
 - Fallback is per operation. External-provider failures are classified as `timeout`, `transport`, `invalid_payload`, or `unsupported_operation` in health/self-check output.
-- Startup runs a lightweight probe against the external provider. If it fails, foreground memory operations can still continue through SQLite fallback.
-- This mode favors availability over strict cross-store consistency: SQLite fallback writes are not automatically backfilled into the external provider after recovery, and reflector background writes pause while the external provider is unhealthy to limit divergence.
+- Startup runs a lightweight probe against the external provider. If it fails, foreground memory operations can still continue through DataStore fallback.
+- This mode favors availability over strict cross-store consistency: DataStore fallback writes are not automatically backfilled into the external provider after recovery, and reflector background writes pause while the external provider is unhealthy to limit divergence.
 
-When built with `--features vector-search` and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
+When built with `--features vector-search` (SQLite + sqlite-vec) or `--features postgres-vector` (PostgreSQL + pgvector) and embedding config is set, structured-memory retrieval and dedup use semantic KNN. Otherwise, it falls back to keyword relevance + Jaccard dedup.
 
 `/usage` now includes a **Memory Observability** section (and Web UI panel) showing:
 - memory pool health (active/archived/low-confidence)
@@ -642,11 +644,11 @@ Manage tasks with natural language:
 
 When `web_enabled: true`, mchact serves a local Web UI (default `http://127.0.0.1:10961`).
 
-- Session list includes chats from all channels stored in SQLite (`telegram`, `discord`, `slack`, `feishu`, `irc`, `web`)
+- Session list includes chats from all channels stored in the DB (`telegram`, `discord`, `slack`, `feishu`, `irc`, `web`)
 - You can review and manage history (refresh / clear context / delete)
 - Non-web channels are read-only in Web UI by default (send from source channel)
 - If there are no sessions yet, Web UI auto-generates a new key like `session-YYYYMMDDHHmmss`
-- The first message in that session automatically persists it in SQLite
+- The first message in that session automatically persists it in the configured DB backend
 - If no Web operator password exists, mchact initializes a temporary default password `helloworld` and prompts you to change it after sign-in (you can skip temporarily)
 - Password reset helpers:
   - `mchact web` (show usage)
@@ -1116,6 +1118,21 @@ mchact acp
 
 Use this mode when another local tool wants to talk to mchact as a sessioned chat runtime over stdio instead of through Telegram, Discord, or the Web UI.
 
+## Database Backend
+
+mchact supports two storage backends, selected via `db_backend` in config:
+
+| Backend | Feature flag | When to use |
+|---------|-------------|-------------|
+| `sqlite` (default) | built-in | Single-node deployments; zero external dependencies; WAL mode for concurrent access |
+| `postgres` | `--features postgres` | Multi-node or production deployments; set `db_database_url` to a Postgres connection string |
+
+Vector search:
+- SQLite: build with `--features vector-search` (uses sqlite-vec)
+- PostgreSQL: build with `--features postgres-vector` (uses pgvector)
+
+Both backends share the same `DataStore` trait interface. The backend is selected at startup by `create_data_store()` in `main.rs`; all tools and the scheduler hold an `Arc<DynDataStore>` trait object.
+
 ## Configuration
 
 All configuration is via `mchact.config.yaml`:
@@ -1394,7 +1411,7 @@ Bot: Port 5433.
 ```
 crates/
     mchact-core/      # Shared error/types/text modules
-    mchact-storage/   # SQLite DB + memory domain + usage reporting
+    mchact-storage/   # DataStore trait (SQLite + PostgreSQL drivers) + memory domain + usage reporting
     mchact-tools/     # Tool runtime primitives + sandbox + helper engines
     mchact-channels/  # Channel abstractions and routing boundary
     mchact-app/       # App-level support modules (logging, builtin skills, transcribe)
@@ -1411,12 +1428,13 @@ src/
 ```
 
 Key design decisions:
-- **Session resume** persists full message history (including tool blocks) in SQLite; context compaction summarizes old messages to stay within limits
+- **Session resume** persists full message history (including tool blocks) in the configured DB backend; context compaction summarizes old messages to stay within limits
 - **Provider abstraction** with native Anthropic + OpenAI-compatible endpoints
-- **SQLite with WAL mode** for concurrent read/write from async context
+- **Dual DB backends**: SQLite (WAL mode, bundled, zero-ops) or PostgreSQL (via `db_backend: "postgres"` and `db_database_url`)
+- **`Arc<DynDataStore>`** trait object shared across tools and scheduler for backend-agnostic, thread-safe DB access; backend selected at startup by `create_data_store()` factory
+- **ObjectStorage trait** routes all file data (SOUL.md, archives, TODO, skills, hooks, media) through a single shared instance (local, S3, Azure Blob, or GCS); channel inbound files deduped and tracked via `MediaManager.store_file()`
 - **Exponential backoff** on 429 rate limits (3 retries)
 - **Message splitting** for long channel responses
-- **`Arc<Database>`** shared across tools and scheduler for thread-safe DB access
 - **Continuous typing indicator** via a spawned task that sends typing action every 4 seconds
 
 ## Adding a New Platform Adapter

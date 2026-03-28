@@ -16,7 +16,7 @@ mchact's memory system has three fundamental gaps compared to Honcho and Hermes:
 
 ## Solution
 
-A new Rust crate `mchact-memory` that implements Honcho's observation hierarchy, Hermes' production patterns, and mchact's existing infrastructure — behind a single `ObservationStore` trait with two interchangeable drivers: SQLite (sqlite-vec + FTS5) and PostgreSQL (pgvector + tsvector).
+A new Rust crate `mchact-memory` that implements Honcho's observation hierarchy, Hermes' production patterns, and mchact's existing infrastructure — behind a single `ObservationStore` trait with two interchangeable drivers: SQLite (vector-search + FTS5) and PostgreSQL (pgvector + tsvector).
 
 Both drivers implement the **full feature set**. No degraded mode. Config picks the driver.
 
@@ -40,7 +40,7 @@ Both drivers implement the **full feature set**. No degraded mode. Config picks 
         │  Driver     │  │  Driver       │
         │             │  │               │
         │ rusqlite    │  │ sqlx          │
-        │ sqlite-vec  │  │ pgvector      │
+        │ vector-search│  │ pgvector      │
         │ FTS5        │  │ tsvector+GIN  │
         └─────────────┘  └───────────────┘
 ```
@@ -298,7 +298,7 @@ Both drivers implement the same Reciprocal Rank Fusion merge in Rust. Only the S
 
 1. **Keyword arm:** FTS5 `MATCH` (SQLite) or `tsv @@ plainto_tsquery()` (PostgreSQL). Returns top 20 ranked results.
 
-2. **Semantic arm:** sqlite-vec distance query (SQLite) or `embedding <=> query_vec` (PostgreSQL). Returns top 20 by cosine similarity.
+2. **Semantic arm:** vector-search distance query (SQLite) or `embedding <=> query_vec` (PostgreSQL). Returns top 20 by cosine similarity.
 
 3. **RRF merge (shared Rust code):**
    ```rust
@@ -476,7 +476,7 @@ crates/mchact-memory/
 ├── Cargo.toml
 │   [features]
 │   default = ["sqlite"]
-│   sqlite  = ["rusqlite/bundled", "sqlite-vec"]
+│   sqlite  = ["rusqlite/bundled", "vector-search"]
 │   postgres = ["sqlx/postgres", "pgvector"]
 │
 ├── src/
@@ -580,7 +580,7 @@ crates/mchact-memory/
 
 | Risk | Mitigation |
 |------|------------|
-| sqlite-vec not compiled | Feature flag `sqlite` includes it. Doctor check at startup. |
+| vector-search not compiled | Feature flag `sqlite` includes it. Doctor check at startup. |
 | PostgreSQL unavailable at startup | Fall back to no memory with warning. Agent works without context. |
 | Deriver LLM extraction quality | Quality gates + poisoning guard. Deriver confidence (0.85/0.70) lower than explicit (0.95). |
 | Dreamer produces low-quality inductions | Inductive observations get lowest confidence (0.60). Below injection threshold (0.45) if not validated. |

@@ -1242,18 +1242,18 @@ git commit -m "feat: add migration v22 with media_objects table and document_ext
 - [ ] **Step 1: Create MediaManager**
 
 ```rust
-use mchact_storage::db::{Database, MediaObject};
+use mchact_storage::{DynDataStore, db::MediaObject};
 use mchact_storage_backend::{ObjectStorage, StorageError};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 pub struct MediaManager {
     storage: Arc<dyn ObjectStorage>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl MediaManager {
-    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<Database>) -> Self {
+    pub fn new(storage: Arc<dyn ObjectStorage>, db: Arc<DynDataStore>) -> Self {
         Self { storage, db }
     }
 

@@ -455,17 +455,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct SessionSearchTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 
 impl SessionSearchTool {
-    pub fn new(db: Arc<Database>, control_chat_ids: Vec<i64>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, control_chat_ids: Vec<i64>) -> Self {
         Self {
             db,
             control_chat_ids,
@@ -1113,18 +1113,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 // -- FindingsWriteTool --
 
 pub struct FindingsWriteTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsWriteTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1214,11 +1214,11 @@ impl Tool for FindingsWriteTool {
 // -- FindingsReadTool --
 
 pub struct FindingsReadTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl FindingsReadTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 }
@@ -1489,7 +1489,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
@@ -1508,14 +1508,14 @@ const AGGREGATOR_SYSTEM_PROMPT: &str = "You have been provided with a set of res
 
 pub struct MixtureOfAgentsTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 
 impl MixtureOfAgentsTool {
     pub fn new(
         config: &Config,
-        db: Arc<Database>,
+        db: Arc<DynDataStore>,
         channel_registry: Arc<ChannelRegistry>,
     ) -> Self {
         Self {

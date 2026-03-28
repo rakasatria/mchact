@@ -327,7 +327,7 @@ AND created_at < datetime('now', '-30 minutes')
    ORDER BY vector_distance(dc.embedding, query_vector)
    LIMIT max_results
 
-   (Uses sqlite-vec for vector search, or in-memory brute-force if sqlite-vec not available)
+   (Uses vector-search for vector search, or in-memory brute-force if vector-search not available)
 
 4. For each matching chunk:
    a. Knowledge attribution: which collection this result came from
@@ -365,9 +365,9 @@ AND created_at < datetime('now', '-30 minutes')
    }
 ```
 
-### Fallback Without sqlite-vec
+### Fallback Without vector-search
 
-If the `sqlite-vec` feature is not enabled:
+If the `vector-search` feature is not enabled:
 - Load all chunk embeddings for the collection into memory
 - Compute cosine similarity in Rust
 - Sort and take top N
@@ -470,7 +470,7 @@ Config fields with serde defaults in `src/config.rs`.
 | Large documents create many chunks | Batch processing with configurable limits (50 embeds, 20 observations per cycle) |
 | Embedding API costs | Only embed when `embedding_status = 'pending'` — no re-processing |
 | Auto-group LLM costs | Only runs when new docs added, min 5 docs threshold, configurable interval |
-| sqlite-vec not available | Fallback to in-memory cosine similarity (works for <10K chunks) |
+| vector-search not available | Fallback to in-memory cosine similarity (works for <10K chunks) |
 | Failed embeddings accumulate | Retry sweep resets `failed` → `pending` after delay |
 | Observation engine overloaded | Separate batch size for observe job (20 per cycle vs 50 for embed) |
 | Knowledge deleted while processing | CASCADE delete on junction tables, scheduler skips orphaned chunks |

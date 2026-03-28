@@ -133,7 +133,7 @@ ORDER BY timestamp ASC
 
 ```rust
 pub struct SessionSearchTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 ```
@@ -374,7 +374,7 @@ A dedicated `mixture_of_agents` tool that gives the **same question** to multipl
 ```rust
 pub struct MixtureOfAgentsTool {
     config: Config,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     channel_registry: Arc<ChannelRegistry>,
 }
 ```

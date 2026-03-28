@@ -204,7 +204,7 @@ Central service wiring storage + DB:
 ```rust
 pub struct MediaManager {
     storage: Arc<dyn ObjectStorage>,
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl MediaManager {
@@ -335,7 +335,7 @@ CREATE INDEX IF NOT EXISTS idx_doc_extractions_media ON document_extractions(med
 ### Phase 2: Backfill (runs once on first startup after upgrade)
 
 ```rust
-fn backfill_media_objects(db: &Database, data_dir: &str) -> Result<()> {
+fn backfill_media_objects(db: &DynDataStore, data_dir: &str) -> Result<()> {
     // 1. Scan {data_dir}/media/* → insert media_objects
     //    - img_* → source: "image_gen"
     //    - vid_* → source: "video_gen"

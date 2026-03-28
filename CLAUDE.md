@@ -4,7 +4,7 @@ mchact is a Rust multi-platform chat bot with a channel-agnostic core and platfo
 
 ## Tech stack
 
-Rust 2021, Tokio, teloxide 0.17, serenity 0.12, provider-agnostic LLM runtime (Anthropic + OpenAI-compatible), SQLite (rusqlite bundled), cron crate for scheduling.
+Rust 2021, Tokio, teloxide 0.17, serenity 0.12, provider-agnostic LLM runtime (Anthropic + OpenAI-compatible), SQLite or PostgreSQL (configurable via `db_backend`), cron crate for scheduling.
 
 ## Directory overview
 
@@ -15,7 +15,7 @@ Rust 2021, Tokio, teloxide 0.17, serenity 0.12, provider-agnostic LLM runtime (A
 ## Project layout
 
 - `crates/mchact-core/` -- shared error/types/text modules (`error`, `llm_types`, `text`)
-- `crates/mchact-storage/` -- SQLite DB schema/query layer + memory/usage domain modules
+- `crates/mchact-storage/` -- `DataStore` trait with SQLite and PostgreSQL drivers + memory/usage domain modules
 - `crates/mchact-tools/` -- tool runtime primitives (trait/auth/risk/schema/path) + sandbox
 - `crates/mchact-channels/` -- channel abstraction and delivery boundary modules
 - `crates/mchact-app/` -- app-level support modules (logging, builtin skills, transcribe)
@@ -40,7 +40,8 @@ Rust 2021, Tokio, teloxide 0.17, serenity 0.12, provider-agnostic LLM runtime (A
 - **Context compaction**: when session messages exceed `max_session_messages`, older messages are summarized and replaced with a compact summary + recent messages kept verbatim
 - **Sub-agent**: `sub_agent` tool spawns a fresh agentic loop with 9 restricted tools (no send_message, write_memory, schedule, or recursive sub_agent)
 - **Tool trait**: `name()`, `definition()` (JSON Schema), `execute(serde_json::Value) -> ToolResult`
-- **Shared state**: `AppState` in `Arc`, tools hold `Bot` / `Arc<Database>` as needed
+- **Shared state**: `AppState` in `Arc`, tools hold `Bot` / `Arc<DynDataStore>` (trait object) as needed
+- **ObjectStorage**: all file data (SOUL.md, archives, TODO, skills, hooks, media) routes through a single shared `ObjectStorage` trait instance (local filesystem, S3, Azure Blob, or GCS); no per-component `LocalStorage` creation
 - **Group catch-up**: `db.get_messages_since_last_bot_response()` loads all messages since bot's last reply
 - **Scheduler**: `tokio::spawn` loop, polls DB for due tasks, calls `process_with_agent` with `override_prompt`
 - **Typing**: spawned task sends typing action every 4s, aborted when response is ready
@@ -55,11 +56,15 @@ cargo build
 cargo run -- start    # requires config.yaml with at least one enabled channel plus model credentials
 cargo run -- setup    # interactive setup wizard to create config.yaml
 cargo run -- help
+
+cargo build --features postgres          # with PostgreSQL support
+cargo build --features vector-search     # with vector search (SQLite via sqlite-vec)
+cargo build --features postgres-vector   # with PostgreSQL + pgvector
 ```
 
 ## Configuration
 
-mchact uses `mchact.config.yaml` (or `.yml`) for configuration. Override the path with `MCHACT_CONFIG` env var. See `mchact.config.example.yaml` for all available fields.
+mchact uses `mchact.config.yaml` (or `.yml`) for configuration. Override the path with `MCHACT_CONFIG` env var. See `mchact.config.example.yaml` for all available fields. Key storage fields: `db_backend` (`"sqlite"` or `"postgres"`) and `db_database_url` (Postgres connection string when using the postgres backend).
 
 ## Soul (personality customization)
 
@@ -82,7 +87,7 @@ mchact supports a `SOUL.md` file that defines the bot's personality, voice, valu
 
 ## Database
 
-Core persistence is provided by `mchact-storage` (`Database` wrapper over SQLite). Runtime state and observability tables are managed through versioned migrations.
+Core persistence is provided by `mchact-storage` (`DataStore` trait with SQLite and PostgreSQL backends). Configure via `db_backend` (`"sqlite"` default, or `"postgres"`) and `db_database_url` for Postgres connection strings. Runtime state and observability tables are managed through versioned migrations. Vector search uses sqlite-vec (SQLite) or pgvector (PostgreSQL) behind the `vector-search` feature.
 
 ## Important conventions
 

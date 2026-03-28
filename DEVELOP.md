@@ -16,14 +16,14 @@ cargo run -- start
 - At least one enabled channel adapter (Telegram bot token from @BotFather, Discord bot token from Discord Developer Portal, Slack app/bot tokens, Feishu/Lark app credentials, or Web UI)
 - A model provider API key (Anthropic or OpenAI-compatible)
 
-No other external dependencies. SQLite is bundled via `rusqlite`.
+No other external dependencies. SQLite is bundled via `rusqlite`; PostgreSQL is optional and enabled via the `postgres` feature and `db_backend: "postgres"` in config.
 
 ## Project structure
 
 ```
 crates/
     mchact-core/      # Shared error/types/text modules
-    mchact-storage/   # SQLite + memory + usage reporting
+    mchact-storage/   # DataStore trait (SQLite + PostgreSQL drivers) + memory + usage reporting
     mchact-tools/     # Tool runtime primitives + sandbox
     mchact-channels/  # Channel abstraction boundary
     mchact-app/       # App support modules (logging/skills/transcribe)
@@ -47,7 +47,7 @@ src/
 Platform message (via adapter)
        |
        v
-    Store in SQLite (message + chat metadata)
+    Store in DB via DataStore (message + chat metadata; SQLite or PostgreSQL)
        |
        v
     Determine response: private=always, group=@mention only
@@ -78,7 +78,7 @@ Platform message (via adapter)
        3. If stop_reason == "end_turn" -> extract text -> return
        |
        v
-    Strip image base64 data, save session to SQLite
+    Strip image base64 data, save session to DB (via DataStore)
        |
        v
     Abort typing indicator
@@ -87,7 +87,7 @@ Platform message (via adapter)
     Send response (split at channel limits: Telegram 4096 / Discord 2000 / Slack 4000 / Feishu 4000)
        |
        v
-    Store bot response in SQLite
+    Store bot response in DB (via DataStore)
 ```
 
 The same core loop is reused across adapters. Adding a new platform should primarily require a new ingress/egress adapter that maps platform events into the shared `process_with_agent` flow.
@@ -97,7 +97,7 @@ The same core loop is reused across adapters. Adding a new platform should prima
 | Type | Location | Description |
 |------|----------|-------------|
 | `AppState` | `runtime.rs` | Shared runtime state for all adapters |
-| `Database` | `mchact_storage::db` | SQLite wrapper with `Mutex<Connection>` |
+| `DynDataStore` | `mchact_storage` | `DataStore` trait object (SQLite or PostgreSQL backend) |
 | `ToolRegistry` | `tools/mod.rs` | Holds all `Box<dyn Tool>`, dispatches by name |
 | `Tool` trait | `mchact_tools::runtime` | `name()`, `definition()`, `execute()` |
 | `LlmProvider` | `llm.rs` | Provider abstraction for Anthropic and OpenAI-compatible APIs |
@@ -109,7 +109,7 @@ The same core loop is reused across adapters. Adding a new platform should prima
 - Telegram handler has `Arc<AppState>` via dptree dependencies
 - Discord handler has `Arc<AppState>` via serenity event handler state
 - Scheduler gets `Arc<AppState>` at spawn time
-- Tools that need `Bot` or `Database` hold their own clones/arcs (passed at construction)
+- Tools that need `Bot` or `Arc<DynDataStore>` hold their own clones/arcs (passed at construction)
 
 ### Multi-chat permission model
 
@@ -224,14 +224,14 @@ impl Tool for MyTool {
 Box::new(my_tool::MyTool),
 ```
 
-If your tool needs shared state (like `Bot` or `Arc<Database>`), add a constructor:
+If your tool needs shared state (like `Bot` or `Arc<DynDataStore>`), add a constructor:
 ```rust
 pub struct MyTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 impl MyTool {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         MyTool { db }
     }
 }
@@ -312,7 +312,7 @@ cargo run -- start       # Run dev build
 cargo run -- help        # Show CLI help
 ```
 
-The release binary is fully self-contained -- no runtime dependencies, no database server, no config files beyond `mchact.config.yaml`.
+The SQLite release binary is fully self-contained — no runtime dependencies, no database server, no config files beyond `mchact.config.yaml`. PostgreSQL builds require an external Postgres instance configured via `db_database_url`.
 
 ## Dependencies
 
@@ -322,7 +322,7 @@ The release binary is fully self-contained -- no runtime dependencies, no databa
 | serenity | 0.12 | Discord Gateway/API |
 | tokio | 1 | Async runtime |
 | reqwest | 0.12 | HTTP client (Anthropic API, web fetch/search) |
-| rusqlite | 0.32 | SQLite (bundled) |
+| rusqlite | 0.32 | SQLite (bundled; default backend) |
 | serde / serde_json | 1 | Serialization |
 | async-trait | 0.1 | Async trait support |
 | chrono | 0.4 | Date/time handling |

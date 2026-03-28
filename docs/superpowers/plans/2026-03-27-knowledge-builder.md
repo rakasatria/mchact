@@ -159,12 +159,12 @@ git commit -m "feat: add migration v23 with knowledge tables and document_chunks
 ```rust
 // src/knowledge.rs
 
-use mchact_storage::db::{Database, Knowledge, DocumentChunk, DocumentExtraction};
+use mchact_storage::{DynDataStore, db::{Knowledge, DocumentChunk, DocumentExtraction}};
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
 pub struct KnowledgeManager {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,7 +182,7 @@ pub struct KnowledgeStats {
 }
 
 impl KnowledgeManager {
-    pub fn new(db: Arc<Database>) -> Self {
+    pub fn new(db: Arc<DynDataStore>) -> Self {
         Self { db }
     }
 
@@ -671,13 +671,13 @@ git commit -m "feat: add knowledge query with vector search and cosine similarit
 use crate::config::Config;
 use crate::embedding::EmbeddingProvider;
 use crate::knowledge::f32_vec_to_bytes;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use std::sync::Arc;
 use tracing::{info, warn};
 
 /// Job 1: Embed pending chunks.
 pub async fn run_embed_job(
-    db: &Database,
+    db: &DynDataStore,
     embedding: &dyn EmbeddingProvider,
     batch_size: i64,
 ) -> (i64, i64) {
@@ -726,7 +726,7 @@ pub async fn run_embed_job(
 
 /// Job 2: Feed embedded chunks to observation engine.
 pub async fn run_observe_job(
-    db: &Database,
+    db: &DynDataStore,
     observation_store: Option<&dyn mchact_memory::ObservationStore>,
     _config: &Config,
     batch_size: i64,
@@ -791,7 +791,7 @@ pub async fn run_observe_job(
 
 /// Job 3: Auto-group knowledge collections.
 pub async fn run_autogroup_job(
-    db: &Database,
+    db: &DynDataStore,
     config: &Config,
     llm: &dyn crate::llm::LlmProvider,
     min_docs: i64,
@@ -858,7 +858,7 @@ pub async fn run_autogroup_job(
 }
 
 /// Reset failed chunks for retry.
-pub fn reset_failed_chunks(db: &Database, older_than_mins: i64) -> i64 {
+pub fn reset_failed_chunks(db: &DynDataStore, older_than_mins: i64) -> i64 {
     db.reset_failed_chunks(older_than_mins).unwrap_or(0)
 }
 ```

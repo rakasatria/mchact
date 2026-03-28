@@ -188,7 +188,7 @@ pub struct DocumentExtraction {
 
 ```rust
 pub struct ReadDocumentTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 ```

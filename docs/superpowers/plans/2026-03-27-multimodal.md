@@ -1711,17 +1711,17 @@ pub async fn extract_text(_file_path: &str) -> Result<String, MediaError> {
 use std::sync::Arc;
 use async_trait::async_trait;
 use mchact_core::llm_types::ToolDefinition;
-use mchact_storage::db::Database;
+use mchact_storage::DynDataStore;
 use mchact_tools::runtime::{Tool, ToolResult};
 use serde_json::json;
 
 pub struct ReadDocumentTool {
-    db: Arc<Database>,
+    db: Arc<DynDataStore>,
     control_chat_ids: Vec<i64>,
 }
 
 impl ReadDocumentTool {
-    pub fn new(db: Arc<Database>, control_chat_ids: Vec<i64>) -> Self {
+    pub fn new(db: Arc<DynDataStore>, control_chat_ids: Vec<i64>) -> Self {
         Self { db, control_chat_ids }
     }
 }
