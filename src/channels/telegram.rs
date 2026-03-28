@@ -822,21 +822,19 @@ async fn handle_message(
                     })
                     .collect::<String>();
 
-                let dir = Path::new(&state.config.working_dir)
-                    .join("uploads")
-                    .join(tg_channel_name.replace('/', "_"))
-                    .join(raw_chat_id.to_string());
-                if let Err(e) = std::fs::create_dir_all(&dir) {
-                    error!("Failed to create upload dir {}: {e}", dir.display());
-                } else {
+                {
                     let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-                    let path = dir.join(format!("{}-{}", ts, safe_name));
-                    match tokio::fs::write(&path, &bytes).await {
+                    let safe_channel = tg_channel_name.replace('/', "_");
+                    let key = format!(
+                        "uploads/{}/{}/{}-{}",
+                        safe_channel, raw_chat_id, ts, safe_name
+                    );
+                    match state.media_manager.storage().put(&key, bytes.clone()).await {
                         Ok(()) => {
-                            document_saved_path = Some(path.display().to_string());
+                            document_saved_path = Some(key);
                         }
                         Err(e) => {
-                            error!("Failed to save telegram document {}: {e}", path.display());
+                            error!("Failed to save telegram document to storage: {e}");
                         }
                     }
                 }

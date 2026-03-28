@@ -7,18 +7,16 @@ use super::{authorize_chat_access, schema_object, Tool, ToolResult};
 use mchact_core::llm_types::ToolDefinition;
 use mchact_storage::db::{call_blocking, Database};
 use mchact_storage::prelude::*;
+use mchact_storage_backend::ObjectStorage;
 
 pub struct ExportChatTool {
     db: Arc<Database>,
-    data_dir: String,
+    storage: Arc<dyn ObjectStorage>,
 }
 
 impl ExportChatTool {
-    pub fn new(db: Arc<Database>, data_dir: &str) -> Self {
-        ExportChatTool {
-            db,
-            data_dir: data_dir.to_string(),
-        }
+    pub fn new(db: Arc<Database>, storage: Arc<dyn ObjectStorage>) -> Self {
+        ExportChatTool { db, storage }
     }
 }
 
@@ -68,11 +66,7 @@ impl Tool for ExportChatTool {
         }
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let default_path = format!("{}/exports/{}_{}.md", self.data_dir, chat_id, timestamp);
-        let path = input
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_path);
+        let key = format!("exports/{}_{}.md", chat_id, timestamp);
 
         // Build markdown
         let mut md = format!("# Chat Export: {chat_id}\n\n");
@@ -93,20 +87,13 @@ impl Tool for ExportChatTool {
             ));
         }
 
-        // Write file
-        let path = std::path::Path::new(path);
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return ToolResult::error(format!("Failed to create directory: {e}"));
-            }
-        }
-        match std::fs::write(path, &md) {
-            Ok(_) => ToolResult::success(format!(
+        match self.storage.put(&key, md.as_bytes().to_vec()).await {
+            Ok(()) => ToolResult::success(format!(
                 "Exported {} messages to {}",
                 messages.len(),
-                path.display()
+                key
             )),
-            Err(e) => ToolResult::error(format!("Failed to write file: {e}")),
+            Err(e) => ToolResult::error(format!("Failed to write export: {e}")),
         }
     }
 }
@@ -115,11 +102,15 @@ impl Tool for ExportChatTool {
 mod tests {
     use super::*;
     use mchact_storage::db::{Database, StoredMessage};
+    use mchact_storage_backend::local::LocalStorage;
 
-    fn test_db() -> (Arc<Database>, std::path::PathBuf) {
+    async fn test_setup() -> (Arc<Database>, Arc<dyn ObjectStorage>, std::path::PathBuf) {
         let dir = std::env::temp_dir().join(format!("mchact_export_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
         let db = Arc::new(Database::new(dir.to_str().unwrap()).unwrap());
-        (db, dir)
+        let storage: Arc<dyn ObjectStorage> =
+            Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap());
+        (db, storage, dir)
     }
 
     fn cleanup(dir: &std::path::Path) {
@@ -128,8 +119,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_export_empty_chat() {
-        let (db, dir) = test_db();
-        let tool = ExportChatTool::new(db, dir.to_str().unwrap());
+        let (db, storage, dir) = test_setup().await;
+        let tool = ExportChatTool::new(db, storage);
         let result = tool.execute(json!({"chat_id": 999})).await;
         assert!(result.is_error);
         assert!(result.content.contains("No messages"));
@@ -138,7 +129,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_export_chat_success() {
-        let (db, dir) = test_db();
+        let (db, storage, dir) = test_setup().await;
         db.store_message(&StoredMessage {
             id: "m1".into(),
             chat_id: 100,
@@ -158,15 +149,20 @@ mod tests {
         })
         .unwrap();
 
-        let out_path = dir.join("test_export.md");
-        let tool = ExportChatTool::new(db, dir.to_str().unwrap());
-        let result = tool
-            .execute(json!({"chat_id": 100, "path": out_path.to_str().unwrap()}))
-            .await;
+        let tool = ExportChatTool::new(db, storage.clone());
+        let result = tool.execute(json!({"chat_id": 100})).await;
         assert!(!result.is_error, "Error: {}", result.content);
         assert!(result.content.contains("2 messages"));
 
-        let content = std::fs::read_to_string(&out_path).unwrap();
+        // Read back from storage to verify content
+        let key = result
+            .content
+            .split_whitespace()
+            .last()
+            .unwrap_or("")
+            .to_string();
+        let bytes = storage.get(&key).await.unwrap();
+        let content = String::from_utf8(bytes).unwrap();
         assert!(content.contains("alice"));
         assert!(content.contains("hello"));
         assert!(content.contains("**Bot**"));
@@ -176,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_export_chat_permission_denied() {
-        let (db, dir) = test_db();
+        let (db, storage, dir) = test_setup().await;
         db.store_message(&StoredMessage {
             id: "m1".into(),
             chat_id: 200,
@@ -187,7 +183,7 @@ mod tests {
         })
         .unwrap();
 
-        let tool = ExportChatTool::new(db, dir.to_str().unwrap());
+        let tool = ExportChatTool::new(db, storage);
         let result = tool
             .execute(json!({
                 "chat_id": 200,
@@ -204,7 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_export_chat_allowed_for_control_chat_cross_chat() {
-        let (db, dir) = test_db();
+        let (db, storage, dir) = test_setup().await;
         db.store_message(&StoredMessage {
             id: "m1".into(),
             chat_id: 200,
@@ -214,12 +210,10 @@ mod tests {
             timestamp: "2024-01-01T00:00:01Z".into(),
         })
         .unwrap();
-        let out_path = dir.join("control_export.md");
-        let tool = ExportChatTool::new(db, dir.to_str().unwrap());
+        let tool = ExportChatTool::new(db, storage.clone());
         let result = tool
             .execute(json!({
                 "chat_id": 200,
-                "path": out_path.to_str().unwrap(),
                 "__mchact_auth": {
                     "caller_chat_id": 100,
                     "control_chat_ids": [100]
@@ -227,7 +221,15 @@ mod tests {
             }))
             .await;
         assert!(!result.is_error, "{}", result.content);
-        let content = std::fs::read_to_string(out_path).unwrap();
+        // Read back from storage
+        let key = result
+            .content
+            .split_whitespace()
+            .last()
+            .unwrap_or("")
+            .to_string();
+        let bytes = storage.get(&key).await.unwrap();
+        let content = String::from_utf8(bytes).unwrap();
         assert!(content.contains("hello"));
         cleanup(&dir);
     }

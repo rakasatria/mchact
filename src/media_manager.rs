@@ -115,6 +115,11 @@ impl MediaManager {
     pub fn backend_name(&self) -> &str {
         self.storage.backend_name()
     }
+
+    /// Return a reference to the underlying object storage.
+    pub fn storage(&self) -> Arc<dyn ObjectStorage> {
+        self.storage.clone()
+    }
 }
 
 // ---------------------------------------------------------------------------

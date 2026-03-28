@@ -36,7 +36,6 @@ const ACP_MODE_ID: &str = "chat";
 pub async fn serve(
     config: Config,
     db: Database,
-    memory: MemoryManager,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
@@ -71,7 +70,8 @@ pub async fn serve(
                 )
             }),
     );
-    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage, db.clone()));
+    let media_manager = Arc::new(crate::media_manager::MediaManager::new(storage.clone(), db.clone()));
+    let memory = MemoryManager::new(storage, "groups");
 
     let app_state = Arc::new(AppState {
         config: config.clone(),

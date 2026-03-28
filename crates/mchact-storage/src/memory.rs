@@ -1,82 +1,82 @@
-use std::path::{Path, PathBuf};
+use mchact_storage_backend::{ObjectStorage, StorageError};
+use std::sync::Arc;
 
 pub struct MemoryManager {
-    data_dir: PathBuf,
+    storage: Arc<dyn ObjectStorage>,
+    prefix: String,
 }
 
 impl MemoryManager {
-    pub fn new(data_dir: &str) -> Self {
+    /// Create a MemoryManager backed by the given ObjectStorage.
+    ///
+    /// `prefix` is prepended to every key, e.g. `"groups"`.
+    pub fn new(storage: Arc<dyn ObjectStorage>, prefix: &str) -> Self {
         MemoryManager {
-            data_dir: PathBuf::from(data_dir).join("groups"),
+            storage,
+            prefix: prefix.trim_end_matches('/').to_string(),
         }
     }
 
-    fn global_memory_path(&self) -> PathBuf {
-        self.data_dir.join("AGENTS.md")
+    fn global_key(&self) -> String {
+        format!("{}/AGENTS.md", self.prefix)
     }
 
-    fn chat_memory_path(&self, channel: &str, chat_id: i64) -> PathBuf {
-        self.data_dir
-            .join(channel.trim())
-            .join(chat_id.to_string())
-            .join("AGENTS.md")
+    fn chat_key(&self, channel: &str, chat_id: i64) -> String {
+        let safe_channel = channel.trim().replace('/', "_");
+        format!("{}/{}/{}/AGENTS.md", self.prefix, safe_channel, chat_id)
     }
 
-    fn bot_memory_path(&self, channel: &str) -> PathBuf {
-        self.data_dir.join(channel.trim()).join("AGENTS.md")
+    fn bot_key(&self, channel: &str) -> String {
+        let safe_channel = channel.trim().replace('/', "_");
+        format!("{}/{}/AGENTS.md", self.prefix, safe_channel)
     }
 
-    pub fn read_global_memory(&self) -> Option<String> {
-        let path = self.global_memory_path();
-        std::fs::read_to_string(path).ok()
+    pub async fn read_global_memory(&self) -> Option<String> {
+        read_string(&self.storage, &self.global_key()).await
     }
 
-    pub fn read_chat_memory(&self, channel: &str, chat_id: i64) -> Option<String> {
-        let path = self.chat_memory_path(channel, chat_id);
-        std::fs::read_to_string(path).ok()
+    pub async fn read_chat_memory(&self, channel: &str, chat_id: i64) -> Option<String> {
+        read_string(&self.storage, &self.chat_key(channel, chat_id)).await
     }
 
-    pub fn read_bot_memory(&self, channel: &str) -> Option<String> {
-        let path = self.bot_memory_path(channel);
-        std::fs::read_to_string(path).ok()
+    pub async fn read_bot_memory(&self, channel: &str) -> Option<String> {
+        read_string(&self.storage, &self.bot_key(channel)).await
     }
 
     #[allow(dead_code)]
-    pub fn write_global_memory(&self, content: &str) -> std::io::Result<()> {
-        let path = self.global_memory_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, content)
+    pub async fn write_global_memory(&self, content: &str) -> Result<(), StorageError> {
+        self.storage
+            .put(&self.global_key(), content.as_bytes().to_vec())
+            .await
     }
 
     #[allow(dead_code)]
-    pub fn write_chat_memory(
+    pub async fn write_chat_memory(
         &self,
         channel: &str,
         chat_id: i64,
         content: &str,
-    ) -> std::io::Result<()> {
-        let path = self.chat_memory_path(channel, chat_id);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, content)
+    ) -> Result<(), StorageError> {
+        self.storage
+            .put(&self.chat_key(channel, chat_id), content.as_bytes().to_vec())
+            .await
     }
 
     #[allow(dead_code)]
-    pub fn write_bot_memory(&self, channel: &str, content: &str) -> std::io::Result<()> {
-        let path = self.bot_memory_path(channel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, content)
+    pub async fn write_bot_memory(
+        &self,
+        channel: &str,
+        content: &str,
+    ) -> Result<(), StorageError> {
+        self.storage
+            .put(&self.bot_key(channel), content.as_bytes().to_vec())
+            .await
     }
 
-    pub fn build_memory_context(&self, channel: &str, chat_id: i64) -> String {
+    pub async fn build_memory_context(&self, channel: &str, chat_id: i64) -> String {
         let mut context = String::new();
 
-        if let Some(global) = self.read_global_memory() {
+        if let Some(global) = self.read_global_memory().await {
             if !global.trim().is_empty() {
                 context.push_str("<global_memory>\n");
                 context.push_str(&global);
@@ -84,7 +84,7 @@ impl MemoryManager {
             }
         }
 
-        if let Some(bot) = self.read_bot_memory(channel) {
+        if let Some(bot) = self.read_bot_memory(channel).await {
             if !bot.trim().is_empty() {
                 context.push_str("<bot_memory>\n");
                 context.push_str(&bot);
@@ -92,7 +92,7 @@ impl MemoryManager {
             }
         }
 
-        if let Some(chat) = self.read_chat_memory(channel, chat_id) {
+        if let Some(chat) = self.read_chat_memory(channel, chat_id).await {
             if !chat.trim().is_empty() {
                 context.push_str("<chat_memory>\n");
                 context.push_str(&chat);
@@ -102,20 +102,26 @@ impl MemoryManager {
 
         context
     }
+}
 
-    #[allow(dead_code)]
-    pub fn groups_dir(&self) -> &Path {
-        &self.data_dir
+async fn read_string(storage: &Arc<dyn ObjectStorage>, key: &str) -> Option<String> {
+    match storage.get(key).await {
+        Ok(bytes) => String::from_utf8(bytes).ok(),
+        Err(StorageError::NotFound(_)) => None,
+        Err(_) => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mchact_storage_backend::local::LocalStorage;
 
-    fn test_memory_manager() -> (MemoryManager, std::path::PathBuf) {
+    async fn test_memory_manager() -> (MemoryManager, std::path::PathBuf) {
         let dir = std::env::temp_dir().join(format!("mchact_mem_test_{}", uuid::Uuid::new_v4()));
-        let mm = MemoryManager::new(dir.to_str().unwrap());
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage = Arc::new(LocalStorage::new(dir.to_str().unwrap()).await.unwrap());
+        let mm = MemoryManager::new(storage, "groups");
         (mm, dir)
     }
 
@@ -123,91 +129,59 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    #[test]
-    fn test_global_memory_path() {
-        let (mm, dir) = test_memory_manager();
-        let path = mm.global_memory_path();
-        assert!(path.ends_with("groups/AGENTS.md"));
+    #[tokio::test]
+    async fn test_read_nonexistent_memory() {
+        let (mm, dir) = test_memory_manager().await;
+        assert!(mm.read_global_memory().await.is_none());
+        assert!(mm.read_chat_memory("telegram", 100).await.is_none());
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_chat_memory_path() {
-        let (mm, dir) = test_memory_manager();
-        let path = mm.chat_memory_path("telegram", 12345);
-        assert!(path.ends_with(
-            std::path::Path::new("groups")
-                .join("telegram")
-                .join("12345")
-                .join("AGENTS.md")
-        ));
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn test_bot_memory_path() {
-        let (mm, dir) = test_memory_manager();
-        let path = mm.bot_memory_path("feishu.ops");
-        assert!(path.ends_with(
-            std::path::Path::new("groups")
-                .join("feishu.ops")
-                .join("AGENTS.md")
-        ));
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn test_read_nonexistent_memory() {
-        let (mm, dir) = test_memory_manager();
-        assert!(mm.read_global_memory().is_none());
-        assert!(mm.read_chat_memory("telegram", 100).is_none());
-        cleanup(&dir);
-    }
-
-    #[test]
-    fn test_write_and_read_global_memory() {
-        let (mm, dir) = test_memory_manager();
-        mm.write_global_memory("global notes").unwrap();
-        let content = mm.read_global_memory().unwrap();
+    #[tokio::test]
+    async fn test_write_and_read_global_memory() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_global_memory("global notes").await.unwrap();
+        let content = mm.read_global_memory().await.unwrap();
         assert_eq!(content, "global notes");
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_write_and_read_chat_memory() {
-        let (mm, dir) = test_memory_manager();
+    #[tokio::test]
+    async fn test_write_and_read_chat_memory() {
+        let (mm, dir) = test_memory_manager().await;
         mm.write_chat_memory("telegram", 42, "chat 42 notes")
+            .await
             .unwrap();
-        let content = mm.read_chat_memory("telegram", 42).unwrap();
+        let content = mm.read_chat_memory("telegram", 42).await.unwrap();
         assert_eq!(content, "chat 42 notes");
 
         // Different chat should be empty
-        assert!(mm.read_chat_memory("telegram", 99).is_none());
+        assert!(mm.read_chat_memory("telegram", 99).await.is_none());
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_write_and_read_bot_memory() {
-        let (mm, dir) = test_memory_manager();
-        mm.write_bot_memory("feishu", "bot notes").unwrap();
-        let content = mm.read_bot_memory("feishu").unwrap();
+    #[tokio::test]
+    async fn test_write_and_read_bot_memory() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_bot_memory("feishu", "bot notes").await.unwrap();
+        let content = mm.read_bot_memory("feishu").await.unwrap();
         assert_eq!(content, "bot notes");
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_build_memory_context_empty() {
-        let (mm, dir) = test_memory_manager();
-        let ctx = mm.build_memory_context("telegram", 100);
+    #[tokio::test]
+    async fn test_build_memory_context_empty() {
+        let (mm, dir) = test_memory_manager().await;
+        let ctx = mm.build_memory_context("telegram", 100).await;
         assert!(ctx.is_empty());
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_build_memory_context_with_global_only() {
-        let (mm, dir) = test_memory_manager();
-        mm.write_global_memory("I am global memory").unwrap();
-        let ctx = mm.build_memory_context("telegram", 100);
+    #[tokio::test]
+    async fn test_build_memory_context_with_global_only() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_global_memory("I am global memory").await.unwrap();
+        let ctx = mm.build_memory_context("telegram", 100).await;
         assert!(ctx.contains("<global_memory>"));
         assert!(ctx.contains("I am global memory"));
         assert!(ctx.contains("</global_memory>"));
@@ -215,13 +189,15 @@ mod tests {
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_build_memory_context_with_both() {
-        let (mm, dir) = test_memory_manager();
-        mm.write_global_memory("global stuff").unwrap();
-        mm.write_bot_memory("telegram", "bot stuff").unwrap();
-        mm.write_chat_memory("telegram", 100, "chat stuff").unwrap();
-        let ctx = mm.build_memory_context("telegram", 100);
+    #[tokio::test]
+    async fn test_build_memory_context_with_both() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_global_memory("global stuff").await.unwrap();
+        mm.write_bot_memory("telegram", "bot stuff").await.unwrap();
+        mm.write_chat_memory("telegram", 100, "chat stuff")
+            .await
+            .unwrap();
+        let ctx = mm.build_memory_context("telegram", 100).await;
         assert!(ctx.contains("<global_memory>"));
         assert!(ctx.contains("global stuff"));
         assert!(ctx.contains("<bot_memory>"));
@@ -231,20 +207,22 @@ mod tests {
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_build_memory_context_ignores_whitespace_only() {
-        let (mm, dir) = test_memory_manager();
-        mm.write_global_memory("   \n  ").unwrap();
-        let ctx = mm.build_memory_context("telegram", 100);
+    #[tokio::test]
+    async fn test_build_memory_context_ignores_whitespace_only() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_global_memory("   \n  ").await.unwrap();
+        let ctx = mm.build_memory_context("telegram", 100).await;
         // Whitespace-only content should be ignored
         assert!(ctx.is_empty());
         cleanup(&dir);
     }
 
-    #[test]
-    fn test_groups_dir() {
-        let (mm, dir) = test_memory_manager();
-        assert!(mm.groups_dir().ends_with("groups"));
+    #[tokio::test]
+    async fn test_channel_slash_sanitized() {
+        let (mm, dir) = test_memory_manager().await;
+        mm.write_bot_memory("feishu.ops", "bot notes").await.unwrap();
+        let content = mm.read_bot_memory("feishu.ops").await.unwrap();
+        assert_eq!(content, "bot notes");
         cleanup(&dir);
     }
 }

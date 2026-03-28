@@ -130,7 +130,7 @@ impl ToolRegistry {
             Arc::new(storage)
         };
         let media_manager = Arc::new(crate::media_manager::MediaManager::new(
-            local_storage,
+            local_storage.clone(),
             db.clone(),
         ));
         let mut tools: Vec<Box<dyn Tool>> = vec![
@@ -167,9 +167,9 @@ impl ToolRegistry {
                 &config.working_dir,
                 config.working_dir_isolation,
             )),
-            Box::new(memory::ReadMemoryTool::new(&config.data_dir, db.clone())),
+            Box::new(memory::ReadMemoryTool::new(local_storage.clone(), db.clone())),
             Box::new(memory::WriteMemoryTool::new(
-                &config.data_dir,
+                local_storage.clone(),
                 db.clone(),
                 memory_backend.clone(),
             )),
@@ -231,7 +231,7 @@ impl ToolRegistry {
             )),
             Box::new(export_chat::ExportChatTool::new(
                 db.clone(),
-                &config.data_dir,
+                local_storage.clone(),
             )),
             Box::new(subagents::SessionsSpawnTool::new(
                 config,
@@ -423,6 +423,11 @@ impl ToolRegistry {
             Self::build_extra_mounts(&working_dir, &skills_data_dir),
         ));
         let memory_backend = Arc::new(MemoryBackend::local_only(db.clone()));
+        let sub_storage: Arc<dyn mchact_storage_backend::ObjectStorage> = {
+            let storage = mchact_storage_backend::local::LocalStorage::new_sync(&config.data_dir)
+                .unwrap_or_else(|e| panic!("Cannot initialize storage at '{}': {e}", config.data_dir));
+            Arc::new(storage)
+        };
         let mut tools: Vec<Box<dyn Tool>> = vec![
             Box::new(
                 bash::BashTool::new_with_isolation(
@@ -457,7 +462,7 @@ impl ToolRegistry {
                 &config.working_dir,
                 config.working_dir_isolation,
             )),
-            Box::new(memory::ReadMemoryTool::new(&config.data_dir, db.clone())),
+            Box::new(memory::ReadMemoryTool::new(sub_storage.clone(), db.clone())),
             Box::new(web_fetch::WebFetchTool::new(
                 config.tool_timeout_secs("web_fetch", 15),
                 config.web_fetch_validation,

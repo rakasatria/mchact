@@ -1984,6 +1984,7 @@ impl ChannelAdapter for WeixinAdapter {
 
 async fn build_weixin_file_note(
     config: &Config,
+    storage: &Arc<dyn mchact_storage_backend::ObjectStorage>,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2086,56 +2087,38 @@ async fn build_weixin_file_note(
                 );
             }
 
-            let dir = Path::new(&config.working_dir)
-                .join("uploads")
-                .join(runtime_ctx.channel_name.replace('/', "_"))
-                .join(external_chat_id);
-            if let Err(err) = std::fs::create_dir_all(&dir) {
-                error!(
-                    "Weixin: failed to create upload dir {}: {err}",
-                    dir.display()
-                );
-                return format!(
-                    "[document] filename={} bytes={} save_failed=create_dir",
-                    file_name,
-                    bytes.len()
-                );
-            }
-
             let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+            let safe_channel = runtime_ctx.channel_name.replace('/', "_");
             let safe_message_id = sanitize_upload_file_name(inbound_message_id, "message");
             let safe_name = sanitize_upload_file_name(&file_name, "weixin-file.bin");
-            let path = dir.join(format!(
-                "{}-{}-{}-{}",
-                ts, safe_message_id, item_index, safe_name
-            ));
-            match tokio::fs::write(&path, &bytes).await {
+            let key = format!(
+                "uploads/{}/{}/{}-{}-{}-{}",
+                safe_channel, external_chat_id, ts, safe_message_id, item_index, safe_name
+            );
+            match storage.put(&key, bytes).await {
                 Ok(()) => {
                     info!(
-                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} path={} bytes={}",
+                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} key={} bytes={}",
                         runtime_ctx.channel_name,
                         external_chat_id,
                         inbound_message_id,
                         item_index,
-                        path.display(),
-                        bytes.len()
+                        key,
+                        file_name
                     );
                     format!(
-                        "[document] filename={} bytes={} saved_path={}",
-                        file_name,
-                        bytes.len(),
-                        path.display()
+                        "[document] filename={} saved_path={}",
+                        file_name, key
                     )
                 }
                 Err(err) => {
                     error!(
-                        "Weixin: failed to save inbound file {}: {err}",
-                        path.display()
+                        "Weixin: failed to save inbound file to storage key={}: {err}",
+                        key
                     );
                     format!(
-                        "[document] filename={} bytes={} save_failed=write",
-                        file_name,
-                        bytes.len()
+                        "[document] filename={} save_failed=storage_write",
+                        file_name
                     )
                 }
             }
@@ -2164,6 +2147,7 @@ async fn build_weixin_file_note(
 
 async fn enrich_weixin_inbound_text(
     config: &Config,
+    storage: &Arc<dyn mchact_storage_backend::ObjectStorage>,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2188,6 +2172,7 @@ async fn enrich_weixin_inbound_text(
         notes.push(
             build_weixin_file_note(
                 config,
+                storage,
                 runtime_ctx,
                 external_chat_id,
                 inbound_message_id,
@@ -2290,6 +2275,7 @@ async fn process_weixin_inbound_message(
 
     let text = enrich_weixin_inbound_text(
         &app_state.config,
+        &app_state.media_manager.storage(),
         &runtime_ctx,
         &external_chat_id,
         &inbound_message_id,

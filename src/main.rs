@@ -4,7 +4,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use mchact::config::Config;
 use mchact::error::MchactError;
 use mchact::{
-    builtin_skills, db, doctor, gateway, hooks, logging, mcp, memory, runtime, setup, skills,
+    builtin_skills, db, doctor, gateway, hooks, logging, mcp, runtime, setup, skills,
 };
 use mchact_storage::prelude::*;
 use std::path::{Path, PathBuf};
@@ -1397,9 +1397,6 @@ async fn main() -> anyhow::Result<()> {
     let db = db::Database::new(&runtime_data_dir)?;
     info!("Database initialized");
 
-    let memory_manager = memory::MemoryManager::new(&runtime_data_dir);
-    info!("Memory manager initialized");
-
     let skill_manager =
         skills::SkillManager::from_skills_and_runtime(&skills_data_dir, &runtime_data_dir);
     let discovered = skill_manager.discover_skills();
@@ -1429,7 +1426,6 @@ async fn main() -> anyhow::Result<()> {
             runtime::run(
                 runtime_config,
                 db,
-                memory_manager,
                 skill_manager,
                 mcp_manager,
             )
@@ -1439,7 +1435,6 @@ async fn main() -> anyhow::Result<()> {
             mchact::acp::serve(
                 runtime_config,
                 db,
-                memory_manager,
                 skill_manager,
                 mcp_manager,
             )

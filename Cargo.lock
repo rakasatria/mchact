@@ -5038,12 +5038,16 @@ name = "mchact-storage"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "deadpool-postgres",
  "mchact-core",
+ "mchact-storage-backend",
  "rusqlite",
  "serde",
  "serde_json",
  "sqlite-vec",
  "tokio",
+ "tokio-postgres",
+ "tracing",
  "uuid",
 ]
 

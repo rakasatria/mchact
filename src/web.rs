@@ -2056,20 +2056,7 @@ async fn api_media(
 ) -> impl IntoResponse {
     // If id is an integer, use MediaManager to retrieve by database ID.
     if let Ok(media_id) = id.parse::<i64>() {
-        let local_storage = match mchact_storage_backend::local::LocalStorage::new(
-            state.app_state.config.data_root_dir(),
-        )
-        .await
-        {
-            Ok(s) => Arc::new(s),
-            Err(e) => {
-                error!(target: "web", error = %e, "Failed to init storage for media retrieval");
-                return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new());
-            }
-        };
-        let media_mgr =
-            crate::media_manager::MediaManager::new(local_storage, state.app_state.db.clone());
-        return match media_mgr.get_file(media_id).await {
+        return match state.app_state.media_manager.get_file(media_id).await {
             Ok((bytes, obj)) => {
                 let mime_str = obj
                     .mime_type
@@ -2096,44 +2083,37 @@ async fn api_media(
         return (StatusCode::BAD_REQUEST, HeaderMap::new(), axum::body::Bytes::new());
     }
 
-    let data_root = state.app_state.config.data_root_dir();
-    let candidates = [
-        data_root.join("media").join(&id),
-        data_root.join("uploads").join(&id),
+    let storage = state.app_state.media_manager.storage();
+    let candidate_keys = [
+        format!("media/{id}"),
+        format!("uploads/{id}"),
     ];
 
-    let mut found: Option<std::path::PathBuf> = None;
-    for candidate in &candidates {
-        if candidate.exists() {
-            found = Some(candidate.clone());
-            break;
-        }
-    }
-
-    let Some(path) = found else {
-        return (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new());
-    };
-
-    let ext = path
+    let ext = std::path::Path::new(&id)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
     let mime = mime_for_ext(ext);
 
-    match tokio::fs::read(&path).await {
-        Ok(data) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                axum::http::header::CONTENT_TYPE,
-                axum::http::HeaderValue::from_static(mime),
-            );
-            (StatusCode::OK, headers, axum::body::Bytes::from(data))
-        }
-        Err(e) => {
-            error!(target: "web", path = %path.display(), error = %e, "Failed to read media file");
-            (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new())
+    for key in &candidate_keys {
+        match storage.get(key).await {
+            Ok(data) => {
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static(mime),
+                );
+                return (StatusCode::OK, headers, axum::body::Bytes::from(data));
+            }
+            Err(mchact_storage_backend::StorageError::NotFound(_)) => continue,
+            Err(e) => {
+                error!(target: "web", key = %key, error = %e, "Failed to read media file from storage");
+                return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), axum::body::Bytes::new());
+            }
         }
     }
+
+    (StatusCode::NOT_FOUND, HeaderMap::new(), axum::body::Bytes::new())
 }
 
 async fn api_audit_logs(
@@ -2890,7 +2870,7 @@ mod tests {
             std::sync::Arc::new(storage)
         };
         let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
-            local_storage,
+            local_storage.clone(),
             db.clone(),
         ));
         let state = AppState {
@@ -2898,7 +2878,7 @@ mod tests {
             channel_registry: channel_registry.clone(),
             db: db.clone(),
             media_manager,
-            memory: MemoryManager::new(&runtime_dir),
+            memory: MemoryManager::new(local_storage, "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::for_tests()),
             llm,

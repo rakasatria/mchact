@@ -45,6 +45,7 @@ use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
 use mchact_storage::db::Database;
+use mchact_storage::DataStore;
 use mchact_storage_backend::StorageBackendConfig;
 
 pub struct AppState {
@@ -65,6 +66,13 @@ pub struct AppState {
     pub metric_exporter: Option<Arc<OtlpMetricExporter>>,
     pub trace_exporter: Option<Arc<OtlpTraceExporter>>,
     pub log_exporter: Option<Arc<OtlpLogExporter>>,
+}
+
+impl AppState {
+    /// Access the database through the driver-agnostic DataStore trait.
+    pub fn db_store(&self) -> &dyn DataStore {
+        &*self.db
+    }
 }
 
 fn prepare_channel_runtimes<T, Build, Register, ModelOverride>(
@@ -143,7 +151,6 @@ where
 pub async fn run(
     config: Config,
     db: Database,
-    memory: MemoryManager,
     skills: SkillManager,
     mcp_manager: crate::mcp::McpManager,
 ) -> anyhow::Result<()> {
@@ -479,7 +486,8 @@ pub async fn run(
                 )
             }),
     );
-    let media_manager = Arc::new(MediaManager::new(storage, db.clone()));
+    let media_manager = Arc::new(MediaManager::new(storage.clone(), db.clone()));
+    let memory = MemoryManager::new(storage, "groups");
 
     let state = Arc::new(AppState {
         config,

@@ -722,7 +722,8 @@ async fn process_with_agent_logic(
     // Build system prompt
     let file_memory = state
         .memory
-        .build_memory_context(context.caller_channel, chat_id);
+        .build_memory_context(context.caller_channel, chat_id)
+        .await;
     let db_memory = build_db_memory_context(
         &state.memory_backend,
         &state.db,
@@ -2699,7 +2700,7 @@ mod tests {
             std::sync::Arc::new(storage)
         };
         let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
-            local_storage,
+            local_storage.clone(),
             db.clone(),
         ));
         Arc::new(AppState {
@@ -2707,7 +2708,7 @@ mod tests {
             channel_registry: channel_registry.clone(),
             db: db.clone(),
             media_manager,
-            memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
+            memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
             llm,
@@ -2755,7 +2756,7 @@ mod tests {
             std::sync::Arc::new(storage)
         };
         let media_manager = std::sync::Arc::new(crate::media_manager::MediaManager::new(
-            local_storage,
+            local_storage.clone(),
             db.clone(),
         ));
         Arc::new(AppState {
@@ -2763,7 +2764,7 @@ mod tests {
             channel_registry: channel_registry.clone(),
             db: db.clone(),
             media_manager,
-            memory: MemoryManager::new(runtime_dir.to_str().unwrap()),
+            memory: MemoryManager::new(local_storage.clone(), "groups"),
             skills: SkillManager::from_skills_dir(&cfg.skills_data_dir()),
             hooks: Arc::new(crate::hooks::HookManager::from_config(&cfg)),
             llm,
