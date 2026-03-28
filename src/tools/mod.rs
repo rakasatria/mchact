@@ -22,6 +22,7 @@ pub mod sync_skills;
 pub mod text_to_speech;
 pub mod time_math;
 pub mod todo;
+pub mod rl_training;
 pub mod training;
 pub mod video_generate;
 pub mod web_fetch;
@@ -279,6 +280,19 @@ impl ToolRegistry {
             Box::new(training::CompressTrajectoriesTool),
             Box::new(training::TrainPipelineTool),
         ];
+
+        let rl_manager = std::sync::Arc::new(crate::rl::RlRunManager::new());
+        tools.push(Box::new(rl_training::RlListEnvironmentsTool::new(
+            &config.training_environments_dir,
+        )));
+        tools.push(Box::new(rl_training::RlStartTrainingTool::new(
+            &config.training_environments_dir,
+            rl_manager.clone(),
+        )));
+        tools.push(Box::new(rl_training::RlCheckStatusTool::new(
+            rl_manager.clone(),
+        )));
+        tools.push(Box::new(rl_training::RlStopTrainingTool::new(rl_manager)));
 
         // Add ClawHub tools if enabled
         if config.clawhub.agent_tools_enabled {
