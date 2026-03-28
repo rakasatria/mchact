@@ -21,6 +21,7 @@ pub mod hooks;
 pub mod http_client;
 pub mod llm;
 pub mod mcp;
+pub mod media_manager;
 pub mod memory_backend;
 pub mod memory_service;
 pub mod plugins;
