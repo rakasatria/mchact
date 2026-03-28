@@ -11,6 +11,11 @@ import { extractThinkSegments } from "../lib/text-processing";
 import { ToolCallCard } from "./tool-call-card";
 import { CustomAssistantMessage, CustomUserMessage } from "./message-components";
 
+const MarkdownText = makeMarkdownText({
+  preprocess: (text) => extractThinkSegments(text).visibleText,
+  remarkPlugins: [remarkGfm, remarkBreaks],
+});
+
 export type ThreadPaneProps = {
   adapter: ChatModelAdapter;
   initialMessages: ThreadMessageLike[];
@@ -18,10 +23,6 @@ export type ThreadPaneProps = {
 };
 
 export function ThreadPane({ adapter, initialMessages, runtimeKey }: ThreadPaneProps) {
-  const MarkdownText = makeMarkdownText({
-    preprocess: (text) => extractThinkSegments(text).visibleText,
-    remarkPlugins: [remarkGfm, remarkBreaks],
-  });
   const runtime = useLocalRuntime(adapter, {
     initialMessages,
     maxSteps: 100,
