@@ -11,3 +11,5 @@ web/node_modules/
 .history/
 result
 .worktrees/
+.idea/
+.superpowers/

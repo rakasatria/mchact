@@ -587,6 +587,511 @@ pub(crate) async fn process_with_agent_impl(
     result
 }
 
+/// Build the full system prompt including file memory, DB memory, skills catalog,
+/// soul content, bot username, and plugin context injections.
+async fn build_agent_system_prompt(
+    state: &AppState,
+    context: &AgentRequestContext<'_>,
+    query: &str,
+) -> String {
+    let chat_id = context.chat_id;
+    let file_memory = state
+        .memory
+        .build_memory_context(context.caller_channel, chat_id)
+        .await;
+    let db_memory = build_db_memory_context(
+        &state.memory_backend,
+        &state.db,
+        state.embedding.as_ref(),
+        chat_id,
+        query,
+        state.config.memory_token_budget,
+    )
+    .await;
+    let memory_context = format!("{}{}", file_memory, db_memory);
+    let skills_catalog = state.skills.build_skills_catalog();
+    let soul_content = load_soul_content(
+        &state.config,
+        state.media_manager.storage().as_ref(),
+        context.caller_channel,
+        chat_id,
+    )
+    .await;
+    let bot_username = state
+        .config
+        .bot_username_for_channel(context.caller_channel);
+    let mut system_prompt = build_system_prompt(
+        &bot_username,
+        context.caller_channel,
+        &memory_context,
+        chat_id,
+        &skills_catalog,
+        &state.config.timezone,
+        soul_content.as_deref(),
+    );
+    let plugin_context = crate::plugins::collect_plugin_context_injections(
+        &state.config,
+        context.caller_channel,
+        chat_id,
+        query,
+    )
+    .await;
+    append_plugin_context_sections(&mut system_prompt, &plugin_context);
+
+    debug!(
+        chat_id,
+        system_prompt_len = system_prompt.len(),
+        memory_context_len = memory_context.len(),
+        skills_catalog_len = skills_catalog.len(),
+        plugin_context_len = plugin_context.len(),
+        "System prompt constructed"
+    );
+
+    system_prompt
+}
+
+/// If image_data is present, convert the last user message to a blocks-based
+/// message containing the image followed by the original text.
+fn inject_image_data(messages: &mut [Message], image_data: (String, String)) {
+    let (base64_data, media_type) = image_data;
+    if let Some(last_msg) = messages.last_mut() {
+        if last_msg.role == "user" {
+            let text_content = match &last_msg.content {
+                MessageContent::Text(t) => t.clone(),
+                _ => String::new(),
+            };
+            let mut blocks = vec![ContentBlock::Image {
+                source: ImageSource {
+                    source_type: "base64".into(),
+                    media_type,
+                    data: base64_data,
+                },
+            }];
+            if !text_content.is_empty() {
+                blocks.push(ContentBlock::Text { text: text_content });
+            }
+            last_msg.content = MessageContent::Blocks(blocks);
+        }
+    }
+}
+
+struct SingleToolResult {
+    tool_result: ContentBlock,
+    waiting_for_approval: bool,
+    waiting_approval_tool: Option<String>,
+}
+
+/// Execute a single tool call, handling guardrails, hooks, auth, approval
+/// retry, skill env file tracking, error tracking, and event emission.
+#[expect(clippy::too_many_arguments)]
+async fn execute_single_tool(
+    state: &AppState,
+    context: &AgentRequestContext<'_>,
+    id: &str,
+    name: &str,
+    input: &serde_json::Value,
+    tool_auth: &mut ToolAuthContext,
+    skill_env_files: &mut Vec<String>,
+    metrics: &mut AgentMetrics,
+    trace_id: &[u8],
+    parent_span_id: &[u8],
+    iteration: usize,
+    event_tx: Option<&UnboundedSender<AgentEvent>>,
+    consecutive_send_message_calls: &mut usize,
+    failed_tools: &mut std::collections::BTreeSet<String>,
+    failed_tool_details: &mut Vec<String>,
+    seen_failed_tool_details: &mut std::collections::HashSet<String>,
+    explicit_user_approval: bool,
+) -> SingleToolResult {
+    let chat_id = context.chat_id;
+
+    // Empty name check
+    if name.trim().is_empty() {
+        warn!(
+            chat_id,
+            iteration,
+            tool_use_id = %id,
+            "Skipping malformed tool call with empty tool name"
+        );
+        return SingleToolResult {
+            tool_result: ContentBlock::ToolResult {
+                tool_use_id: id.to_string(),
+                content: "Malformed tool call: missing tool name. Retry with a valid registered tool.".to_string(),
+                is_error: Some(true),
+            },
+            waiting_for_approval: false,
+            waiting_approval_tool: None,
+        };
+    }
+
+    // send_message guardrails
+    if name != "send_message" {
+        *consecutive_send_message_calls = 0;
+    } else if *consecutive_send_message_calls >= 3 {
+        warn!(
+            chat_id,
+            iteration,
+            "Guardrail: blocking repeated send_message loop"
+        );
+        let content = "send_message blocked: too many consecutive send_message calls in one request. Use normal assistant reply for final output instead of repeatedly calling send_message.".to_string();
+        failed_tools.insert(name.to_string());
+        let detail = format!("send_message: {}", content);
+        if seen_failed_tool_details.insert(detail.clone()) {
+            failed_tool_details.push(detail);
+        }
+        return SingleToolResult {
+            tool_result: ContentBlock::ToolResult {
+                tool_use_id: id.to_string(),
+                content,
+                is_error: Some(true),
+            },
+            waiting_for_approval: false,
+            waiting_approval_tool: None,
+        };
+    }
+
+    // Feishu send_message guard
+    let is_feishu_turn = context.caller_channel.starts_with("feishu")
+        || context.caller_channel.starts_with("lark");
+    let send_message_has_attachment = input
+        .get("attachment_path")
+        .and_then(|v| v.as_str())
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    if name == "send_message" && is_feishu_turn && !send_message_has_attachment {
+        return SingleToolResult {
+            tool_result: ContentBlock::ToolResult {
+                tool_use_id: id.to_string(),
+                content: "send_message text replies are disabled for Feishu runtime turns; return the final assistant text directly so channel reaction/text delivery can be handled correctly. If you need to send a file, call send_message with attachment_path.".to_string(),
+                is_error: Some(true),
+            },
+            waiting_for_approval: false,
+            waiting_approval_tool: None,
+        };
+    }
+
+    // Hook: before_tool
+    let mut effective_input = input.clone();
+    if let Ok(hook_outcome) = state
+        .hooks
+        .run_before_tool(
+            chat_id,
+            context.caller_channel,
+            iteration,
+            name,
+            &effective_input,
+        )
+        .await
+    {
+        match hook_outcome {
+            HookOutcome::Block { reason } => {
+                return SingleToolResult {
+                    tool_result: ContentBlock::ToolResult {
+                        tool_use_id: id.to_string(),
+                        content: if reason.trim().is_empty() {
+                            format!("tool '{}' blocked by policy hook", name)
+                        } else {
+                            reason
+                        },
+                        is_error: Some(true),
+                    },
+                    waiting_for_approval: false,
+                    waiting_approval_tool: None,
+                };
+            }
+            HookOutcome::Allow { patches } => {
+                for patch in patches {
+                    if let Some(v) = patch.get("tool_input") {
+                        effective_input = v.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    // Event: tool start
+    if let Some(tx) = event_tx {
+        let _ = tx.send(AgentEvent::ToolStart {
+            name: name.to_string(),
+            input: effective_input.clone(),
+        });
+    }
+    info!(
+        chat_id,
+        tool = %name,
+        iteration,
+        "Executing tool"
+    );
+    let started = std::time::Instant::now();
+    let mut executed_input = effective_input.clone();
+
+    let tool_span_id = new_span_id();
+    let tool_start = now_unix_nano();
+    metrics.tool_calls += 1;
+
+    let mut result = state
+        .tools
+        .execute_with_auth(name, executed_input.clone(), tool_auth)
+        .await;
+
+    if let Some(exp) = &state.trace_exporter {
+        let mut attrs = vec![
+            kv("tool.name", name),
+            kv("input", &executed_input.to_string()),
+        ];
+        if result.is_error {
+            attrs.push(kv(
+                "error.type",
+                result.error_type.as_deref().unwrap_or("unknown"),
+            ));
+            attrs.push(kv("output", &result.content));
+        } else {
+            attrs.push(kv("output", &truncate_for_log(&result.content, 1000)));
+        }
+
+        exp.send_span(SpanData {
+            trace_id: trace_id.to_vec(),
+            span_id: tool_span_id,
+            parent_span_id: parent_span_id.to_vec(),
+            name: "tool_execution".to_string(),
+            start_time_unix_nano: tool_start,
+            end_time_unix_nano: now_unix_nano(),
+            attributes: attrs,
+            status: if result.is_error {
+                Some(Status {
+                    message: result.content.clone(),
+                    code: 2,
+                })
+            } else {
+                Some(Status {
+                    message: "".to_string(),
+                    code: 1,
+                })
+            },
+            kind: 1,
+        });
+    }
+
+    // Auto-retry on approval_required with explicit approval marker.
+    let mut waiting_for_approval = false;
+    let mut waiting_approval_tool: Option<String> = None;
+    if result.is_error && result.error_type.as_deref() == Some("approval_required") {
+        let can_retry_with_approval =
+            if state.config.high_risk_tool_user_confirmation_required {
+                explicit_user_approval
+            } else {
+                true
+            };
+        if can_retry_with_approval {
+            executed_input = with_high_risk_approval_marker(&effective_input);
+            if state.config.high_risk_tool_user_confirmation_required {
+                info!("Retrying tool '{}' after explicit user approval", name);
+            } else {
+                info!("Auto-retrying tool '{}' after approval gate", name);
+            }
+            let retry_span_id = new_span_id();
+            let retry_start = now_unix_nano();
+            metrics.tool_calls += 1;
+
+            result = state
+                .tools
+                .execute_with_auth(name, executed_input.clone(), tool_auth)
+                .await;
+
+            if let Some(exp) = &state.trace_exporter {
+                let mut attrs = vec![
+                    kv("tool.name", name),
+                    kv("input", &executed_input.to_string()),
+                    kv("is_retry", "true"),
+                ];
+                if result.is_error {
+                    attrs.push(kv(
+                        "error.type",
+                        result.error_type.as_deref().unwrap_or("unknown"),
+                    ));
+                    attrs.push(kv("output", &result.content));
+                } else {
+                    attrs.push(kv(
+                        "output",
+                        &truncate_for_log(&result.content, 1000),
+                    ));
+                }
+
+                exp.send_span(SpanData {
+                    trace_id: trace_id.to_vec(),
+                    span_id: retry_span_id,
+                    parent_span_id: parent_span_id.to_vec(),
+                    name: "tool_execution_retry".to_string(),
+                    start_time_unix_nano: retry_start,
+                    end_time_unix_nano: now_unix_nano(),
+                    attributes: attrs,
+                    status: if result.is_error {
+                        Some(Status {
+                            message: result.content.clone(),
+                            code: 2,
+                        })
+                    } else {
+                        Some(Status {
+                            message: "".to_string(),
+                            code: 1,
+                        })
+                    },
+                    kind: 1,
+                });
+            }
+        } else if state.config.high_risk_tool_user_confirmation_required {
+            waiting_for_approval = true;
+            waiting_approval_tool = Some(name.to_string());
+        }
+    }
+
+    // activate_skill env file handling
+    if name == "activate_skill" && !result.is_error {
+        if let Some(meta) = &result.metadata {
+            if let Some(path) = meta.get("skill_env_file").and_then(|v| v.as_str()) {
+                let path_str = path.to_string();
+                if !skill_env_files.contains(&path_str) {
+                    skill_env_files.push(path_str);
+                    tool_auth.env_files = skill_env_files.clone();
+                }
+                if let Ok(files_json) = serde_json::to_string(&*skill_env_files) {
+                    let db = state.db.clone();
+                    let _ = call_blocking(db, move |db| {
+                        db.save_session_skill_envs(chat_id, &files_json)
+                    })
+                    .await;
+                }
+            }
+        }
+    }
+
+    // Hook: after_tool
+    if let Ok(hook_outcome) = state
+        .hooks
+        .run_after_tool(
+            chat_id,
+            context.caller_channel,
+            iteration,
+            name,
+            &executed_input,
+            &result,
+        )
+        .await
+    {
+        match hook_outcome {
+            HookOutcome::Block { reason } => {
+                result.is_error = true;
+                if !reason.trim().is_empty() {
+                    result.content = reason;
+                }
+                if result.error_type.is_none() {
+                    result.error_type = Some("hook_blocked".to_string());
+                }
+            }
+            HookOutcome::Allow { patches } => {
+                for patch in patches {
+                    if let Some(v) = patch.get("content").and_then(|v| v.as_str()) {
+                        result.content = v.to_string();
+                    }
+                    if let Some(v) = patch.get("is_error").and_then(|v| v.as_bool()) {
+                        result.is_error = v;
+                    }
+                    if let Some(v) = patch
+                        .get("error_type")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                    {
+                        result.error_type = Some(v);
+                    }
+                    if let Some(v) = patch
+                        .get("status_code")
+                        .and_then(|v| v.as_i64())
+                        .map(|x| x as i32)
+                    {
+                        result.status_code = Some(v);
+                    }
+                }
+            }
+        }
+    }
+
+    // Error tracking
+    if result.is_error && result.error_type.as_deref() != Some("approval_required") {
+        let suppress_user_visible_failed_tool = result
+            .error_type
+            .as_deref()
+            .map(|t| {
+                t == "feishu_reaction_protocol_text"
+                    || t == "feishu_send_message_disabled"
+            })
+            .unwrap_or(false);
+
+        if !suppress_user_visible_failed_tool {
+            failed_tools.insert(name.to_string());
+            let detail = format_failed_action_for_user(
+                name,
+                &executed_input,
+                &result.content,
+            );
+            if seen_failed_tool_details.insert(detail.clone()) {
+                failed_tool_details.push(detail);
+            }
+        }
+        let preview = if result.content.chars().count() > 300 {
+            let clipped = result.content.chars().take(300).collect::<String>();
+            format!("{clipped}...")
+        } else {
+            result.content.clone()
+        };
+        warn!(
+            chat_id,
+            tool = %name,
+            iteration,
+            error_type = ?result.error_type,
+            "Tool execution failed: {}",
+            preview
+        );
+    }
+
+    // Event: tool result
+    if let Some(tx) = event_tx {
+        let preview = if result.content.chars().count() > 160 {
+            let clipped = result.content.chars().take(160).collect::<String>();
+            format!("{clipped}...")
+        } else {
+            result.content.clone()
+        };
+        let _ = tx.send(AgentEvent::ToolResult {
+            name: name.to_string(),
+            is_error: result.is_error,
+            preview,
+            duration_ms: result
+                .duration_ms
+                .unwrap_or_else(|| started.elapsed().as_millis()),
+            status_code: result.status_code,
+            bytes: result.bytes,
+            error_type: result.error_type.clone(),
+        });
+    }
+    if result.is_error {
+        metrics.tool_errors += 1;
+    }
+
+    if name == "send_message" {
+        *consecutive_send_message_calls += 1;
+    }
+
+    SingleToolResult {
+        tool_result: ContentBlock::ToolResult {
+            tool_use_id: id.to_string(),
+            content: result.content,
+            is_error: if result.is_error { Some(true) } else { None },
+        },
+        waiting_for_approval,
+        waiting_approval_tool,
+    }
+}
+
 #[expect(clippy::too_many_arguments)]
 async fn process_with_agent_logic(
     state: &AppState,
@@ -719,79 +1224,11 @@ async fn process_with_agent_logic(
     let explicit_user_approval = is_explicit_user_approval(&latest_user_text_for_approval);
 
     // Build system prompt
-    let file_memory = state
-        .memory
-        .build_memory_context(context.caller_channel, chat_id)
-        .await;
-    let db_memory = build_db_memory_context(
-        &state.memory_backend,
-        &state.db,
-        state.embedding.as_ref(),
-        chat_id,
-        &query,
-        state.config.memory_token_budget,
-    )
-    .await;
-    let memory_context = format!("{}{}", file_memory, db_memory);
-    let skills_catalog = state.skills.build_skills_catalog();
-    let soul_content = load_soul_content(
-        &state.config,
-        state.media_manager.storage().as_ref(),
-        context.caller_channel,
-        chat_id,
-    )
-    .await;
-    let bot_username = state
-        .config
-        .bot_username_for_channel(context.caller_channel);
-    let mut system_prompt = build_system_prompt(
-        &bot_username,
-        context.caller_channel,
-        &memory_context,
-        chat_id,
-        &skills_catalog,
-        &state.config.timezone,
-        soul_content.as_deref(),
-    );
-    let plugin_context = crate::plugins::collect_plugin_context_injections(
-        &state.config,
-        context.caller_channel,
-        chat_id,
-        &query,
-    )
-    .await;
-    append_plugin_context_sections(&mut system_prompt, &plugin_context);
-
-    debug!(
-        chat_id,
-        system_prompt_len = system_prompt.len(),
-        memory_context_len = memory_context.len(),
-        skills_catalog_len = skills_catalog.len(),
-        plugin_context_len = plugin_context.len(),
-        "System prompt constructed"
-    );
+    let mut system_prompt = build_agent_system_prompt(state, &context, &query).await;
 
     // If image_data is present, convert the last user message to a blocks-based message with the image
-    if let Some((base64_data, media_type)) = image_data {
-        if let Some(last_msg) = messages.last_mut() {
-            if last_msg.role == "user" {
-                let text_content = match &last_msg.content {
-                    MessageContent::Text(t) => t.clone(),
-                    _ => String::new(),
-                };
-                let mut blocks = vec![ContentBlock::Image {
-                    source: ImageSource {
-                        source_type: "base64".into(),
-                        media_type,
-                        data: base64_data,
-                    },
-                }];
-                if !text_content.is_empty() {
-                    blocks.push(ContentBlock::Text { text: text_content });
-                }
-                last_msg.content = MessageContent::Blocks(blocks);
-            }
-        }
+    if let Some(image) = image_data {
+        inject_image_data(&mut messages, image);
     }
 
     // Ensure we have at least one message
@@ -1334,358 +1771,31 @@ async fn process_with_agent_logic(
                     id, name, input, ..
                 } = block
                 {
-                    if name.trim().is_empty() {
-                        warn!(
-                            chat_id,
-                            iteration = iteration + 1,
-                            tool_use_id = %id,
-                            "Skipping malformed tool call with empty tool name"
-                        );
-                        tool_results.push(ContentBlock::ToolResult {
-                            tool_use_id: id.clone(),
-                            content: "Malformed tool call: missing tool name. Retry with a valid registered tool.".to_string(),
-                            is_error: Some(true),
-                        });
-                        continue;
+                    let single = execute_single_tool(
+                        state,
+                        &context,
+                        id,
+                        name,
+                        input,
+                        &mut tool_auth,
+                        &mut skill_env_files,
+                        metrics,
+                        trace_id,
+                        parent_span_id,
+                        iteration + 1,
+                        event_tx,
+                        &mut consecutive_send_message_calls,
+                        &mut failed_tools,
+                        &mut failed_tool_details,
+                        &mut seen_failed_tool_details,
+                        explicit_user_approval,
+                    )
+                    .await;
+                    if single.waiting_for_approval {
+                        waiting_for_user_approval = true;
+                        waiting_approval_tool = single.waiting_approval_tool;
                     }
-                    if name != "send_message" {
-                        consecutive_send_message_calls = 0;
-                    } else if consecutive_send_message_calls >= 3 {
-                        warn!(
-                            chat_id,
-                            iteration = iteration + 1,
-                            "Guardrail: blocking repeated send_message loop"
-                        );
-                        let content = "send_message blocked: too many consecutive send_message calls in one request. Use normal assistant reply for final output instead of repeatedly calling send_message.".to_string();
-                        failed_tools.insert(name.clone());
-                        let detail = format!("send_message: {}", content);
-                        if seen_failed_tool_details.insert(detail.clone()) {
-                            failed_tool_details.push(detail);
-                        }
-                        tool_results.push(ContentBlock::ToolResult {
-                            tool_use_id: id.clone(),
-                            content,
-                            is_error: Some(true),
-                        });
-                        continue;
-                    }
-                    let is_feishu_turn = context.caller_channel.starts_with("feishu")
-                        || context.caller_channel.starts_with("lark");
-                    let send_message_has_attachment = input
-                        .get("attachment_path")
-                        .and_then(|v| v.as_str())
-                        .map(|v| !v.trim().is_empty())
-                        .unwrap_or(false);
-                    if name == "send_message" && is_feishu_turn && !send_message_has_attachment {
-                        tool_results.push(ContentBlock::ToolResult {
-                            tool_use_id: id.clone(),
-                            content: "send_message text replies are disabled for Feishu runtime turns; return the final assistant text directly so channel reaction/text delivery can be handled correctly. If you need to send a file, call send_message with attachment_path.".to_string(),
-                            is_error: Some(true),
-                        });
-                        continue;
-                    }
-                    let mut effective_input = input.clone();
-                    if let Ok(hook_outcome) = state
-                        .hooks
-                        .run_before_tool(
-                            chat_id,
-                            context.caller_channel,
-                            iteration + 1,
-                            name,
-                            &effective_input,
-                        )
-                        .await
-                    {
-                        match hook_outcome {
-                            HookOutcome::Block { reason } => {
-                                tool_results.push(ContentBlock::ToolResult {
-                                    tool_use_id: id.clone(),
-                                    content: if reason.trim().is_empty() {
-                                        format!("tool '{}' blocked by policy hook", name)
-                                    } else {
-                                        reason
-                                    },
-                                    is_error: Some(true),
-                                });
-                                continue;
-                            }
-                            HookOutcome::Allow { patches } => {
-                                for patch in patches {
-                                    if let Some(v) = patch.get("tool_input") {
-                                        effective_input = v.clone();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if let Some(tx) = event_tx {
-                        let _ = tx.send(AgentEvent::ToolStart {
-                            name: name.clone(),
-                            input: effective_input.clone(),
-                        });
-                    }
-                    info!(
-                        chat_id,
-                        tool = %name,
-                        iteration = iteration + 1,
-                        "Executing tool"
-                    );
-                    let started = std::time::Instant::now();
-                    let mut executed_input = effective_input.clone();
-
-                    let tool_span_id = new_span_id();
-                    let tool_start = now_unix_nano();
-                    metrics.tool_calls += 1;
-
-                    let mut result = state
-                        .tools
-                        .execute_with_auth(name, executed_input.clone(), &tool_auth)
-                        .await;
-
-                    if let Some(exp) = &state.trace_exporter {
-                        let mut attrs = vec![
-                            kv("tool.name", name),
-                            kv("input", &executed_input.to_string()),
-                        ];
-                        if result.is_error {
-                            attrs.push(kv(
-                                "error.type",
-                                result.error_type.as_deref().unwrap_or("unknown"),
-                            ));
-                            attrs.push(kv("output", &result.content));
-                        } else {
-                            attrs.push(kv("output", &truncate_for_log(&result.content, 1000)));
-                        }
-
-                        exp.send_span(SpanData {
-                            trace_id: trace_id.to_vec(),
-                            span_id: tool_span_id,
-                            parent_span_id: parent_span_id.to_vec(),
-                            name: "tool_execution".to_string(),
-                            start_time_unix_nano: tool_start,
-                            end_time_unix_nano: now_unix_nano(),
-                            attributes: attrs,
-                            status: if result.is_error {
-                                Some(Status {
-                                    message: result.content.clone(),
-                                    code: 2,
-                                })
-                            } else {
-                                Some(Status {
-                                    message: "".to_string(),
-                                    code: 1,
-                                })
-                            },
-                            kind: 1,
-                        });
-                    }
-                    // Auto-retry on approval_required with explicit approval marker.
-                    if result.is_error && result.error_type.as_deref() == Some("approval_required")
-                    {
-                        let can_retry_with_approval =
-                            if state.config.high_risk_tool_user_confirmation_required {
-                                explicit_user_approval
-                            } else {
-                                true
-                            };
-                        if can_retry_with_approval {
-                            executed_input = with_high_risk_approval_marker(&effective_input);
-                            if state.config.high_risk_tool_user_confirmation_required {
-                                info!("Retrying tool '{}' after explicit user approval", name);
-                            } else {
-                                info!("Auto-retrying tool '{}' after approval gate", name);
-                            }
-                            let retry_span_id = new_span_id();
-                            let retry_start = now_unix_nano();
-                            metrics.tool_calls += 1;
-
-                            result = state
-                                .tools
-                                .execute_with_auth(name, executed_input.clone(), &tool_auth)
-                                .await;
-
-                            if let Some(exp) = &state.trace_exporter {
-                                let mut attrs = vec![
-                                    kv("tool.name", name),
-                                    kv("input", &executed_input.to_string()),
-                                    kv("is_retry", "true"),
-                                ];
-                                if result.is_error {
-                                    attrs.push(kv(
-                                        "error.type",
-                                        result.error_type.as_deref().unwrap_or("unknown"),
-                                    ));
-                                    attrs.push(kv("output", &result.content));
-                                } else {
-                                    attrs.push(kv(
-                                        "output",
-                                        &truncate_for_log(&result.content, 1000),
-                                    ));
-                                }
-
-                                exp.send_span(SpanData {
-                                    trace_id: trace_id.to_vec(),
-                                    span_id: retry_span_id,
-                                    parent_span_id: parent_span_id.to_vec(),
-                                    name: "tool_execution_retry".to_string(),
-                                    start_time_unix_nano: retry_start,
-                                    end_time_unix_nano: now_unix_nano(),
-                                    attributes: attrs,
-                                    status: if result.is_error {
-                                        Some(Status {
-                                            message: result.content.clone(),
-                                            code: 2,
-                                        })
-                                    } else {
-                                        Some(Status {
-                                            message: "".to_string(),
-                                            code: 1,
-                                        })
-                                    },
-                                    kind: 1,
-                                });
-                            }
-                        } else if state.config.high_risk_tool_user_confirmation_required {
-                            waiting_for_user_approval = true;
-                            waiting_approval_tool = Some(name.clone());
-                        }
-                    }
-                    if name == "activate_skill" && !result.is_error {
-                        if let Some(meta) = &result.metadata {
-                            if let Some(path) = meta.get("skill_env_file").and_then(|v| v.as_str())
-                            {
-                                let path_str = path.to_string();
-                                if !skill_env_files.contains(&path_str) {
-                                    skill_env_files.push(path_str);
-                                    tool_auth.env_files = skill_env_files.clone();
-                                }
-                                if let Ok(files_json) = serde_json::to_string(&skill_env_files) {
-                                    let db = state.db.clone();
-                                    let _ = call_blocking(db, move |db| {
-                                        db.save_session_skill_envs(chat_id, &files_json)
-                                    })
-                                    .await;
-                                }
-                            }
-                        }
-                    }
-                    if let Ok(hook_outcome) = state
-                        .hooks
-                        .run_after_tool(
-                            chat_id,
-                            context.caller_channel,
-                            iteration + 1,
-                            name,
-                            &executed_input,
-                            &result,
-                        )
-                        .await
-                    {
-                        match hook_outcome {
-                            HookOutcome::Block { reason } => {
-                                result.is_error = true;
-                                if !reason.trim().is_empty() {
-                                    result.content = reason;
-                                }
-                                if result.error_type.is_none() {
-                                    result.error_type = Some("hook_blocked".to_string());
-                                }
-                            }
-                            HookOutcome::Allow { patches } => {
-                                for patch in patches {
-                                    if let Some(v) = patch.get("content").and_then(|v| v.as_str()) {
-                                        result.content = v.to_string();
-                                    }
-                                    if let Some(v) = patch.get("is_error").and_then(|v| v.as_bool())
-                                    {
-                                        result.is_error = v;
-                                    }
-                                    if let Some(v) = patch
-                                        .get("error_type")
-                                        .and_then(|v| v.as_str())
-                                        .map(str::to_string)
-                                    {
-                                        result.error_type = Some(v);
-                                    }
-                                    if let Some(v) = patch
-                                        .get("status_code")
-                                        .and_then(|v| v.as_i64())
-                                        .map(|x| x as i32)
-                                    {
-                                        result.status_code = Some(v);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if result.is_error && result.error_type.as_deref() != Some("approval_required")
-                    {
-                        let suppress_user_visible_failed_tool = result
-                            .error_type
-                            .as_deref()
-                            .map(|t| {
-                                t == "feishu_reaction_protocol_text"
-                                    || t == "feishu_send_message_disabled"
-                            })
-                            .unwrap_or(false);
-
-                        if !suppress_user_visible_failed_tool {
-                            failed_tools.insert(name.clone());
-                            let detail = format_failed_action_for_user(
-                                name,
-                                &executed_input,
-                                &result.content,
-                            );
-                            if seen_failed_tool_details.insert(detail.clone()) {
-                                failed_tool_details.push(detail);
-                            }
-                        }
-                        let preview = if result.content.chars().count() > 300 {
-                            let clipped = result.content.chars().take(300).collect::<String>();
-                            format!("{clipped}...")
-                        } else {
-                            result.content.clone()
-                        };
-                        warn!(
-                            chat_id,
-                            tool = %name,
-                            iteration = iteration + 1,
-                            error_type = ?result.error_type,
-                            "Tool execution failed: {}",
-                            preview
-                        );
-                    }
-                    if let Some(tx) = event_tx {
-                        let preview = if result.content.chars().count() > 160 {
-                            let clipped = result.content.chars().take(160).collect::<String>();
-                            format!("{clipped}...")
-                        } else {
-                            result.content.clone()
-                        };
-                        let _ = tx.send(AgentEvent::ToolResult {
-                            name: name.clone(),
-                            is_error: result.is_error,
-                            preview,
-                            duration_ms: result
-                                .duration_ms
-                                .unwrap_or_else(|| started.elapsed().as_millis()),
-                            status_code: result.status_code,
-                            bytes: result.bytes,
-                            error_type: result.error_type.clone(),
-                        });
-                    }
-                    if result.is_error {
-                        metrics.tool_errors += 1;
-                    }
-
-                    if name == "send_message" {
-                        consecutive_send_message_calls += 1;
-                    }
-                    tool_results.push(ContentBlock::ToolResult {
-                        tool_use_id: id.clone(),
-                        content: result.content,
-                        is_error: if result.is_error { Some(true) } else { None },
-                    });
+                    tool_results.push(single.tool_result);
                 }
             }
 
