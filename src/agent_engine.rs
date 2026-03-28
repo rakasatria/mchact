@@ -299,7 +299,7 @@ async fn resolve_effective_provider_and_model(
     state: &AppState,
     caller_channel: &str,
     chat_id: i64,
-) -> (ResolvedLlmProviderProfile, String, Option<SessionSettings>) {
+) -> Option<(ResolvedLlmProviderProfile, String, Option<SessionSettings>)> {
     let provider_alias = {
         let overrides = state.llm_provider_overrides.read().await;
         overrides
@@ -307,15 +307,23 @@ async fn resolve_effective_provider_and_model(
             .cloned()
             .unwrap_or_else(|| state.config.llm_provider.clone())
     };
-    let profile = state
+    let profile = match state
         .config
         .resolve_llm_provider_profile(&provider_alias)
         .or_else(|| {
             state
                 .config
                 .resolve_llm_provider_profile(&state.config.llm_provider)
-        })
-        .expect("default llm provider profile should always resolve");
+        }) {
+        Some(p) => p,
+        None => {
+            tracing::error!(
+                "LLM provider profile not found for '{}'; check your llm_provider config",
+                provider_alias
+            );
+            return None;
+        }
+    };
     let raw_model_override = {
         let overrides = state.llm_model_overrides.read().await;
         overrides.get(caller_channel).cloned()
@@ -348,7 +356,7 @@ async fn resolve_effective_provider_and_model(
     {
         profile.show_thinking = !level.eq_ignore_ascii_case("off");
     }
-    (profile, effective_model, session_settings)
+    Some((profile, effective_model, session_settings))
 }
 
 fn sanitize_xml(s: &str) -> String {
@@ -448,10 +456,13 @@ async fn persist_session_with_skill_env_files(
     } else {
         serde_json::to_string(skill_env_files).ok()
     };
-    let _ = call_blocking(state.db.clone(), move |db| {
+    if let Err(e) = call_blocking(state.db.clone(), move |db| {
         db.save_session_with_meta(chat_id, &json, None, None, skill_env_files_json.as_deref())
     })
-    .await;
+    .await
+    {
+        warn!(chat_id, "Failed to persist session: {e}");
+    }
 }
 
 fn is_wrapped_slash_command_line(line: &str) -> bool {
@@ -956,10 +967,13 @@ async fn execute_single_tool(
                 }
                 if let Ok(files_json) = serde_json::to_string(&*skill_env_files) {
                     let db = state.db.clone();
-                    let _ = call_blocking(db, move |db| {
+                    if let Err(e) = call_blocking(db, move |db| {
                         db.save_session_skill_envs(chat_id, &files_json)
                     })
-                    .await;
+                    .await
+                    {
+                        warn!(chat_id, "Failed to persist skill env files: {e}");
+                    }
                 }
             }
         }
@@ -1131,7 +1145,13 @@ async fn process_with_agent_logic(
         call_blocking(state.db.clone(), move |db| db.load_session(chat_id)).await?
     {
         // Session exists — deserialize and append new user messages
-        let mut session_messages: Vec<Message> = serde_json::from_str(&json).unwrap_or_default();
+        let mut session_messages: Vec<Message> = match serde_json::from_str(&json) {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                warn!(chat_id, "Failed to deserialize session messages: {e}; falling back to DB history");
+                Vec::new()
+            }
+        };
         strip_slash_command_user_lines(&mut session_messages);
 
         if session_messages.is_empty() {
@@ -1265,10 +1285,16 @@ async fn process_with_agent_logic(
     let tool_defs = state.tools.definitions().to_vec();
     let mut skill_env_files: Vec<String> = {
         let db = state.db.clone();
-        call_blocking(db, move |db| db.load_session_skill_envs(chat_id))
-            .await?
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default()
+        match call_blocking(db, move |db| db.load_session_skill_envs(chat_id)).await? {
+            Some(json) => match serde_json::from_str(&json) {
+                Ok(files) => files,
+                Err(e) => {
+                    warn!(chat_id, "Failed to deserialize skill env files: {e}; using empty list");
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        }
     };
     let mut tool_auth = ToolAuthContext {
         caller_channel: context.caller_channel.to_string(),
@@ -1284,7 +1310,9 @@ async fn process_with_agent_logic(
         std::collections::HashSet::new();
     let mut empty_visible_reply_retry_attempted = false;
     let (effective_profile, effective_model, _session_settings) =
-        resolve_effective_provider_and_model(state, context.caller_channel, chat_id).await;
+        resolve_effective_provider_and_model(state, context.caller_channel, chat_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("LLM provider profile not configured; check your llm_provider config"))?;
     metrics.model = effective_model.clone();
     let scoped_provider = if effective_profile.alias != state.config.llm_provider {
         Some(crate::llm::create_provider(&build_provider_runtime_config(
@@ -1492,7 +1520,7 @@ async fn process_with_agent_logic(
             let model = effective_model.clone();
             let input_tokens = i64::from(usage.input_tokens);
             let output_tokens = i64::from(usage.output_tokens);
-            let _ = call_blocking(state.db.clone(), move |db| {
+            if let Err(e) = call_blocking(state.db.clone(), move |db| {
                 db.log_llm_usage(
                     chat_id,
                     &channel,
@@ -1504,7 +1532,10 @@ async fn process_with_agent_logic(
                 )
                 .map(|_| ())
             })
-            .await;
+            .await
+            {
+                warn!(chat_id, "Failed to log LLM usage: {e}");
+            }
         }
 
         let stop_reason = response.stop_reason.as_deref().unwrap_or("end_turn");
@@ -2433,8 +2464,12 @@ async fn compact_messages(
     let mut compressor = crate::compressor::ContextCompressor::new(config);
 
     let timeout_secs = state.config.compaction_timeout_secs;
-    let (effective_profile, effective_model, _session_settings) =
-        resolve_effective_provider_and_model(state, caller_channel, chat_id).await;
+    let Some((effective_profile, effective_model, _session_settings)) =
+        resolve_effective_provider_and_model(state, caller_channel, chat_id).await
+    else {
+        warn!("LLM provider profile not configured; skipping context compaction");
+        return messages.to_vec();
+    };
     let scoped_provider = if effective_profile.alias != state.config.llm_provider {
         Some(crate::llm::create_provider(&build_provider_runtime_config(
             state,
@@ -2487,7 +2522,7 @@ async fn compact_messages(
                     let model = effective_model.clone();
                     let input_tokens = i64::from(usage.input_tokens);
                     let output_tokens = i64::from(usage.output_tokens);
-                    let _ = call_blocking(state_ref.db.clone(), move |db| {
+                    if let Err(e) = call_blocking(state_ref.db.clone(), move |db| {
                         db.log_llm_usage(
                             chat_id,
                             &channel,
@@ -2499,7 +2534,10 @@ async fn compact_messages(
                         )
                         .map(|_| ())
                     })
-                    .await;
+                    .await
+                    {
+                        warn!(chat_id, "Failed to log LLM usage for compaction: {e}");
+                    }
                 }
                 let text = response
                     .content

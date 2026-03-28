@@ -68,7 +68,8 @@ pub(super) async fn api_auth_set_password(
             "password must be at least 8 chars".into(),
         ));
     }
-    let hash = make_password_hash(password);
+    let hash = make_password_hash(password)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     call_blocking(state.app_state.db.clone(), move |db| {
         db.upsert_auth_password_hash(&hash)
     })
@@ -123,12 +124,16 @@ pub(super) async fn api_auth_login(
         return Err((StatusCode::UNAUTHORIZED, "invalid credentials".into()));
     }
     if hash.starts_with("v1$") {
-        let upgraded = make_password_hash(&body.password);
-        if !upgraded.is_empty() {
-            let _ = call_blocking(state.app_state.db.clone(), move |db| {
-                db.upsert_auth_password_hash(&upgraded)
-            })
-            .await;
+        match make_password_hash(&body.password) {
+            Ok(upgraded) => {
+                let _ = call_blocking(state.app_state.db.clone(), move |db| {
+                    db.upsert_auth_password_hash(&upgraded)
+                })
+                .await;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to upgrade legacy password hash: {e}");
+            }
         }
     }
 
