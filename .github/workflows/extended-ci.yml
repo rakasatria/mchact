@@ -41,12 +41,3 @@ jobs:
           name: coverage-lcov
           path: target/llvm-cov.lcov
           if-no-files-found: error
-
-  nix-build:
-    name: Nix Build (flake)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v19
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-      - run: nix build .#mchact

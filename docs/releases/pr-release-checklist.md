@@ -35,8 +35,6 @@ Last reviewed: 2026-03-05
 - [ ] Config self-check reviewed (`/api/config/self_check`) with no unaccepted `high` warnings.
 - [ ] macOS, Linux, and Windows release assets are present and checksummed.
 - [ ] Official container image tags are published and pull successfully (`ghcr.io/mchact/mchact`, Docker Hub mirror if enabled).
-- [ ] `nix build .#mchact` passes (Linux required; Darwin strongly recommended).
-- [ ] Nixpkgs status reviewed/updated (`docs/releases/nixpkgs-upstream-guide.md`).
 
 ## Rollback Prep
 

@@ -45,8 +45,6 @@ use mchact_observability::logs::OtlpLogExporter;
 use mchact_observability::metrics::OtlpMetricExporter;
 use mchact_observability::traces::OtlpTraceExporter;
 use mchact_storage::DynDataStore;
-#[cfg(feature = "vector-search")]
-use mchact_storage::traits::MemoryDbStore;
 use mchact_storage_backend::StorageBackendConfig;
 
 pub struct AppState {
