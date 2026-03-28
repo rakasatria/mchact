@@ -4,6 +4,7 @@ members = [
     "crates/mchact-core",
     "crates/mchact-clawhub",
     "crates/mchact-storage",
+    "crates/mchact-storage-backend",
     "crates/mchact-tools",
     "crates/mchact-channels",
     "crates/mchact-app",
@@ -35,6 +36,7 @@ mchact-channels = { version = "0.1.0", path = "crates/mchact-channels" }
 mchact-app = { version = "0.1.0", path = "crates/mchact-app" }
 mchact-observability = { version = "0.1.0", path = "crates/mchact-observability" }
 mchact-media = { version = "0.1.0", path = "crates/mchact-media" }
+mchact-storage-backend = { version = "0.1.0", path = "crates/mchact-storage-backend" }
 teloxide = { version = "0.17", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tokio-native-tls = "0.3"
