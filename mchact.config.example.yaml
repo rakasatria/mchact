@@ -40,11 +40,14 @@ memory_token_budget: 1500
 # - built-in/custom skills are loaded from <data_dir>/skills
 data_dir: "./mchact.data"
 # Database backend: "sqlite" (default) or "postgres"
+# When using postgres, all data (messages, sessions, tasks, memories, etc.) is stored in PostgreSQL.
 # PostgreSQL requires: cargo build --features storage-postgres
 # db_backend: "sqlite"
-# db_database_url: "postgresql://user:pass@localhost/mchact"  # required for postgres
+# db_database_url: "postgres://user:pass@localhost:5432/mchact"
 
 # Object storage backend for media, documents, and generated files.
+# Storage backend applies to ALL file data: memory files, media uploads,
+# conversation archives, TODO lists, skill files, soul files, and state files.
 # Options: "local" (default), "s3", "azure", "gcs"
 # Cloud backends require compiling with the matching feature flag:
 #   cargo build --features storage-s3
