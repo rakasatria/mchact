@@ -510,13 +510,57 @@ impl MemoryDbStore for PgDriver {
     }
 
     #[cfg(feature = "vector-search")]
-    fn prepare_vector_index(&self, _dimension: usize) -> Result<(), MchactError> {
-        Ok(())
+    fn prepare_vector_index(&self, dimension: usize) -> Result<(), MchactError> {
+        let pool = self.pool.clone();
+        let dim = dimension as i32;
+        tokio::runtime::Handle::current().block_on(async move {
+            let client = pool.get().await.map_err(pg_err)?;
+            client
+                .execute("CREATE EXTENSION IF NOT EXISTS vector", &[])
+                .await
+                .map_err(pg_err)?;
+            let alter = format!(
+                "DO $$ BEGIN \
+                    ALTER TABLE memories ADD COLUMN embedding vector({dim}); \
+                 EXCEPTION WHEN duplicate_column THEN NULL; END $$"
+            );
+            client.execute(&alter, &[]).await.map_err(pg_err)?;
+            client
+                .execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memories_embedding \
+                     ON memories USING hnsw (embedding vector_cosine_ops)",
+                    &[],
+                )
+                .await
+                .map_err(pg_err)?;
+            Ok(())
+        })
     }
 
     #[cfg(feature = "vector-search")]
-    fn upsert_memory_vec(&self, _memory_id: i64, _embedding: &[f32]) -> Result<(), MchactError> {
-        Ok(())
+    fn upsert_memory_vec(&self, memory_id: i64, embedding: &[f32]) -> Result<(), MchactError> {
+        #[cfg(feature = "postgres-vector")]
+        {
+            use pgvector::Vector;
+            let pool = self.pool.clone();
+            let vec = Vector::from(embedding.to_vec());
+            return tokio::runtime::Handle::current().block_on(async move {
+                let client = pool.get().await.map_err(pg_err)?;
+                client
+                    .execute(
+                        "UPDATE memories SET embedding = $1 WHERE id = $2",
+                        &[&vec, &memory_id],
+                    )
+                    .await
+                    .map_err(pg_err)?;
+                Ok(())
+            });
+        }
+        #[cfg(not(feature = "postgres-vector"))]
+        {
+            let _ = (memory_id, embedding);
+            Ok(())
+        }
     }
 
     fn get_all_active_memories(&self) -> Result<Vec<(i64, String)>, MchactError> {
@@ -540,11 +584,40 @@ impl MemoryDbStore for PgDriver {
     #[cfg(feature = "vector-search")]
     fn knn_memories(
         &self,
-        _chat_id: i64,
-        _query_vec: &[f32],
-        _k: usize,
+        chat_id: i64,
+        query_vec: &[f32],
+        k: usize,
     ) -> Result<Vec<(i64, f32)>, MchactError> {
-        Ok(vec![])
+        #[cfg(feature = "postgres-vector")]
+        {
+            use pgvector::Vector;
+            let pool = self.pool.clone();
+            let vec = Vector::from(query_vec.to_vec());
+            let limit = k as i64;
+            return tokio::runtime::Handle::current().block_on(async move {
+                let client = pool.get().await.map_err(pg_err)?;
+                let rows = client
+                    .query(
+                        "SELECT id, (embedding <=> $1)::real AS distance \
+                         FROM memories \
+                         WHERE chat_id = $2 AND is_archived = FALSE AND embedding IS NOT NULL \
+                         ORDER BY embedding <=> $1 \
+                         LIMIT $3",
+                        &[&vec, &chat_id, &limit],
+                    )
+                    .await
+                    .map_err(pg_err)?;
+                Ok(rows
+                    .iter()
+                    .map(|r| (r.get::<_, i64>("id"), r.get::<_, f32>("distance")))
+                    .collect())
+            });
+        }
+        #[cfg(not(feature = "postgres-vector"))]
+        {
+            let _ = (chat_id, query_vec, k);
+            Ok(vec![])
+        }
     }
 
     fn get_reflector_cursor(&self, chat_id: i64) -> Result<Option<String>, MchactError> {

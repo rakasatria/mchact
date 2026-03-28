@@ -29,6 +29,7 @@ storage-s3 = ["mchact-storage-backend/s3"]
 storage-azure = ["mchact-storage-backend/azure"]
 storage-gcs = ["mchact-storage-backend/gcs"]
 storage-postgres = ["mchact-storage/postgres"]
+postgres-vector = ["mchact-storage/postgres-vector"]
 
 [dependencies]
 mchact-memory = { version = "0.1.0", path = "crates/mchact-memory" }

@@ -5041,6 +5041,7 @@ dependencies = [
  "deadpool-postgres",
  "mchact-core",
  "mchact-storage-backend",
+ "pgvector",
  "rusqlite",
  "serde",
  "serde_json",

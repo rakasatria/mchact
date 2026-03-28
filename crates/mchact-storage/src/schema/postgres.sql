@@ -7,6 +7,8 @@
 --   - FTS5 virtual tables replaced with tsvector column + GIN index
 --   - No sqlite-specific pragmas or triggers for FTS
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS chats (
     chat_id BIGINT PRIMARY KEY,
     chat_title TEXT,
@@ -140,7 +142,8 @@ CREATE TABLE IF NOT EXISTS memories (
     is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     archived_at TEXT,
     chat_channel TEXT,
-    external_chat_id TEXT
+    external_chat_id TEXT,
+    embedding vector
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_chat ON memories(chat_id);
