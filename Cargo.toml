@@ -25,6 +25,10 @@ default-run = "mchact"
 default = []
 sqlite-vec = ["mchact-storage/sqlite-vec"]
 journald = ["mchact-app/journald"]
+storage-s3 = ["mchact-storage-backend/s3"]
+storage-azure = ["mchact-storage-backend/azure"]
+storage-gcs = ["mchact-storage-backend/gcs"]
+storage-postgres = ["mchact-storage/postgres"]
 
 [dependencies]
 mchact-memory = { version = "0.1.0", path = "crates/mchact-memory" }
