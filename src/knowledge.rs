@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use mchact_storage::db::{Database, Knowledge};
 
+use crate::embedding::EmbeddingProvider;
+
 const TARGET_TOKENS_PER_CHUNK: usize = 500;
 
 // ── Public helper functions ────────────────────────────────────────────────────
@@ -128,6 +130,26 @@ pub struct KnowledgeStats {
     pub chunks_failed: i64,
     pub observations_done: i64,
     pub observations_pending: i64,
+}
+
+// ── Query result structs ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeQueryResult {
+    pub query: String,
+    pub results: Vec<KnowledgeResult>,
+    pub collections_searched: Vec<String>,
+    pub total_chunks_searched: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeResult {
+    pub knowledge_name: String,
+    pub document: String,
+    pub page: i64,
+    pub relevance_score: f32,
+    pub text_snippet: String,
+    pub related_observations: Vec<serde_json::Value>,
 }
 
 // ── KnowledgeManager ──────────────────────────────────────────────────────────
@@ -287,6 +309,152 @@ impl KnowledgeManager {
                     "failed to check access for chat {chat_id} in '{knowledge_name}': {e}"
                 )
             })
+    }
+
+    /// Query across one or more knowledge collections using vector search.
+    ///
+    /// If `knowledge_names` is `Some`, only those collections are searched and
+    /// access is verified for each one. If `None`, all collections the caller
+    /// has access to are searched.
+    pub async fn query(
+        &self,
+        knowledge_names: Option<&[String]>,
+        query_text: &str,
+        max_results: usize,
+        caller_chat_id: i64,
+        embedding_provider: &dyn EmbeddingProvider,
+    ) -> Result<KnowledgeQueryResult, String> {
+        // ── Step 1: Determine collections in scope ─────────────────────────
+        let collections: Vec<Knowledge> = match knowledge_names {
+            Some(names) => {
+                let mut result = Vec::with_capacity(names.len());
+                for name in names {
+                    let knowledge = self.require_knowledge(name)?;
+                    let has_access = self
+                        .db
+                        .has_knowledge_chat_access(knowledge.id, caller_chat_id)
+                        .map_err(|e| {
+                            format!("failed to check access for '{name}': {e}")
+                        })?;
+                    if !has_access {
+                        return Err(format!(
+                            "chat {caller_chat_id} does not have access to knowledge '{name}'"
+                        ));
+                    }
+                    result.push(knowledge);
+                }
+                result
+            }
+            None => self
+                .db
+                .list_knowledge_for_chat(caller_chat_id)
+                .map_err(|e| format!("failed to list knowledge for chat: {e}"))?,
+        };
+
+        let collections_searched: Vec<String> =
+            collections.iter().map(|k| k.name.clone()).collect();
+
+        // ── Step 2: Collect (doc_extraction_id → knowledge_name) mapping ──
+        // A document may belong to multiple collections; track each association.
+        let mut doc_to_knowledge: Vec<(i64, String)> = Vec::new();
+        for knowledge in &collections {
+            let doc_ids = self
+                .db
+                .list_knowledge_documents(knowledge.id)
+                .map_err(|e| {
+                    format!("failed to list documents for '{}': {e}", knowledge.name)
+                })?;
+            for doc_id in doc_ids {
+                doc_to_knowledge.push((doc_id, knowledge.name.clone()));
+            }
+        }
+
+        // ── Step 3: Embed the query ────────────────────────────────────────
+        let query_vec: Vec<f32> = embedding_provider
+            .embed(query_text)
+            .await
+            .map_err(|e| format!("failed to embed query: {e}"))?;
+
+        // ── Step 4: Score every embedded chunk ─────────────────────────────
+        struct ScoredChunk {
+            knowledge_name: String,
+            document: String,
+            page: i64,
+            score: f32,
+            text: String,
+        }
+
+        let mut scored: Vec<ScoredChunk> = Vec::new();
+        let mut total_chunks_searched: u64 = 0;
+
+        for (doc_id, knowledge_name) in &doc_to_knowledge {
+            let chunks = self
+                .db
+                .get_chunks_for_document(*doc_id)
+                .map_err(|e| format!("failed to load chunks for doc {doc_id}: {e}"))?;
+
+            // Resolve document filename once per doc_id.
+            let filename: String = self
+                .db
+                .get_document_extraction_by_id(*doc_id)
+                .map_err(|e| {
+                    format!("failed to load document extraction {doc_id}: {e}")
+                })?
+                .map(|d| d.filename)
+                .unwrap_or_else(|| format!("doc_{doc_id}"));
+
+            for chunk in chunks {
+                if chunk.embedding_status != "done" {
+                    continue;
+                }
+                let Some(embedding_bytes) = chunk.embedding else {
+                    continue;
+                };
+
+                total_chunks_searched += 1;
+                let chunk_vec = bytes_to_f32_vec(&embedding_bytes);
+
+                // Skip dimension mismatches to avoid a panic.
+                if chunk_vec.len() != query_vec.len() {
+                    continue;
+                }
+
+                let score = cosine_similarity(&query_vec, &chunk_vec);
+                let snippet = chunk.text.chars().take(500).collect::<String>();
+
+                scored.push(ScoredChunk {
+                    knowledge_name: knowledge_name.clone(),
+                    document: filename.clone(),
+                    page: chunk.page_number,
+                    score,
+                    text: snippet,
+                });
+            }
+        }
+
+        // ── Step 5: Sort descending by score, take top max_results ────────
+        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(max_results);
+
+        // ── Step 6: Build final results ────────────────────────────────────
+        let results: Vec<KnowledgeResult> = scored
+            .into_iter()
+            .map(|c| KnowledgeResult {
+                knowledge_name: c.knowledge_name,
+                document: c.document,
+                page: c.page,
+                relevance_score: c.score,
+                text_snippet: c.text,
+                related_observations: Vec::new(), // DAG traversal: future work
+            })
+            .collect();
+
+        Ok(KnowledgeQueryResult {
+            query: query_text.to_owned(),
+            results,
+            collections_searched,
+            total_chunks_searched,
+        })
     }
 
     // ── Private helpers ────────────────────────────────────────────────────────
