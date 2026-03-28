@@ -25,8 +25,7 @@ impl MessageStore for PgDriver {
                     .execute(
                         "INSERT INTO messages (id, chat_id, sender_name, content, is_from_bot, timestamp)
                          VALUES ($1, $2, $3, $4, $5, $6)
-                         ON CONFLICT(id) DO UPDATE SET
-                             chat_id = $2,
+                         ON CONFLICT(id, chat_id) DO UPDATE SET
                              sender_name = $3,
                              content = $4,
                              is_from_bot = $5,
@@ -115,10 +114,10 @@ impl MessageStore for PgDriver {
                         "SELECT m.id, m.chat_id, c.chat_title, m.sender_name,
                                 m.content AS snippet,
                                 m.timestamp,
-                                ts_rank(to_tsvector('english', m.content), plainto_tsquery('english', $1)) AS rank
+                                ts_rank(m.search_vector, plainto_tsquery('english', $1)) AS rank
                          FROM messages m
                          LEFT JOIN chats c ON c.chat_id = m.chat_id
-                         WHERE to_tsvector('english', m.content) @@ plainto_tsquery('english', $1)
+                         WHERE m.search_vector @@ plainto_tsquery('english', $1)
                            AND ($2::bigint IS NULL OR m.chat_id = $2)
                          ORDER BY rank DESC
                          LIMIT $3",

@@ -43,7 +43,13 @@ use middleware::*;
 
 static WEB_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/web/dist");
 pub(crate) fn generate_default_web_password() -> String {
-    uuid::Uuid::new_v4().to_string().replace('-', "")[..16].to_string()
+    const ALPHABET: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let uuid_bytes = uuid::Uuid::new_v4().into_bytes();
+    let mut password = String::with_capacity(16);
+    for &b in &uuid_bytes[..16] {
+        password.push(ALPHABET[(b as usize) % ALPHABET.len()] as char);
+    }
+    password
 }
 
 pub struct WebAdapter;
@@ -2407,16 +2413,24 @@ pub async fn start_web_server(state: Arc<AppState>) {
     let generated_default_password = if !has_password {
         let password = generate_default_web_password();
         let hash = make_password_hash(&password);
-        let _ = call_blocking(state.db.clone(), move |db| {
+        match call_blocking(state.db.clone(), move |db| {
             db.upsert_auth_password_hash(&hash)
         })
-        .await;
-        warn!(
-            "web auth: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
-            password
-        );
-        has_password = true;
-        Some(password)
+        .await
+        {
+            Ok(_) => {
+                warn!(
+                    "web auth: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
+                    password
+                );
+                has_password = true;
+                Some(password)
+            }
+            Err(e) => {
+                warn!("web auth: failed to store default password: {e}; bootstrap token will be generated instead");
+                None
+            }
+        }
     } else {
         None
     };
