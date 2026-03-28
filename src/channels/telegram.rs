@@ -823,15 +823,19 @@ async fn handle_message(
                     .collect::<String>();
 
                 {
-                    let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-                    let safe_channel = tg_channel_name.replace('/', "_");
-                    let key = format!(
-                        "uploads/{}/{}/{}-{}",
-                        safe_channel, raw_chat_id, ts, safe_name
-                    );
-                    match state.media_manager.storage().put(&key, bytes.clone()).await {
-                        Ok(()) => {
-                            document_saved_path = Some(key);
+                    match state
+                        .media_manager
+                        .store_file(
+                            bytes.clone(),
+                            &safe_name,
+                            None,
+                            raw_chat_id,
+                            "channel_inbound",
+                        )
+                        .await
+                    {
+                        Ok(media_id) => {
+                            document_saved_path = Some(format!("media:{media_id}"));
                         }
                         Err(e) => {
                             error!("Failed to save telegram document to storage: {e}");

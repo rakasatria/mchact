@@ -2614,26 +2614,23 @@ async fn handle_feishu_message(
                                 })
                                 .collect();
 
-                            let dir = std::path::Path::new(&app_state.config.working_dir)
-                                .join("uploads")
-                                .join(runtime.channel_name.replace('/', "_"))
-                                .join(external_chat_id);
                             let mut document_saved_path: Option<String> = None;
-                            if let Err(e) = std::fs::create_dir_all(&dir) {
-                                error!("Failed to create upload dir {}: {e}", dir.display());
-                            } else {
-                                let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-                                let path = dir.join(format!("{}-{}", ts, safe_name));
-                                match tokio::fs::write(&path, &bytes).await {
-                                    Ok(()) => {
-                                        document_saved_path = Some(path.display().to_string());
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "Failed to save feishu file {}: {e}",
-                                            path.display()
-                                        );
-                                    }
+                            match app_state
+                                .media_manager
+                                .store_file(
+                                    bytes.clone(),
+                                    &safe_name,
+                                    None,
+                                    chat_id,
+                                    "channel_inbound",
+                                )
+                                .await
+                            {
+                                Ok(media_id) => {
+                                    document_saved_path = Some(format!("media:{media_id}"));
+                                }
+                                Err(e) => {
+                                    error!("Failed to save feishu file {safe_name}: {e}");
                                 }
                             }
 

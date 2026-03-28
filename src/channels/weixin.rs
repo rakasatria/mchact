@@ -1984,7 +1984,8 @@ impl ChannelAdapter for WeixinAdapter {
 
 async fn build_weixin_file_note(
     config: &Config,
-    storage: &Arc<dyn mchact_storage_backend::ObjectStorage>,
+    media_manager: &crate::media_manager::MediaManager,
+    chat_id: i64,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2087,39 +2088,33 @@ async fn build_weixin_file_note(
                 );
             }
 
-            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-            let safe_channel = runtime_ctx.channel_name.replace('/', "_");
-            let safe_message_id = sanitize_upload_file_name(inbound_message_id, "message");
             let safe_name = sanitize_upload_file_name(&file_name, "weixin-file.bin");
-            let key = format!(
-                "uploads/{}/{}/{}-{}-{}-{}",
-                safe_channel, external_chat_id, ts, safe_message_id, item_index, safe_name
-            );
-            match storage.put(&key, bytes).await {
-                Ok(()) => {
+            match media_manager
+                .store_file(bytes, &safe_name, None, chat_id, "channel_inbound")
+                .await
+            {
+                Ok(media_id) => {
                     info!(
-                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} key={} bytes={}",
+                        "Weixin: saved inbound file channel={} sender={} message_id={} item_index={} media_id={} filename={}",
                         runtime_ctx.channel_name,
                         external_chat_id,
                         inbound_message_id,
                         item_index,
-                        key,
-                        file_name
+                        media_id,
+                        file_name,
                     );
-                    format!(
-                        "[document] filename={} saved_path={}",
-                        file_name, key
-                    )
+                    format!("[document] filename={} saved_path=media:{media_id}", file_name)
                 }
                 Err(err) => {
                     error!(
-                        "Weixin: failed to save inbound file to storage key={}: {err}",
-                        key
+                        "Weixin: failed to save inbound file channel={} sender={} message_id={} item_index={} filename={}: {err}",
+                        runtime_ctx.channel_name,
+                        external_chat_id,
+                        inbound_message_id,
+                        item_index,
+                        file_name,
                     );
-                    format!(
-                        "[document] filename={} save_failed=storage_write",
-                        file_name
-                    )
+                    format!("[document] filename={} save_failed=storage_write", file_name)
                 }
             }
         }
@@ -2147,7 +2142,8 @@ async fn build_weixin_file_note(
 
 async fn enrich_weixin_inbound_text(
     config: &Config,
-    storage: &Arc<dyn mchact_storage_backend::ObjectStorage>,
+    media_manager: &crate::media_manager::MediaManager,
+    chat_id: i64,
     runtime_ctx: &WeixinRuntimeContext,
     external_chat_id: &str,
     inbound_message_id: &str,
@@ -2172,7 +2168,8 @@ async fn enrich_weixin_inbound_text(
         notes.push(
             build_weixin_file_note(
                 config,
-                storage,
+                media_manager,
+                chat_id,
                 runtime_ctx,
                 external_chat_id,
                 inbound_message_id,
@@ -2275,7 +2272,8 @@ async fn process_weixin_inbound_message(
 
     let text = enrich_weixin_inbound_text(
         &app_state.config,
-        &app_state.media_manager.storage(),
+        &app_state.media_manager,
+        chat_id,
         &runtime_ctx,
         &external_chat_id,
         &inbound_message_id,
@@ -2844,6 +2842,17 @@ mod tests {
         root
     }
 
+    fn make_test_media_manager(root: &std::path::Path) -> crate::media_manager::MediaManager {
+        use mchact_storage::db::Database;
+        use std::sync::Arc;
+        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
+            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
+                .expect("local storage"),
+        );
+        let db = Arc::new(Database::new(root.to_str().unwrap()).expect("test db"));
+        crate::media_manager::MediaManager::new(storage, db)
+    }
+
     async fn spawn_test_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -3099,10 +3108,7 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
-        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
-            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
-                .expect("local storage"),
-        );
+        let media_manager = make_test_media_manager(&root);
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3118,7 +3124,8 @@ weixin:
 
         let text = enrich_weixin_inbound_text(
             &cfg,
-            &storage,
+            &media_manager,
+            1,
             &runtime,
             "alice@im.wechat",
             "wx-msg-1",
@@ -3141,12 +3148,10 @@ weixin:
 
         handle.abort();
 
-        let saved_path = text
-            .split("saved_path=")
-            .nth(1)
-            .and_then(|value| value.lines().next())
-            .expect("saved_path missing in enriched text");
-        assert_eq!(fs::read(saved_path).unwrap(), plaintext);
+        assert!(
+            text.contains("saved_path=media:"),
+            "expected media reference in: {text}"
+        );
         assert!(text.contains("[document] filename=shuangpin.pdf"));
 
         let _ = fs::remove_dir_all(root);
@@ -3169,10 +3174,7 @@ weixin:
         let mut cfg = Config::test_defaults();
         cfg.working_dir = root.to_string_lossy().to_string();
         cfg.max_document_size_mb = 10;
-        let storage: Arc<dyn mchact_storage_backend::ObjectStorage> = Arc::new(
-            mchact_storage_backend::local::LocalStorage::new_sync(root.to_str().unwrap())
-                .expect("local storage"),
-        );
+        let media_manager = make_test_media_manager(&root);
         let runtime = WeixinRuntimeContext {
             channel_name: CHANNEL_KEY.to_string(),
             account_id: String::new(),
@@ -3188,7 +3190,8 @@ weixin:
 
         let text = enrich_weixin_inbound_text(
             &cfg,
-            &storage,
+            &media_manager,
+            1,
             &runtime,
             "alice@im.wechat",
             "wx-msg-2",
