@@ -2412,22 +2412,27 @@ pub async fn start_web_server(state: Arc<AppState>) {
         .is_some();
     let generated_default_password = if !has_password {
         let password = generate_default_web_password();
-        let hash = make_password_hash(&password);
-        match call_blocking(state.db.clone(), move |db| {
-            db.upsert_auth_password_hash(&hash)
-        })
-        .await
-        {
-            Ok(_) => {
-                warn!(
-                    "web auth: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
-                    password
-                );
-                has_password = true;
-                Some(password)
-            }
+        match make_password_hash(&password) {
+            Ok(hash) => match call_blocking(state.db.clone(), move |db| {
+                db.upsert_auth_password_hash(&hash)
+            })
+            .await
+            {
+                Ok(_) => {
+                    warn!(
+                        "web auth: no operator password was configured. Temporary password is '{}'. Please change it in Web UI after sign in.",
+                        password
+                    );
+                    has_password = true;
+                    Some(password)
+                }
+                Err(e) => {
+                    warn!("web auth: failed to store default password: {e}; bootstrap token will be generated instead");
+                    None
+                }
+            },
             Err(e) => {
-                warn!("web auth: failed to store default password: {e}; bootstrap token will be generated instead");
+                warn!("web auth: failed to hash default password: {e}; bootstrap token will be generated instead");
                 None
             }
         }
@@ -2960,7 +2965,7 @@ mod tests {
         let prefix = secret_owned[..secret_owned.len().min(6)].to_string();
         let scopes = scopes.to_vec();
         call_blocking(state.app_state.db.clone(), move |db| {
-            db.upsert_auth_password_hash(&make_password_hash("passw0rd!"))?;
+            db.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())?;
             db.create_api_key("ws-test", &key_hash, &prefix, &scopes, None, None)?;
             Ok(())
         })
@@ -3396,7 +3401,7 @@ mod tests {
     async fn test_api_health_is_public_but_minimal_without_auth() {
         let web_state = test_web_state(Box::new(DummyLlm), WebLimits::default());
         call_blocking(web_state.app_state.db.clone(), |db| {
-            db.upsert_auth_password_hash(&make_password_hash("passw0rd!"))
+            db.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())
         })
         .await
         .unwrap();
@@ -3422,7 +3427,7 @@ mod tests {
     async fn test_root_health_alias_is_public() {
         let web_state = test_web_state(Box::new(DummyLlm), WebLimits::default());
         call_blocking(web_state.app_state.db.clone(), |db| {
-            db.upsert_auth_password_hash(&make_password_hash("passw0rd!"))
+            db.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())
         })
         .await
         .unwrap();
@@ -3791,7 +3796,7 @@ mod tests {
         let db = web_state.app_state.db.clone();
         let read_key = "mk_read_only";
         call_blocking(db.clone(), move |d| {
-            d.upsert_auth_password_hash(&make_password_hash("passw0rd!"))?;
+            d.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())?;
             d.create_api_key(
                 "read-only",
                 &sha256_hex(read_key),
@@ -3838,7 +3843,7 @@ mod tests {
         let db = web_state.app_state.db.clone();
         let read_key = "mk_read_old";
         call_blocking(db.clone(), move |d| {
-            d.upsert_auth_password_hash(&make_password_hash("passw0rd!"))?;
+            d.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())?;
             d.create_api_key(
                 "read-old",
                 &sha256_hex(read_key),
@@ -4617,7 +4622,7 @@ commands:
     async fn test_cookie_write_requires_csrf_header() {
         let web_state = test_web_state(Box::new(DummyLlm), WebLimits::default());
         let app = build_router(web_state.clone());
-        let hash = make_password_hash("passw0rd!");
+        let hash = make_password_hash("passw0rd!").unwrap();
         let db = web_state.app_state.db.clone();
         call_blocking(db, move |d| d.upsert_auth_password_hash(&hash))
             .await
@@ -4676,7 +4681,7 @@ commands:
         let db = web_state.app_state.db.clone();
         call_blocking(db, move |d| {
             let scopes = vec!["operator.read".to_string(), "operator.write".to_string()];
-            d.upsert_auth_password_hash(&make_password_hash("passw0rd!"))?;
+            d.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())?;
             d.create_api_key(
                 "owner-a",
                 &sha256_hex("mk_owner_a"),
@@ -4745,7 +4750,7 @@ commands:
         let web_state = test_web_state(Box::new(DummyLlm), WebLimits::default());
         let db = web_state.app_state.db.clone();
         let target_id = call_blocking(db, move |d| {
-            d.upsert_auth_password_hash(&make_password_hash("passw0rd!"))?;
+            d.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())?;
             d.create_api_key(
                 "approvals",
                 &sha256_hex("mk_approvals_only"),
@@ -5958,7 +5963,7 @@ commands:
     async fn test_ws_connect_invalid_token_returns_unauthorized() {
         let web_state = test_web_state(Box::new(DummyLlm), WebLimits::default());
         call_blocking(web_state.app_state.db.clone(), |db| {
-            db.upsert_auth_password_hash(&make_password_hash("passw0rd!"))
+            db.upsert_auth_password_hash(&make_password_hash("passw0rd!").unwrap())
         })
         .await
         .unwrap();

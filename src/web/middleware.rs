@@ -99,13 +99,13 @@ pub(super) fn clear_csrf_cookie_header() -> String {
     "mc_csrf=; Path=/; SameSite=Strict; Max-Age=0".to_string()
 }
 
-pub(super) fn make_password_hash(password: &str) -> String {
+pub(super) fn make_password_hash(password: &str) -> Result<String, String> {
     let salt = SaltString::encode_b64(uuid::Uuid::new_v4().as_bytes())
-        .unwrap_or_else(|_| SaltString::from_b64("AAAAAAAAAAAAAAAAAAAAAA").unwrap());
+        .map_err(|e| format!("failed to generate password salt: {e}"))?;
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .unwrap_or_default()
+        .map_err(|e| format!("failed to hash password: {e}"))
 }
 
 pub(super) fn verify_password_hash(stored: &str, password: &str) -> bool {
