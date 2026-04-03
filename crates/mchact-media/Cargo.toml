@@ -32,4 +32,4 @@ ogg = { version = "0.9", optional = true }
 whisper-rs = { version = "0.16", optional = true }
 
 # Documents
-kreuzberg = { version = "4.6", features = ["pdf", "office", "html"], optional = true }
+kreuzberg = { version = "4.7", features = ["pdf", "office", "html"], optional = true }
